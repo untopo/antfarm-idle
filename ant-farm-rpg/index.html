@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ANT FARM — Pixel Real v4 · 16-BIT</title>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache">
-<link rel="stylesheet" href="css/style.css?v=20261015g">
+<link rel="stylesheet" href="css/style.css?v=20261015h">
 
 <style id="topoHideUntilStart">
   #appRoot{display:none !important}
@@ -629,6 +629,7 @@
       <button class="pixel-btn small" id="btnVel4" title="x4" style="min-width:30px;width:30px;height:28px;padding:0;background:#3e2a14;border:2px solid #000;color:#fff8dc;font-family:'Press Start 2P';font-size:7px;display:grid;place-items:center;box-shadow:1px 1px 0 #000">x4</button>
       <button class="pixel-btn small" id="btnVel8" title="x8" style="min-width:30px;width:30px;height:28px;padding:0;background:#3e2a14;border:2px solid #000;color:#fff8dc;font-family:'Press Start 2P';font-size:7px;display:grid;place-items:center;box-shadow:1px 1px 0 #000">x8</button>
       <button class="pixel-btn small" id="btnVel16" title="x16" style="min-width:32px;width:32px;height:28px;padding:0;background:#3e2a14;border:2px solid #000;color:#fff8dc;font-family:'Press Start 2P';font-size:7px;display:grid;place-items:center;box-shadow:1px 1px 0 #000">x16</button>
+            <button class="pixel-btn small" id="btnDay1" title="Simula un dia entero: corre el mismo paso del bucle, sin pintar cada frame" style="min-width:0;flex:1;height:28px;padding:0 4px;font-size:7px;margin-left:4px">&#9197; +1 DIA</button>
     </div>
     <div style="position:relative;width:3px;background:#000;flex-shrink:0;z-index:1;margin:3px 0;box-shadow:inset 1px 0 0 rgba(255,255,255,0.08)"></div>
     <!-- OBRERAS -->
@@ -689,28 +690,6 @@
       <span style="font-family:'Press Start 2P',monospace;font-size:6px;color:#ffcc00;text-shadow:1px 1px 0 #000">OBRERAS</span>
       <span style="font-family:'VT323',monospace;font-size:10px;color:#c9b896;opacity:0.9">ACTIVAS</span>
     </div>
-  <!-- TIRAS RECUPERADAS: van DENTRO del #calendarWidget para colgar bajo el reloj y heredar su
-       ancho de 220px. El JS ya conocia estos ids (btnDay1, btnCorner*, hudSel) y no hay que
-       alambra nada nuevo: solo existian en el JS y en el CSS, el HTML los habia perdido. -->
-  <div id="mainHud" class="hud-strips" style="width:100%;box-sizing:border-box;padding:0 6px 6px">
-    <div id="dayControls" style="width:100%;box-sizing:border-box;display:flex;align-items:center;gap:6px;padding:3px 4px">
-      <button class="pixel-btn small" id="btnDay1" title="Simula un dia entero: corre el mismo paso del bucle, sin pintar cada frame" style="min-width:0;flex:1;padding:3px 2px;font-size:8px">&#9197; +1 DIA</button>
-      <span style="flex:1"></span>
-      <span class="hud-label" style="font-size:7px;color:#5a4a3a">VEL</span>
-    </div>
-    <div id="cornerControls" style="width:100%;box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;gap:2px;padding:2px 3px;background:#2a0f00;border:2px solid #000">
-      <button class="pixel-btn small" id="btnCorner1" title="x1" style="min-width:0;flex:1;padding:2px 0;font-size:8px">&#9654;</button>
-      <button class="pixel-btn small" id="btnCorner2" title="x2" style="min-width:0;flex:1;padding:2px 0;font-size:8px">2</button>
-      <button class="pixel-btn small" id="btnCorner4" title="x4" style="min-width:0;flex:1;padding:2px 0;font-size:8px">4</button>
-      <button class="pixel-btn small" id="btnCorner8" title="x8" style="min-width:0;flex:1;padding:2px 0;font-size:8px">8</button>
-      <button class="pixel-btn small" id="btnCorner16" title="x16" style="min-width:0;flex:1;padding:2px 0;font-size:8px">16</button>
-      <button class="pixel-btn small" id="btnCornerPause" title="Pausar" style="min-width:0;flex:1;padding:2px 0;font-size:8px">&#9208;</button>
-    </div>
-    <div id="hudSel" style="width:100%;box-sizing:border-box;display:none;align-items:center;gap:4px;padding:3px 4px;font-size:8px">
-      <span class="hud-icon">&#128027;</span><b id="hudSelTxt">&mdash;</b>
-    </div>
-  </div>
-
 </div>
 
 <!-- HISTORIA IMPORTANTE -->
@@ -760,7 +739,7 @@
   <!-- Motor del juego — núcleo profesional modular -->
   
 
-<script src="js/app.js?v=20261015g"></script>
+<script src="js/app.js?v=20261015h"></script>
 <script>
 // Vigia del arranque: si js/app.js no termino de cargar, decirlo en pantalla en vez de dejar
 // botones sordos. Es lo unico que vive en el HTML; el juego entero esta en js/app.js.

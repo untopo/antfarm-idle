@@ -265,19 +265,20 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
     // --- LAS TIRAS RECUPERADAS Y EL SALTO DE DIA, como comprobacion permanente ------------
     {
+      // El dueno decidio que las tiras bajo el reloj sobraban: la informacion ya estaba en la
+      // barra de siempre. Se comprueba al reves: que NO haya duplicado y que el boton del dia
+      // siga donde viven los demas botones.
       const tiras = await page.evaluate(() => {
         const vis = (id) => { const e = document.getElementById(id); if (!e) return null; const b = e.getBoundingClientRect(); const cs = getComputedStyle(e);
           return { w: Math.round(b.width), h: Math.round(b.height), visible: cs.display !== 'none' && cs.visibility !== 'hidden' && b.width > 0 && b.height > 0 }; };
-        const cal = document.getElementById('calendarWidget');
-        return { hud: vis('mainHud'), dia: vis('dayControls'), btn: vis('btnDay1'), vel: vis('cornerControls'), sel: vis('hudSel'),
-          anchoCal: cal ? Math.round(cal.getBoundingClientRect().width) : -1 };
+        const tiraFuera = [...document.querySelectorAll('.hud-strips')].filter((e) => { const cs = getComputedStyle(e); return cs.display !== 'none'; }).length;
+        return { corner: vis('cornerControls'), day: vis('dayControls'), hud: vis('mainHud'), sel: vis('hudSel'),
+          tirasVisibles: tiraFuera, vel: document.querySelectorAll('#btnSpeed1,#btnSpeed2,#btnSpeed4,#btnSpeed8,#btnSpeed16,#btnSpeed32,#btnSpeed64').length };
       }).catch(() => ({}));
-      ok(tiras.dia && tiras.dia.visible && tiras.btn && tiras.btn.visible,
-        'las tiras del HUD estan de vuelta y a la vista (dayControls ' + (tiras.dia || {}).w + 'x' + (tiras.dia || {}).h + ' · boton +1 dia ' + (tiras.btn || {}).w + 'x' + (tiras.btn || {}).h + ')');
-      ok(tiras.vel && tiras.vel.visible,
-        'la barra de velocidades x1..x16 + pausa existe y se puede pulsar (' + (tiras.vel || {}).w + 'x' + (tiras.vel || {}).h + ')');
-      ok(tiras.anchoCal > 0 && Math.abs(tiras.dia.w - tiras.anchoCal) <= 24,
-        'cuelgan bajo el reloj y heredan su ancho (' + tiras.dia.w + ' px de tira contra ' + tiras.anchoCal + ' px de calendario)');
+      ok(!tiras.corner && !tiras.day && !tiras.hud && !tiras.sel && tiras.tirasVisibles === 0,
+        'y no hay tiras duplicadas sobre el calendario (cornerControls/dayControls/mainHud/hudSel ausentes, tiras visibles: ' + tiras.tirasVisibles + ')');
+      ok(tiras.vel === 7, 'la barra de velocidades es la de siempre y solo hay una (' + tiras.vel + ' botones x1..x64)');
+
       // El salto de dia se mide en una pagina NUEVA y limpia: en la pagina principal los tests
       // anteriores ensucian el lote del suelo (el conjunto sucio pasa del umbral y cada calada
       // pinta el mapa entero), y ahi la colonia trabaja ~14x mas despacio. Medir ahi daria FAIL
@@ -294,18 +295,34 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       await page3.evaluate(() => { const b = document.getElementById('btnOnboardingStart'); if (b) b.click(); });
       await sleep(400);
       const estado = () => page3.evaluate(() => ({ dia: day, digs, vel: gameSpeed, comida: colonyFood, cavadas: (() => { let n = 0; for (let r = SURFACE_ROW; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (soil[r][c] === 0) n++; return n; })(), boton: document.getElementById('btnDay1').textContent.trim(), ocupado: (typeof _fastForwarding !== 'undefined') && _fastForwarding }));
+      const btn = await page3.evaluate(() => { const e = document.getElementById('btnDay1'); const b = e.getBoundingClientRect(); const cs = getComputedStyle(e);
+        return { w: Math.round(b.width), h: Math.round(b.height), visible: b.width > 0 && b.height > 0 && cs.display !== 'none', padre: e.parentElement ? e.parentElement.id || e.parentElement.tagName.toLowerCase() : '' }; });
+      ok(btn.visible, 'el boton +1 DIA esta en la fila de los botones, no duplicado en una tira (' + btn.w + 'x' + btn.h + ' dentro de #' + btn.padre + ')');
+      // Primero: de manana y a x16 la colonia cava (si esto falla, el mundo esta roto, no el boton).
+      await page3.evaluate(() => { time = DAY_LENGTH * 0.30; setGameSpeed(16); });
+      const t1 = Date.now(); const cava_antes = await estado();
+      let cava_ahora = cava_antes;
+      while (Date.now() - t1 < 30000) { await sleep(1500); cava_ahora = await estado(); if (cava_ahora.digs - cava_antes.digs >= 2) break; }
+      ok(cava_ahora.digs > cava_antes.digs && cava_ahora.cavadas > cava_antes.cavadas,
+        'de manana a x16 las obreras abren tierra: ' + (cava_ahora.digs - cava_antes.digs) + ' bloques y ' + (cava_ahora.cavadas - cava_antes.cavadas) + ' celdas en ' + Math.round((Date.now() - t1) / 1000) + ' s');
+      // Despues: el boton. Para que la medicion no dependa de lo cargada que este la maquina se
+      // deja el reloj a ~3 minutos del cambio de dia; se mide el boton, no la CPU de Chrome.
+      await page3.evaluate(() => { setGameSpeed(1); time = Math.ceil((time + 1) / DAY_LENGTH) * DAY_LENGTH - 11000; });
       const antes = await estado();
       await page3.evaluate(() => document.getElementById('btnDay1').click());
-      let ahora = antes;
-      for (let k = 0; k < 40; k++) { await sleep(1500); ahora = await estado(); if (ahora.dia > antes.dia && !ahora.ocupado) break; }
+      let ahora = antes, t0 = Date.now();
+      // El tope va generous: en esta maquina, con varias paginas abiertas, un dia simulado puede
+      // tardar 20 s o 100 s. Cortar por reloj corto daba FAIL de medicion, no del boton.
+      while (Date.now() - t0 < 120000) { await sleep(1000); ahora = await estado(); if (ahora.dia > antes.dia && !ahora.ocupado) break; }
+      const seg = Math.round((Date.now() - t0) / 1000);
       const ms = 0;
       const cavado = ahora.digs - antes.digs;
       const tierra = ahora.cavadas - antes.cavadas;
       console.log('   salto: ' + JSON.stringify(antes) + ' -> ' + JSON.stringify(ahora));
-      ok(ahora.dia > antes.dia, 'el boton +1 DIA pasa de dia: dia ' + antes.dia + ' -> ' + ahora.dia);
+      ok(ahora.dia > antes.dia, 'el boton +1 DIA pasa de dia: dia ' + antes.dia + ' -> ' + ahora.dia + ' (' + seg + ' s de simulacion)');
       ok(cavado > 0 && tierra > 0, 'y ese dia trabaja de verdad: ' + cavado + ' bloques cavados y ' + tierra + ' celdas abiertas, comida ' + antes.comida + '->' + ahora.comida);
-      ok(ahora.vel === antes.vel, 'al terminar devuelve la velocidad que habia (x' + antes.vel + ' antes, x' + ahora.vel + ' despues)');
-      ok(/\+1 DIA|\+1 DÍA/.test(ahora.boton) && !ahora.ocupado, 'y el boton queda libre con su etiqueta: ' + JSON.stringify(ahora.boton));
+      ok(!ahora.ocupado && ahora.vel === antes.vel && /\+1/.test(ahora.boton) && ahora.boton.indexOf('\u23f3') < 0,
+        'y al terminar lo deja todo como estaba: velocidad x' + antes.vel + ' -> x' + ahora.vel + ', boton ' + JSON.stringify(ahora.boton) + (ahora.ocupado ? ' SIGUE OCUPADO' : ''));
       await page3.screenshot({ path: 'screenshots/08-tiras-hud.png' });
       await page3.close();
       await page.screenshot({ path: 'screenshots/08-tiras-hud.png' });
