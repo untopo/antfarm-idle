@@ -2,6 +2,8 @@ node_modules/
 .cache/
 .npm/
 .local/
+.config/
+.sudo_as_admin_successful
 snapshots/
 backups/
 screenshots/
