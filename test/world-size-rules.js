@@ -81,6 +81,36 @@ check(render[2] >= render[0] * 0.9 && sim[2] >= sim[0] * 0.9, `el mapa grande ta
 check(render[0] + sim[0] < 5.0, `mundo pequeno completo (render+sim): ${(render[0] + sim[0]).toFixed(2)} ms (< 5 ms = sobra para 60fps)`);
 console.log(`     ratio BIG/SMALL: creacion ${(create[2] / create[0]).toFixed(2)}x · render ${(render[2] / render[0]).toFixed(2)}x · sim ${(sim[2] / sim[0]).toFixed(2)}x (el area pura pide ${(cells[2] / cells[0]).toFixed(2)}x)`);
 
+console.log('\n== 2b) el caché del suelo: repintado incremental vs mapa entero ==');
+run('topoCreateFreshWorld(96,48)');
+const fullMs = med(() => run('markSoilDirty(); rebuildSoilCache(false)'), 15);
+// una calada: 1 celda + sus 4 vecinas
+run('markSoilDirty(20,30)');
+const oneMs = med(() => run('markSoilDirty(20,30); soilCacheDirty=true; rebuildSoilCache(false)'), 15);
+console.log(`     BIG: mapa entero ${fullMs.toFixed(2)} ms · una calada ${oneMs.toFixed(3)} ms (5 celdas)`);
+check(oneMs < fullMs / 8, `repintar una calada cuesta ${Math.round(fullMs / Math.max(oneMs, 0.0001))}x menos que repintar el nido entero`);
+const antes = run('_soilFullRepaints');
+run('for(let r=20;r<24;r++) for(let c=20;c<24;c++) markSoilDirty(c,r)');
+run('rebuildSoilCache(false)');
+check(run('_soilCellRepaints') > 0 || run('_soilFullRepaints') > antes, `16 celdas sucias se pintan por celda (${run('_soilCellRepaints')} celdas repintadas)`);
+run('for(let r=2;r<40;r++) for(let c=2;c<90;c++) markSoilDirty(c,r)');
+const fullAntes = run('_soilFullRepaints');
+run('rebuildSoilCache(false)');
+check(run('_soilFullRepaints') === fullAntes + 1, `y a partir de ${run('SOIL_INCREMENTAL_MAX')} celdas se vuelve a pintar el mapa entero (umbral de sentido comun)`);
+// el estado tiene que quedar limpio: si no, la siguiente pinta se perderia
+run('markSoilDirty(40,25)'); run('rebuildSoilCache(false)');
+check(run('soilCacheDirty') === false && run('soilDirtyCells') === null, 'y tras repintar el estado queda limpio (nada pendiente)');
+// un cambio estructural sigue forzando el mapa entero
+const f2 = run('_soilFullRepaints'); run('markSoilDirty(); rebuildSoilCache(false)');
+check(run('_soilFullRepaints') === f2 + 1, 'markSoilDirty() sin celda = cambio estructural = mapa entero');
+// una pasada mini no puede comerse el lote pendiente del principal
+run('markSoilDirty(); rebuildSoilCache(false)');
+run('markSoilDirty(40,25)');
+const lote = run('soilDirtyCells ? soilDirtyCells.size : 0');
+run('rebuildSoilCache(true)');
+check(run('soilDirtyCells') !== null && run('soilDirtyCells.size') === lote,
+  `la pasada mini no se come el lote pendiente del principal (siguen ${run('soilDirtyCells.size')} celdas en cola)`);
+
 console.log('\n== 3) miel en tierra sin cavar NO esta almacenada ==');
 run('topoCreateFreshWorld(48,28)');
 const honey = run(`(function(){
@@ -117,6 +147,31 @@ const startRes = SIZES.map(([, c, r]) => {
 startRes.forEach((v, i) => console.log(`     ${SIZES[i][0].padEnd(6)} reserva ${v.res} 🍯 · mieles en el suelo ${v.foods} · obreras ${v.ants}`));
 check(startRes[0].res < startRes[2].res, `la reserva inicial sube con el tamano (${startRes.map(v => v.res).join(' -> ')})`);
 check(startRes[0].foods < startRes[2].foods, `la comida inicial del suelo sube con el tamano (${startRes.map(v => v.foods).join(' -> ')})`);
+
+console.log('\n== 4b) fundacion y reinas: las mismas reglas, traducidas al tamano ==');
+const prof = SIZES.map(([name, c, r]) => {
+  run(`topoCreateFreshWorld(${c},${r})`);
+  const p = run('sizeProfile()');
+  return { name, ...p, ants: run('workers.length'), queens: run('queens.length') };
+});
+prof.forEach(v => console.log(`     ${v.name.padEnd(6)} obreras fundadoras ${v.founderWorkers} · reinas admitidas ${v.maxQueens} · criado con ${v.ants} hormigas y ${v.queens} reina(s)`));
+check(prof[0].founderWorkers === 4 && prof[1].founderWorkers === 5 && prof[2].founderWorkers === 7,
+  `las obreras que nacen con el mapa escalan con la raiz del area (4 / 5 / 7)`);
+check(prof[0].maxQueens === 1 && prof[1].maxQueens === 2 && prof[2].maxQueens === 3,
+  `el nido sostiene 1 reina en 48x28, 2 en 64x36 y 3 en 96x48`);
+check(prof.every(v => v.ants === v.founderWorkers), `en los tres tamanos la colonia arranca con las obreras que manda el perfil`);
+check(prof.every(v => v.queens <= v.maxQueens), `y la fundacion no pasa del tope de reinas`);
+// el tope se aplica de verdad: meter reinas de mas y forzar la expulsion
+run('topoCreateFreshWorld(48,28)');
+const reinasAntes = run('queens.length');
+run(`for(let i=0;i<3;i++) queens.push(ensureQueenMeta({x:W/2+i*6,y:H/2,state:'GRÁVIDA',genome:makeGenome(),faction:0,age:0,progress:0,maxAge:DAY_LENGTH*10,health:100,eggsLaid:0,children:[],history:[]}));`);
+const expulsadas = run(`enforceQueenCap('prueba de tope')`);
+check(run('queens.length') === run('sizeProfile().maxQueens'),
+  `en 48x28, meter 3 reinas de mas deja el nido en ${run('queens.length')} (tope ${run('sizeProfile().maxQueens')})`);
+check(expulsadas === 3, `y se van 3 al enjambre, no se quedan invisibles en la cola (${expulsadas})`);
+check(run('pushEvent') !== undefined, `la salida se anuncia (hay evento, no silencio)`);
+run('topoCreateFreshWorld(96,48)');
+check(run('enforceQueenCap("BIG")') === 0, `en 96x48 3 reinas caben y no se va ninguna`);
 
 console.log('\n== 5) nombres random con patron propio de cada colonia ==');
 const nameInfo = run(`(function(){

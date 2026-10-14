@@ -134,6 +134,83 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok(spd.after === 32, 'y el juego acepta x32 (gameSpeed=' + spd.after + ')');
     await page.evaluate(() => setGameSpeed(1));
 
+    // --- el atajo incremental del cache del suelo tiene que dar los MISMOS pixeles que pintar todo ---
+    const cacheCheck = await page.evaluate(() => {
+      window.__med = a => { a = a.slice().sort((x, y) => x - y); return a[a.length >> 1]; };
+      const estaba = paused; paused = true;   // que nada se mueva entre las dos pasadas
+      const g0 = soilCacheCanvas.getContext('2d');
+      const region = (c0, r0) => new Uint8ClampedArray(g0.getImageData(c0 * CELL, r0 * CELL, CELL * 3, CELL * 3).data);
+      const hashRegion = (c0, r0) => {
+        const d = region(c0, r0);
+        let h = 2166136261;
+        for (let i = 0; i < d.length; i += 4) { h ^= d[i] + (d[i + 1] << 8) + (d[i + 2] << 16); h = Math.imul(h, 16777619) >>> 0; }
+        return h;
+      };
+      const diffContra = (A, B, w) => {
+        let n = 0; const pts = [];
+        for (let i = 0; i < A.length; i += 4) {
+          if (A[i] !== B[i] || A[i + 1] !== B[i + 1] || A[i + 2] !== B[i + 2] || A[i + 3] !== B[i + 3]) {
+            n++;
+            if (pts.length < 4) pts.push('px' + ((i / 4) % w) + ',' + Math.floor((i / 4) / w) + ' [' + [A[i], A[i + 1], A[i + 2]].join(',') + ']vs[' + [B[i], B[i + 1], B[i + 2]].join(',') + ']');
+          }
+        }
+        return { n, pts };
+      };
+      // una celda de tierra intacta, tres filas bajo la superficie, cerca del centro
+      let cc = null, rr = null;
+      for (let c = 4; c < COLS - 4 && cc === null; c++) for (let r = SURFACE_ROW + 3; r < ROWS - 3; r++) {
+        if (soil[r][c] === 1) { cc = c; rr = r; break; }
+      }
+      if (cc === null) return { skip: 'no hay tierra intacta donde probar' };
+      const x0 = Math.max(0, cc - 1), y0 = Math.max(0, rr - 1);
+      // Lote limpio: un rebuild entero deja atras cualquier cola pendiente de la siembra
+      markSoilDirty(); rebuildSoilCache(false);
+      soil[rr][cc] = 0; if (soilType[rr]) soilType[rr][cc] = 0;
+      markSoilDirty(cc, rr);
+      const pre = { lote: soilDirtyCells ? soilDirtyCells.size : String(soilDirtyCells), pintor: typeof paintCellActive, area: COLS * (ROWS - SURFACE_ROW) };
+      // para medir coste se limpia el estado: sin lote encolado y sin monticulos encima, que
+      // es el camino lento (la identidad de píxeles con monticulos ya se compruebo arriba)
+      const monticulos = mound.splice(0, mound.length);
+      const tiempos = [], condiciones = [];
+      for (let k = 0; k < 5; k++) {
+        const cc2 = 4 + k, rr2 = SURFACE_ROW + 3;
+        if (soil[rr2][cc2] === 1) { soil[rr2][cc2] = 0; if (soilType[rr2]) soilType[rr2][cc2] = 0; }
+        markSoilDirty(); rebuildSoilCache(false);    // estado neutro
+        markSoilDirty(cc2, rr2);
+        const cond = { atajo: soilIncrementalReady(false), lote: soilDirtyCells ? soilDirtyCells.size : String(soilDirtyCells), atlas: texSuperficiesReady, pintor: typeof paintCellActive };
+        const a0 = performance.now();
+        rebuildSoilCache(false);                     // <- aqui se prueba el atajo (una calada)
+        tiempos.push(performance.now() - a0);
+        condiciones.push(cond);
+      }
+      // para comparar coste se toma el MEJOR tiempo de cada camino, no la mediana: la mediana
+      // se contaminaba con un solo coleccionista de basura y volvia intermitente la asercion
+      const tA = Math.min(...tiempos);
+      const tA_med = __med(tiempos);   // la mediana es la que se ensena; el min, la que se compara
+      const hInc = hashRegion(x0, y0);
+      const A = region(x0, y0);
+      const grandes = [];
+      for (let k = 0; k < 5; k++) { markSoilDirty(); const b0 = performance.now(); rebuildSoilCache(false); grandes.push(performance.now() - b0); }
+      const tB = Math.min(...grandes);
+      monticulos.forEach(m => mound.push(m));
+      const hFull = hashRegion(x0, y0);
+      const B = region(x0, y0);
+      const d = diffContra(A, B, CELL * 3);
+      paused = estaba;
+      return { hInc, hFull, diff: d.n, pts: d.pts, cell: [cc, rr], monticulos: mound.length, tInc: tA, tMed: tA_med, tFull: tB, pre, condiciones };
+    });
+    if (cacheCheck.skip) console.log('   (salto la comprobacion del cache: ' + cacheCheck.skip + ')');
+    else {
+      ok(cacheCheck.hInc === cacheCheck.hFull && cacheCheck.diff === 0,
+        'el repintado incremental deja pixeles identicos al mapa entero (' + cacheCheck.diff + ' px distintos en 3x3 alrededor de [' + cacheCheck.cell + '], ' + cacheCheck.monticulos + ' monticulos' + (cacheCheck.diff ? ' :: ' + cacheCheck.pts.join(' ') : '') + ')');
+      // performance.now() redondea a ~0.1 ms y una calada cabe debajo: se dice en microsegundos
+      const fmt = (ms) => (ms < 0.05 ? 'por debajo del reloj del navegador (<50 µs)' : ms.toFixed(2) + ' ms');
+      const factor = cacheCheck.tInc < 0.05 ? null : Math.round(cacheCheck.tFull / cacheCheck.tInc);
+      console.log('   cache: ' + JSON.stringify(cacheCheck.pre) + ' · calada ' + cacheCheck.tInc.toFixed(3) + ' ms medida · mapa entero ' + cacheCheck.tFull.toFixed(2) + ' ms');
+      ok(cacheCheck.tInc < cacheCheck.tFull / 6,
+        'y de verdad: una calada repintada en ' + fmt(cacheCheck.tInc) + ' contra ' + fmt(cacheCheck.tFull) + ' del mapa entero' + (factor ? ' (x' + factor + ' mas barato)' : ' (la calada ni se puede medir con este reloj)') + ' [condiciones ' + JSON.stringify(cacheCheck.condiciones[0]) + ']');
+    }
+
     await page.screenshot({ path: 'screenshots/04-mundo-big.png' });
     ok(errs.length === 0, 'cero errores de JS en pestana normal' + (errs[0] ? ' :: ' + errs.slice(0, 2).join(' | ') : ''));
     const f404 = [...new Set(net)];

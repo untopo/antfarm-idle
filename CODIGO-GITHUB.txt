@@ -1,0 +1,13 @@
+# Codigo de dispositivo de GitHub
+
+1. Abre **https://github.com/login/device**
+2. Escribe:
+
+```
+   0E5C-7ACA
+```
+
+3. Nada mas. Yo estoy a la escucha en este momento y en cuanto entre, empujo el proyecto a tu cuenta y te dejo el enlace verificado.
+   (vale 15 minutos: emitido 19:11 UTC)
+
+Si te dice que el codigo ha caducado, recarga este fichero: lo reescribo con uno nuevo.

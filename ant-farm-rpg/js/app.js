@@ -30,7 +30,22 @@ window._topoDbg=()=>{ try{ return { day:(typeof day!=='undefined'?day:0), time:(
 function initSoilCache(){ const worldW=1024, worldH=576; // 64*16, 36*16 - no usar COLS antes de que exista
  soilCacheCanvas=document.createElement('canvas'); soilCacheCanvas.width=worldW; soilCacheCanvas.height=worldH; const c=soilCacheCanvas.getContext('2d'); if(c) c.imageSmoothingEnabled=false; soilCacheCtx=c; soilCacheDirty=true; }
 initSoilCache();
-function markSoilDirty(){ soilCacheDirty=true; _soilRev++; }
+let soilDirtyCells=null, _soilRepaints=0, _soilCellRepaints=0, _soilFullRepaints=0;
+const SOIL_INCREMENTAL_MAX=260; // mas celdas sucias que esto sale mas barato repintar el mapa entero
+// markSoilDirty()            -> cambio estructural: se repinta todo el nido
+// markSoilDirty(c,r)         -> se anade esa celda y sus 4 vecinas (el muro del tunel depende de ellas)
+function markSoilDirty(c,r){
+  _soilRev++; soilCacheDirty=true;
+  if(c===undefined||r===undefined){ soilDirtyCells=null; return; }   // estructural: mapa entero
+  if(soilDirtyCells===false) return;                                  // lote ya enclavado a mapa entero
+  if(soilDirtyCells===null) soilDirtyCells=new Set();
+  // el anillo entero (3x3): los azulejos del atlas se dibujan con 1 px de sangre sobre la vecina
+  // (x-1, CELL+2), asi que lo que se ve en el borde de esta celda lo pinta tambien la de al lado.
+  // Sin el anillo, el resultado por celdas no coincidia pixel a pixel con el mapa entero.
+  for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++) soilDirtyCells.add((c+dc)+','+(r+dr));
+  // Si el lote se pasa del umbral se queda en modo "todo" hasta que se pinte: sin reabrir la lista
+  if(soilDirtyCells.size>SOIL_INCREMENTAL_MAX){ soilDirtyCells=false; return; }
+}
 function bumpSoilRev(){ _soilRev++; }
 let lastUIUpdate=0, lastAntListUpdate=0, cachedAntCount=-1;
 // Topo 2026-10-14: el bucle moria cada frame con "Cannot set properties of null" porque
@@ -1303,6 +1318,41 @@ let pantryPos={x:CENTER_COL*CELL+8, y:(SURFACE_ROW+6)*CELL+8}; // despensa emerg
 function getPantryPos(){ return pantryPos; }
 // Topo: las reglas de inicio se traducen al tamaño elegido (64x36 = referencia 1.0)
 function worldAreaRatio(){ try{ return Math.max(0.35, Math.min(2.6, (COLS*ROWS)/2304)); }catch(e){ return 1; } }
+// Topo: las reglas del mapa se traducen a cada tamano, tambien la fundacion.
+// 48x28 = 0,58 del area de referencia | 64x36 = 1 | 96x48 = 2. Las obreras iniciales crecen
+// con la raiz del area (un mapa el doble de grande no duplica las manos: multiplica las galerias
+// que hay que atender) y las reinas con el area entera, porque cada reina pide camara propia.
+function sizeProfile(){
+  const a=worldAreaRatio();
+  return {
+    area: a,
+    founderWorkers: Math.max(4, Math.min(9, Math.round(5*Math.sqrt(a)))),
+    maxQueens: Math.max(1, Math.min(4, 1+Math.floor(a))),
+    broodSlots: Math.max(6, Math.min(12, Math.round(6*Math.sqrt(a))))
+  };
+}
+// Si nace/usurpa una reina por encima de lo que el nido sostiene, se va con tierra en la boca.
+// No se esconde: se cuenta. Y la que se va se va al enjambre, no al vacio.
+function enforceQueenCap(motivo){
+  const cap=sizeProfile().maxQueens;
+  let salidas=0;
+  while(queens.length>cap){
+    const i=queens.findIndex(q=>q!==queens[0] && !(society?.factions||[]).some(f=>f.leader===q.name && f.id===q.faction && f.members>2));
+    const q=queens[i<0?queens.length-1:i];
+    queens.splice(queens.indexOf(q),1);
+    salidas++;
+    const txt=`${q.name} vuela lejos: el nido de ${COLS}x${ROWS} solo sostiene ${cap} reinas (${motivo})`;
+    pushEvent('evo','🍯 ENJAMBRE '+txt.split(':')[0], txt);
+    notifyCanon('🍯 ENJAMBRE', txt, 5600);
+    try{ pushToast(q.x, q.y-18, '🍯 vuela','#c08060',3); }catch(e){}
+    try{ foods.push({x:q.x,y:q.y,type:'seed',amount:2,vy:-0.4,vx:(Math.random()-0.5)*0.8,born:time}); }catch(e){}
+  }
+  if(salidas){
+    try{ society.factions.forEach(f=>{ f.members=workers.filter(w=>w.faction===f.id).length + queens.filter(q=>q.faction===f.id).length; }); }catch(e){}
+    markSoilDirty();
+  }
+  return salidas;
+}
 function startReserveFood(){ return Math.max(5, Math.min(20, Math.round(12*worldAreaRatio()))); }
 function startSurfaceFood(){ return Math.max(2, Math.min(10, Math.round(5*worldAreaRatio()))); }
 function surfaceFoodCap(){ return Math.max(3, Math.min(14, Math.round(5*worldAreaRatio()*1.6))); }
@@ -1656,8 +1706,9 @@ function makeAnt(genome, pos=null, opts={}){
     parents: opts.parents||[], children:[], history:[], birthDay: day, deathDay:null }
 }
 if(_topoHasWorld){
-  for(let i=0;i<5;i++){
-    const off = (i-2)*26;
+  const _fp=sizeProfile();
+  for(let i=0;i<_fp.founderWorkers;i++){
+    const off = (i-(_fp.founderWorkers-1)/2)*26;
     workers.push(makeAnt(mutateGenome(queen.genome,0.18,0.6).genome, {x: CENTER_COL*CELL+8 + off + (Math.random()-0.5)*10, y: SURFACE_Y-6}));
   }
   workers.forEach((w,i)=> w.angle = (i*2.1) + Math.random()*0.6);
@@ -1696,8 +1747,9 @@ function topoCreateFreshWorld(cols, rows){
     queen=freshFounder({x:CENTER_COL*CELL+8, y:(SURFACE_ROW+8)*CELL+8, genome:makeGenome(), progress:0, state:'GRÁVIDA', age:0, maxAge: DAY_LENGTH*(14+Math.random()*5), generation:0, faction:0, health:100, eggsLaid:0, broodTended:0, children:[], history:[{day:0,time:0,msg:'👑 fundadora eclosiona - Día 0'}], parents:[]});
     queens=[queen]; queens.forEach(ensureQueenMeta);
     try{ if(society.factions[0]) society.factions[0].members=workers.length+1; }catch(e){}
-    for(let i=0;i<5;i++){
-      const off=(i-2)*26;
+    const _fp=sizeProfile();
+    for(let i=0;i<_fp.founderWorkers;i++){
+      const off=(i-(_fp.founderWorkers-1)/2)*26;
       workers.push(makeAnt(mutateGenome(queen.genome,0.18,0.6).genome, {x: CENTER_COL*CELL+8 + off + (Math.random()-0.5)*10, y: SURFACE_Y-6}));
     }
     workers.forEach((w,i)=> w.angle=(i*2.1)+Math.random()*0.6);
@@ -1986,6 +2038,7 @@ function updateQueen(dt){
             if(cand){
               let _qn1=genPersonalName({faction:cand.faction, role:'REINA', affinity:'NODRIZA', caste:'media', parents:[], genome:cand.genome, isQueen:true, rank:'LÍDER', ageDays:0, idCode:'Q'+(queens.length+1)+'-'+Math.random().toString(36).slice(2,4).toUpperCase()});
               queens.push(ensureQueenMeta({x:cand.x,y:cand.y, genome:cand.genome, progress:0, state:'GRÁVIDA', age:0, maxAge: getQueenMaxAge(), generation:gen+1, faction:cand.faction, health:100, name:_qn1.name, personalName:_qn1.name, nameMeaning:_qn1.meaning, nameStage:_qn1.stage, id:'Q'+Math.random().toString(36).slice(2,5).toUpperCase(), eggsLaid:0, children:[], history:[]}));
+              enforceQueenCap("se corona del bando de las nodrizas");
               workers.splice(workers.indexOf(cand),1);
               pushEvent('birth','¡Nodriza se transforma en reina!','Metamorfosis extrema por supervivencia');
       notifyCanon('👑 NODRIZA REINA', 'Una nodriza se transforma en reina por supervivencia', 5200);
@@ -2104,6 +2157,7 @@ if(workers.length < getMaxPopulation()){
             queens.push(ensureQueenMeta(newQueen));
             society.factions.find(f=>f.id===newQueen.faction).members++;
             pushToast(newQueen.x,newQueen.y-18,`👑 ${newQueen.name}`,'#ffcc00',3);
+            enforceQueenCap('nace de cría real');
           } else {
             const ant=makeAnt(b.genome, {x:queens[0].x+(Math.random()-0.5)*18, y:queens[0].y+(Math.random()-0.5)*10}, {faction: b.faction});
             // HERENCIA TERRARIA/REAL: las nuevas nacen con más info que las anteriores
@@ -2937,7 +2991,7 @@ function updateAnt(ant, dt){
       if(Math.random()<0.18) particles.push({x:tx,y:ty-8,vx:(Math.random()-0.5)*0.6,vy:-0.9,life:1,decay:0.03,color:'#ffcc00'});
       if(ant.digProgress>=ant.digNeeded){
         const _mt = (soilType[ant.digTarget.r]&&soilType[ant.digTarget.r][ant.digTarget.c])||1; if(_mt===7 && (gen<8 || !inventions.masonry)){ ant.digTarget=null; ant.digProgress=0; ant.state='EXPLORAR'; pushToast(ant.x,ant.y-10,'⛔ BEDROCK','#555'); return; }
-        soil[ant.digTarget.r][ant.digTarget.c]=0; if(soilType[ant.digTarget.r]) soilType[ant.digTarget.r][ant.digTarget.c]=0; markSoilDirty(); ant.digsDone++; digs++; colonyFitness+=0.35; if(digs%6===0) pushImportant('invention', `⛏ ${digs} bloques cavados`, `GEN${typeof gen!=='undefined'?gen:0} - ${workers.filter(w=>w.state==='CAVANDO').length} activas en [${ant.digTarget?ant.digTarget.c:''},${ant.digTarget?ant.digTarget.r:''}]`);
+        soil[ant.digTarget.r][ant.digTarget.c]=0; if(soilType[ant.digTarget.r]) soilType[ant.digTarget.r][ant.digTarget.c]=0; markSoilDirty(ant.digTarget.c,ant.digTarget.r); ant.digsDone++; digs++; colonyFitness+=0.35; if(digs%6===0) pushImportant('invention', `⛏ ${digs} bloques cavados`, `GEN${typeof gen!=='undefined'?gen:0} - ${workers.filter(w=>w.state==='CAVANDO').length} activas en [${ant.digTarget?ant.digTarget.c:''},${ant.digTarget?ant.digTarget.r:''}]`);
         // residuo real: la tierra excavada va a basurero, no desaparece
         if(Math.random()<0.52){ wastePiles.push({x:tx, y:ty, age:0, type:_mt}); if(wastePiles.length>24) wastePiles.shift(); }
         // cosecha de material según estrato
@@ -2954,7 +3008,7 @@ function updateAnt(ant, dt){
           const neigh=[[ -1,0],[1,0],[0,-1],[0,1]];
           for(let [dx,dy] of neigh) if(Math.random()<0.45){
             const nc=ant.digTarget.c+dx, nr=ant.digTarget.r+dy;
-            if(nr>=SURFACE_ROW&&nr<ROWS&&nc>=0&&nc<COLS&&soil[nr][nc]===1&&Math.random()<0.5){ soil[nr][nc]=0; if(soilType[nr]) soilType[nr][nc]=0; markSoilDirty(); }
+            if(nr>=SURFACE_ROW&&nr<ROWS&&nc>=0&&nc<COLS&&soil[nr][nc]===1&&Math.random()<0.5){ soil[nr][nc]=0; if(soilType[nr]) soilType[nr][nc]=0; markSoilDirty(nc,nr); }
           }
         }
         if(Math.random()<0.015 && countChambers()>4){
@@ -2963,7 +3017,7 @@ function updateAnt(ant, dt){
             const pick=empties[Math.floor(Math.random()*empties.length)];
             for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
               const nc=pick.c+dx, nr=pick.r+dy;
-              if(nr>=SURFACE_ROW&&nr<ROWS&&nc>=0&&nc<COLS) if(Math.random()<0.6){ soil[nr][nc]=1; if(soilType[nr]) soilType[nr][nc]= (Math.random()<0.6?4:2); markSoilDirty(); }
+              if(nr>=SURFACE_ROW&&nr<ROWS&&nc>=0&&nc<COLS) if(Math.random()<0.6){ soil[nr][nc]=1; if(soilType[nr]) soilType[nr][nc]= (Math.random()<0.6?4:2); markSoilDirty(nc,nr); }
             }
             accidents++; pushEvent('accident',`¡DERRUMBE en [${pick.c},${pick.r}]!`, `Cámaras: ${countChambers()}`);
             notifyCanon('💥 DERRUMBE', `Túnel colapsa en [${pick.c},${pick.r}]`, 5000); pushToast(pick.c*CELL,pick.r*CELL,'💥 DERRUMBE','#ff3b30',2.8);
@@ -3022,7 +3076,7 @@ function updateAnt(ant, dt){
             return;
           }
           ant.buildProgress=0;
-          soil[r][c]=1; markSoilDirty();
+          soil[r][c]=1; markSoilDirty(c,r);
           // material usado: si son inteligentes usan piedra/arcilla/madera según stock
           let usedType=1;
           if(inventions.wood && worldMaterials.wood>0 && ant.traits.construccion>62 && Math.random()<0.28){ worldMaterials.wood--; usedType=1; decoSet.add(dkey(c,r)); }
@@ -3035,7 +3089,7 @@ function updateAnt(ant, dt){
           // ingeniera decora: solo si han aprendido (gen>=3, IQ>130, cámaras>=3) y por gusto cuidado alto
           const canDecorate = gen>=3 && colonyIQ>132 && countChambers()>=4; // realista: decorar no desde GEN2
           if(canDecorate && ant.traits.cuidado>62 && Math.random() < 0.09 + ant.traits.cuidado*0.002){
-            decoSet.add(dkey(c,r)); markSoilDirty();
+            decoSet.add(dkey(c,r)); markSoilDirty(c,r);
             // bonus extra por embellecer
             colonyFitness+=0.12; ant.fitness+=0.18;
           }
@@ -3065,7 +3119,7 @@ function updateAnt(ant, dt){
             if(d<bestD && d<28){ bestD=d; best={c:nc,r:nr}; }
           }
           if(best){
-            soil[best.r][best.c]=1; soilType[best.r][best.c]=1; markSoilDirty();
+            soil[best.r][best.c]=1; soilType[best.r][best.c]=1; markSoilDirty(best.c,best.r);
             ant.food=null; ant.state='EXPLORAR'; ant.blocked=0;
             for(let i=0;i<5;i++) particles.push({x:best.c*CELL+8,y:best.r*CELL+8,vx:(Math.random()-0.5)*1,vy:-0.4,life:0.6,decay:0.04,color:'#6b3a1f'});
             pushEvent('build',`${ant.id} rellena [${best.c},${best.r}] con tierra (Terraria)`, `Reconstrucción - GEN${gen}`);
@@ -3236,12 +3290,7 @@ function drawPixelRect(x,y,w,h,fill,stroke){
 // adjust helper defined near renderLoop
 
 // ===== CACHE DE SUELO - solo se redibuja cuando cambia (cavar/construir) =====
-function rebuildSoilCache(isMini){
-  if(!soilCacheCtx) return;
-  isMini = isMini===true;
-  soilCacheCtx.clearRect(0,0,W,H);
-  let cStart=0,cEnd=COLS,rStart=SURFACE_ROW,rEnd=ROWS; // cache usa mapa completo
-  for(let r=rStart;r<rEnd;r++) for(let c=cStart;c<cEnd;c++){
+function paintCacheCell(c,r,isMini){
     const x=c*CELL, y=r*CELL;
     if(soil[r][c]===1){
       const depth=r-SURFACE_ROW;
@@ -3306,8 +3355,107 @@ function rebuildSoilCache(isMini){
       soilCacheCtx.fillStyle='rgba(255,255,255,0.45)'; soilCacheCtx.fillRect(x+4,y+4, CELL-8,1);
       if(!up){ soilCacheCtx.fillStyle='rgba(255,255,255,0.15)'; soilCacheCtx.fillRect(x+2,y+2,2,2); }
     }
+}
+
+// --- repintado incremental: lo usa CUALQUIER pintor que este en pie (procedural o atlas) ---
+// paintCellActive cambia cuando el override del atlas entra en juego; asi el atajo no depende de
+// que version de rebuildSoilCache sea la ultima definida (antes pasaba que el override se comia
+// el repintado por celdas y cada calada volvia a costar un mapa entero).
+let paintCellActive=null, _soilSeason=0, _soilWet=false, _soilIncWarned=0;
+function soilIncrementalReady(isMini){
+  return !isMini && !!paintCellActive && !!soilDirtyCells && soilDirtyCells!==false
+    && soilDirtyCells.size>0 && soilDirtyCells.size*6 < COLS*(ROWS-SURFACE_ROW);
+}
+function soilRepaintDirtyCells(){
+  // Topo: se repinta el lote, no el mapa. Geometria delicada: cada azulejo del atlas se dibuja con
+  // 1 px de sangre sobre la vecina (x-1 .. CELL+2), y en un rebuild completo la sangre de la celda
+  // de la derecha es la que gana en el borde. Para que el resultado sea pixel a pixel el mismo:
+  //   - se pinta en orden de fila, como el mapa completo;
+  //   - se pinta UNA celda de holgura alrededor del lote (es la que gana en los bordes del lote);
+  //   - se recorta a 1 px mas alla del lote: la sangre de la celda de holgura no puede manchar
+  //     lo que le pertenece a la siguiente, que no esta en juego.
+  const cells=[...soilDirtyCells];
+  let minC=COLS,minR=ROWS,maxC=-1,maxR=-1;
+  for(const key of cells){
+    const q=key.split(','), c=+q[0], r=+q[1];
+    if(r<SURFACE_ROW||r>=ROWS||c<0||c>=COLS) continue;
+    if(c<minC)minC=c; if(c>maxC)maxC=c; if(r<minR)minR=r; if(r>maxR)maxR=r;
   }
-  soilCacheDirty=false;
+  if(maxC<0){ soilDirtyCells=null; soilCacheDirty=false; return []; }
+  const g=soilCacheCtx;
+  const pc0=Math.max(0,minC-1), pc1=Math.min(COLS-1,maxC+1);
+  const pr0=Math.max(SURFACE_ROW,minR-1), pr1=Math.min(ROWS-1,maxR+1);
+  g.save();
+  g.beginPath();
+  g.rect(minC*CELL-1, minR*CELL-1, (maxC-minC+1)*CELL+2, (maxR-minR+1)*CELL+2);
+  g.clip();
+  for(let r=pr0;r<=pr1;r++) for(let c=pc0;c<=pc1;c++) paintCellActive(c,r);
+  g.restore();
+  const n=(pc1-pc0+1)*(pr1-pr0+1);
+  soilDirtyCells=null; soilCacheDirty=false; _soilRepaints++; _soilCellRepaints+=n;
+  return cells;
+}
+function soilRepaintMoundsOver(cells){
+  // los monticulos y charcos se dibujan ENCIMA del cache: si alguna celda tocada llevaba uno,
+  // hay que volver a ponerlo o desaparecería al cavar al lado
+  if(!cells || !cells.length || !mound || !mound.length) return;
+  const touched=new Set(cells);
+  for(const m of mound){
+    const mc=Math.floor(m.x/CELL), mr=Math.floor(m.y/CELL);
+    let toca=false;
+    for(let dc=-1;dc<=1 && !toca;dc++) for(let dr=-1;dr<=1 && !toca;dr++) toca=touched.has((mc+dc)+','+(mr+dr));
+    if(toca) soilDrawMoundTile(m);
+  }
+}
+function soilDrawMoundTile(m){
+  // igual que el lazo original: si un monticulo esta raro, se omite ese, no se abandona el lote
+  try{
+    const mx=Math.floor(m.x/16)*16, my=Math.floor(m.y/16)*16;
+    if(texSuperficiesReady){
+      const src = m.isPuddle ? TEX_MAP.puddle : TEX_MAP.mound;
+      soilCacheCtx.drawImage(texSuperficies, src.sx, src.sy, src.sw, src.sh, mx-0.5, my-0.5, CELL+1, CELL+1);
+    } else {
+      soilCacheCtx.fillStyle = m.isPuddle ? 'rgba(90,150,220,0.55)' : 'rgba(120,80,40,0.7)';
+      soilCacheCtx.fillRect(mx,my,CELL,CELL);
+    }
+  }catch(e){}
+}function soilDrawMoundTile(m){
+  // igual que el lazo original: si un monticulo esta raro, se omite ese y no se abandona el lote
+  try{
+    const mx=Math.floor(m.x/16)*16, my=Math.floor(m.y/16)*16;
+    if(texSuperficiesReady){
+      const src = m.isPuddle ? TEX_MAP.puddle : TEX_MAP.mound;
+      soilCacheCtx.drawImage(texSuperficies, src.sx, src.sy, src.sw, src.sh, mx-0.5, my-0.5, CELL+1, CELL+1);
+    } else {
+      soilCacheCtx.fillStyle = m.isPuddle ? 'rgba(90,150,220,0.55)' : 'rgba(120,80,40,0.7)';
+      soilCacheCtx.fillRect(mx,my,CELL,CELL);
+    }
+  }catch(e){}
+}
+function rebuildSoilCache(isMini){
+  if(!soilCacheCtx) return;
+  isMini = isMini===true;
+  // Topo: repintado incremental. Cavar un bloque no puede costar un mapa entero: si lo que
+  // cambio es una parte pequena del nido, se repintan solo esas celdas y sus vecinas (los muros
+  // de tunel se dibujan segun lo que tienen alrededor). Si el cambio es estructural (nacer el
+  // mundo, cargar partida, cambiar de piel) se pinta todo, como siempre.
+  paintCellActive = function(c,r){ paintCacheCell(c,r,isMini); };
+  if(soilIncrementalReady(isMini)){
+    try{
+      const cells=soilRepaintDirtyCells();
+      if(!isMini) soilRepaintMoundsOver(cells);
+      return;
+    }catch(e){ /* si algo huele mal, se pinta el mapa entero: nunca un cache a medias */
+      if(DEBUG_TOPO) console.warn('[SOIL] repintado incremental fallido, pintando todo:', e.message);
+      soilDirtyCells=null;
+    }
+  }
+  soilCacheCtx.clearRect(0,0,W,H);
+  for(let r=SURFACE_ROW;r<ROWS;r++) for(let c=0;c<COLS;c++) paintCacheCell(c,r,isMini);
+  // el lote pendiente del cache principal NO se lo come una pasada mini (mini pinta el mismo
+  // lienzo sin microdetalles; si consumiera la lista, la siguiente calada no se repintaria)
+  if(!isMini){ soilCacheDirty=false; soilDirtyCells=null; }
+  _soilRepaints++; _soilFullRepaints++;
 }
 // === TEXTURAS DEFINITIVAS 01 - SUPERFICIES ATLAS ===
 const texSuperficies = new Image();
@@ -3353,17 +3501,7 @@ const PISOS_MAP={
 
 // Override rebuildSoilCache to use atlas when ready
 const _origRebuildSoilCache = rebuildSoilCache;
-rebuildSoilCache = function(){
-  if(!soilCacheCtx) return;
-  if(!texSuperficiesReady){
-    return _origRebuildSoilCache();
-  }
-  soilCacheCtx.clearRect(0,0,W,H);
-  // need imageSmoothing false for pixel
-  soilCacheCtx.imageSmoothingEnabled=false;
-  const _cacheSeason=(()=>{ try{ return getCalendarData().seasonIdx|0; }catch(e){ return 0; } })();
-  const _cacheWet=(()=>{ try{ return !!(weather && (weather.type==='rain'||weather.type==='storm')); }catch(e){ return false; } })();
-  for(let r=SURFACE_ROW;r<ROWS;r++) for(let c=0;c<COLS;c++){
+function paintCacheCellTextured(c,r){
     const x=c*CELL, y=r*CELL;
     if(soil[r][c]===1){
       const depth=r-SURFACE_ROW;
@@ -3373,7 +3511,7 @@ rebuildSoilCache = function(){
       // Platformer side view: estaciones + estados intermedios (humedo/seco/helado) - vista lateral con pasto arriba
       // Topo: estacion y clima valen para TODO el mapa - antes se leian por celda (getCalendarData
       // armando cadenas 4608 veces) y por eso reconstruir el cache costaba 2.4 ms en BIG.
-      const _season=_cacheSeason, _isWet=_cacheWet;
+      const _season=_soilSeason, _isWet=_soilWet;
       // LÓGICA GRASS REALISTA: solo pasto si está en contacto directo con aire libre (cielo o hueco). Si está cubierto, es tierra pelada.
       const _isExposed = (r===SURFACE_ROW) || (r>0 && soil[r-1] && soil[r-1][c]===0);
       const _isSurfaceFull = (r===SURFACE_ROW) && _isExposed; // full grass for top surface
@@ -3445,14 +3583,36 @@ rebuildSoilCache = function(){
         if(right) soilCacheCtx.fillRect(x+CELL-3,y,3,CELL);
       }
     }
+
+}
+
+rebuildSoilCache = function(isMini){
+  if(!soilCacheCtx) return;
+  if(!texSuperficiesReady){
+    return _origRebuildSoilCache(isMini);
   }
+  paintCellActive = paintCacheCellTextured;
+  _soilSeason=(()=>{ try{ return getCalendarData().seasonIdx|0; }catch(e){ return 0; } })();
+  _soilWet=(()=>{ try{ return !!(weather && (weather.type==='rain'||weather.type==='storm')); }catch(e){ return false; } })();
+  // atajo: una calada repinta 5 celdas, no las 4608 del mapa
+  if(soilIncrementalReady(isMini)){
+    try{
+      const cells=soilRepaintDirtyCells();
+      soilRepaintMoundsOver(cells);
+      return;
+    }catch(e){
+      if(_soilIncWarned<3){ _soilIncWarned++; console.warn('[SOIL] repintado por lotes fallido, pintando el mapa entero:', e.message); }
+      soilDirtyCells=null;
+    }
+  }
+  soilCacheCtx.clearRect(0,0,W,H);
+  // need imageSmoothing false for pixel
+  soilCacheCtx.imageSmoothingEnabled=false;
+  for(let r=SURFACE_ROW;r<ROWS;r++) for(let c=0;c<COLS;c++) paintCacheCellTextured(c,r);
   // draw puddles/mounds atlas on top
-  for(let m of mound){
-    const mx=Math.floor(m.x/16)*16, my=Math.floor(m.y/16)*16;
-    const src = m.isPuddle ? TEX_MAP.puddle : TEX_MAP.mound;
-    try{ soilCacheCtx.drawImage(texSuperficies, src.sx, src.sy, src.sw, src.sh, mx-0.5, my-0.5, CELL+1, CELL+1); }catch(e){}
-  }
-  soilCacheDirty=false;
+  for(const m of mound) soilDrawMoundTile(m);
+  soilCacheDirty=false; soilDirtyCells=null;
+  _soilRepaints++; _soilFullRepaints++;
 };
 tlog('[TEX] superficies override instalado');
 
@@ -5213,6 +5373,7 @@ function tickStep(dt){
           if(cand){
             let _qn3=genPersonalName({faction:cand.faction, role:'REINA', affinity:'NODRIZA', caste:'media', parents:[], genome:cand.genome, isQueen:true, rank:'LÍDER', ageDays:0, idCode:'Q'+(queens.length+1)+'-'+Math.random().toString(36).slice(2,4).toUpperCase()});
               queens.push(ensureQueenMeta({x:cand.x,y:cand.y, genome:cand.genome, progress:0, state:'GRÁVIDA', age:0, maxAge: getQueenMaxAge(), generation:gen+1, faction:cand.faction, health:85, name:_qn3.name, personalName:_qn3.name, nameMeaning:_qn3.meaning, nameStage:_qn3.stage, id:'Q'+Math.random().toString(36).slice(2,5).toUpperCase(), eggsLaid:0, children:[], history:[]}));
+              enforceQueenCap("se corona del bando de las nodrizas");
             workers.splice(workers.indexOf(cand),1);
             if(queens.length>0) queen=queens[0];
             pushEvent('birth','👑 '+cand.id+' se convierte en reina (rescate)','Última reina muerta → nodriza asciende');
@@ -6006,7 +6167,7 @@ function setGameSpeed(n){
   syncCorner(N);
   if(N>1) pushToast(W/2, H/2-18, '⚡ x'+N, N>=16?'#ff9a3c':(N>=8?'#b47aff':(N===4?'#ff3b30':'#ffcc00')),1.2);
   else pushToast(W/2, H/2-18, '▶ x1','#8a7a5a',0.9);
-  try{ saveIfChanged(); }catch(e){}
+  try{ if(typeof serializeSave==='function') serializeSave(true); }catch(e){}
 }
 document.getElementById('btnTurbo').onclick=()=>{
   const idx=SPEED_STEPS.indexOf(gameSpeed);
@@ -6061,26 +6222,33 @@ function passDays(nDays=1){
   const prevSpeed = gameSpeed;
   const wasPaused = paused;
   paused=false;
+  // El progreso de cada calada se multiplica por gameSpeed (linea ~2989), no por dt. Si el salto
+  // acelera solo el reloj, las obreras trabajan a x1 durante un dia simulado y no abren nada:
+  // por eso el fast-forward pone la velocidad de verdad y la devuelve al terminar.
+  gameSpeed=16;
   // Desactivar render para ir rápido, solo lógica
   let steps=0;
-  const maxStepsPerFrame = 12; // para no congelar UI
+  let _ffWarned=false;
+  const maxStepsPerFrame = 12; // para no congelar la interfaz
   function fastStep(){
     let inner=0;
     while(time < targetTime && inner < maxStepsPerFrame){
       // dt como en el loop normal pero a x64
       const dtMs = 16; // aprox 60fps
-      let dt=dtMs*0.06 * 16; // x16 base para no desbordar, subdividido por maxStep
-      // Usar el update real del juego si existe
-      if(typeof updateWorld==='function'){
-        updateWorld(dt);
-      } else {
-        // fallback: avanzar tiempo y simular un poco
-        time += dt;
-        // Simular crecimiento mínimo si no hay updateWorld
-        for(let pl of plants) if(pl.growth<1) pl.growth = Math.min(1, pl.growth + 0.00012*dt);
+      let dt=dtMs*0.06 * 16; // x16 base para no desbordar
+      // Topo: simulacion de verdad, el MISMO subdivide-pasos del bucle principal sin render.
+      // Antes esto llamaba a tickStep(dt) del tiron: el reloj avanzaba pero cada hormiga solo
+      // recibia un golpe de progreso por frame, o sea un dia saltado no excavaba nada.
+      const _ffMax=Math.max(6, 28/Math.ceil(16/4));
+      let _ffSteps=0;
+      try{
+        while(dt>0.001 && _ffSteps<60){ const _s=Math.min(dt,_ffMax); tickStep(_s); dt-=_s; _ffSteps++; }
+        if(_ffSteps>=60 && dt>0.001) time+=dt;
       }
-      time += dt*0.25; // pequeño extra para llegar a target
-      if(time > targetTime) time = targetTime;
+      catch(e){
+        if(!_ffWarned){ _ffWarned=true; console.warn('[FF] tickStep fallo, adelantando solo el reloj:', e.message); }
+        time += dt;
+      }
       inner++; steps++;
     }
     // Actualizar UI cada frame
@@ -6091,9 +6259,13 @@ function passDays(nDays=1){
       // Fin
       _fastForwarding=false;
       if(btn){ btn.textContent='⏩ +1 DÍA'; btn.disabled=false; btn.style.opacity='1'; }
-      gameSpeed=prevSpeed; if(wasPaused) paused=true;
-      pushToast(W/2, H/2-10, '✅ +1 DÍA completado', '#2de67a', 1.2);
-      pushEvent('evo','⏩ +1 DÍA real simulado', 'Día '+Math.floor(time/DAY_LENGTH)+' - hormigas trabajaron el día entero');
+      // Solo devuelvo la velocidad si el salto la sigue teniendo: si el jugador cambio de
+      // velocidad MIENTRAS saltaba el dia, gana la eleccion del jugador, no mi prevSpeed.
+      if(gameSpeed===16) gameSpeed=prevSpeed;
+      if(wasPaused) paused=true;
+      try{ if(typeof serializeSave==='function') serializeSave(true); }catch(e){}
+      pushToast(W/2, H/2-10, '✅ +1 DÍA simulado', '#2de67a', 1.2);
+      pushEvent('evo','⏩ +1 DÍA simulado', 'Día '+Math.floor(time/DAY_LENGTH)+' - '+(typeof digs!=='undefined'?digs:'0')+' bloques cavados en total');
       markSoilDirty();
       if(typeof drawFarm==='function') try{ drawFarm(document.getElementById('farmCanvas').getContext('2d'), W, H, false); }catch(e){}
     }

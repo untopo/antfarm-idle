@@ -3,7 +3,7 @@
 # Uso: bash test/run-all.sh
 cd "$(dirname "$0")/.." || exit 1
 fail=0
-for t in create-farm-flow world-size-rules save-roundtrip reload-simulation; do
+for t in no-orphans create-farm-flow world-size-rules save-roundtrip reload-simulation; do
   printf '\n=== test/%s.js ===\n' "$t"
   if node "test/$t.js" > /tmp/_t.out 2>&1; then
     tail -n 3 /tmp/_t.out

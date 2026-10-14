@@ -61,6 +61,12 @@ node test/browser-smoke.js    # solo el navegador real (creación, iframe sandbo
 y `world-frame-driver.js` son para mirar de dónde viene el coste (la fila "crear mundo (todo)" imprime
 negativos por cómo mide: ignórala, usa "crear mundo (base)").
 
+## Ver el juego publicado en vivo
+
+`bash scripts/deploy-live.sh vercel` sube una copia idéntica al repo y devuelve un enlace público en 5 segundos;
+`bash scripts/deploy-live.sh tunnel` abre un enlace sin ninguna cuenta. Las comparativas, los límites de 2026
+y qué hace cada plan están en [docs/PUBLICAR.md](docs/PUBLICAR.md).
+
 ## Kit de recuperación (por qué existe esto)
 
 El 2026-10-14 el espacio de trabajo volvió solo a una revisión anterior a mitad de sesión y se perdió

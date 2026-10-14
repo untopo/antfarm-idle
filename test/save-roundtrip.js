@@ -146,7 +146,8 @@ const getVars = () => run('({soil,soilType,water,fertility,plants,hiddenRewards,
 try {
   w.topoCreateFreshWorld(48, 28);
   let v = getVars();
-  if (v.workers.length !== 5) fail('mundo fresco: esperada 5 obreras, hay ' + v.workers.length); else ok('mundo fresco 48x28 · 5 obreras · reina ' + (v.queen ? v.queen.name : 'null'));
+  const esperado = run('sizeProfile().founderWorkers');
+  if (v.workers.length !== esperado) fail(`mundo fresco: esperadas ${esperado} obreras (perfil 48x28), hay ` + v.workers.length); else ok(`mundo fresco 48x28 · ${esperado} obreras (lo que manda el tamano) · reina ` + (v.queen ? v.queen.name : 'null'));
 
   run('for(let i=0;i<7;i++){ soil[8][10+i]=0; soilType[8][10+i]=1; } water[8][10]=0.5; digs=42; colonyFood=9; gen=2;');
   v = getVars();
@@ -183,7 +184,7 @@ try {
   if (v.W !== 48 * 16 || v.H !== 28 * 16) fail('W/H no recalculados: ' + v.W + 'x' + v.H); else ok('lienzo redimensionado a ' + v.W + 'x' + v.H);
   if (v.soil.length !== 28 || v.soil[0].length !== 48) fail('soil restaurado con forma ' + v.soil.length + 'x' + (v.soil[0] ? v.soil[0].length : '?'));
   if (v.soil[8].filter(x => x === 0).length !== carved) fail('túneles perdidos: ' + v.soil[8].filter(x => x === 0).length + ' vs ' + carved); else ok('túneles restaurados (' + carved + ' celdas abiertas en la fila 8)');
-  if (v.workers.length !== 5) fail('obreras tras cargar: ' + v.workers.length); else ok('5 obreras restauradas');
+  if (v.workers.length !== run('sizeProfile().founderWorkers')) fail('obreras tras cargar: ' + v.workers.length); else ok(v.workers.length + ' obreras restauradas (el perfil del mapa)');
   if (!v.queen) fail('queen sigue null tras cargar (crash clásico de renderLoop)'); else ok('reina restaurada: ' + (v.queen.name || v.queen.id));
   if (v.digs !== 42) fail('digs no restaurado: ' + v.digs);
   if (v.colonyFood !== 9) fail('colonyFood no restaurado: ' + v.colonyFood);
@@ -237,9 +238,9 @@ try {
   run("soil=[]; workers=[]; queens=[]; queen=null; _topoHasWorld=false; hiddenRewards=[]; foods=[];");
   if (!w.deserializeSave()) { console.log('FAIL segunda carga (BIG) no arrancó'); process.exitCode = 1; }
   else {
-    const v = run("({w:workers.length, q:!!queen, t:soil.length, cols:COLS, tr:hiddenRewards.length})");
-    const good = v.w === 5 && v.q && v.t === 48 && v.cols === 96 && v.tr >= 10;
-    console.log((good ? 'ok   ' : 'FAIL ') + `re-carga BIG 96x48: ${v.w} obreras · reina ${v.q ? 'sí' : 'NO'} · ${v.t} filas · ${v.tr} tesoros`);
+    const v = run("({w:workers.length, q:!!queen, t:soil.length, cols:COLS, tr:hiddenRewards.length, sp:sizeProfile().founderWorkers, cap:sizeProfile().maxQueens})");
+    const good = v.w === v.sp && v.q && v.t === 48 && v.cols === 96 && v.tr >= 10;
+    console.log((good ? 'ok   ' : 'FAIL ') + `re-carga BIG 96x48: ${v.w} obreras (perfil ${v.sp}) · reina ${v.q ? 'sí' : 'NO'} · ${v.t} filas · ${v.tr} tesoros`);
     if (!good) process.exitCode = 1;
   }
 } catch (e) { console.log('FAIL test extra: ' + e.message); process.exitCode = 1; }

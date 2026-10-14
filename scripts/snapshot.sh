@@ -55,7 +55,7 @@ if [ "$FULL" = "--full" ]; then
   tar czf "$FULLF" --exclude='./node_modules' --exclude='./.git' --exclude='./.cache' --exclude='./.npm' \
       --exclude='./.config' --exclude='./.local' --exclude='./snapshots' --exclude='./backups' \
       --exclude='./screenshots' --exclude='./Unselected files' --exclude='./image-search' \
-      --exclude='./dist' .
+      --exclude='./dist' --exclude='./tools' .
   ( cd snapshots && sha256sum "$(basename "$CODE")" "$(basename "$BUNDLE")" "$(basename "$FULLF")" ) > "$SHA"
 else
   ( cd snapshots && sha256sum "$(basename "$CODE")" "$(basename "$BUNDLE")" ) > "$SHA"

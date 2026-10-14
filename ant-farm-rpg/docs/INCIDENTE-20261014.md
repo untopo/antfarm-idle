@@ -88,3 +88,76 @@ navegador real). Un cambio que vuelva a colgar el reloj se detecta en el primer 
 
 Paquete de publicación: `bash scripts/pack-itch.sh` deja `dist/antfarm-itch-<fecha>.zip` con
 `index.html` en la raíz (lo que espera itch.io), verificado byte a byte contra el repo antes de entregar.
+
+
+## 3ª parte: lo que se recuperó (y el guard que lo vigila)
+
+Dos tardes de reconstrucción sobre lo que se perdió con la reversión del `index.html`:
+
+- **x32 y x64** de vuelta en las dos filas de velocidad, y `setGameSpeed` repintando por patrón de
+  id. `⚡ Turbo` cicla 1·2·4·8·16·32·64.
+- **Obreras y reinas según el mapa** (`sizeProfile()`): nacen 4 / 5 / 7 obreras en 48×28, 64×36 y
+  96×48, y el nido admite 1 / 2 / 3 reinas. Por encima del tope la reina de más **se va al enjambre**
+  con aviso visible, no se queda invisible en una cola.
+- **Repintado por lotes del caché de suelo**: una calada repinta el lote (más una celda de holgura y
+  recorte al borde del lote) en vez de las 4608 celdas del BIG. Medido en el navegador real:
+  **0,10 ms frente a 19,20 ms** (x192), y `test/browser-smoke.js` exige que los píxeles del lote
+  sean **idénticos** a los de un reconstruido completo (0 px de diferencia, con los montículos de
+  tierra por delante). El orden de pintado y la sangre de 1 px del atlas son lo que hace que cuadre.
+- **Paquete y enlace**: `scripts/deploy-live.sh` (Vercel sin cuenta / túnel / `--prod`) y
+  `scripts/pack-itch.sh`. Los 13,3 MB de texturas que el juego nunca pide se fueron a
+  `assets/_archivo/` (movidos, no borrados, con su explicación) y quedan fuera de todo paquete.
+
+### El hallazgo feo que paró el intento anterior
+
+Al mover el atajo al pintor del atlas apareció un `ReferenceError` **dentro** del `try` del
+`rebuildSoilCache` reasignado: una edición previa con script se había llevado por delante las
+definiciones de `soilRepaintMoundsOver()` y `soilDrawMoundTile()`, dejando las llamadas. El `catch`
+se comía el error y cada calada volvía al camino lento, con la suite entera en verde. Dos lecciones:
+
+1. un `catch` que avisa *una sola vez* convierte un fallo permanente en silencio permanente; ahora
+   avisa hasta tres y el contador se ve en `?debug=1`;
+2. `test/no-orphans.js` recorre `app.js` y exige que **todo ayudante de la casa que se llame esté
+   definido** en el propio fichero (ignora CSS dentro de plantillas y sondas `typeof X==='function'`).
+   Escribiéndolo salieron tres casos más: `saveIfChanged()` llamado desde `setGameSpeed` (la
+   velocidad nunca se guardaba → ahora `serializeSave(true)`) y el botón «+1 día», que llamaba a un
+   `updateWorld()` inexistente: el salto de día **solo adelantaba el reloj** mientras el aviso decía
+   que las hormigas habían trabajado. Hoy el salto corre `tickStep()` de verdad, guarda la partida al
+   terminar y el aviso cuenta los bloques cavados.
+
+Queda pendiente y anotado: `#btnDay1`, `#hudToggle` y `wireChromeUI()` apuntan al **HUD de tiras**
+(`.hud-strips`, `#dayControls`, `#cornerControls`), cuyas reglas de estilo siguen vivas en
+`css/style.css` con `display:none !important` a la espera del markup. Sin ese HUD el botón de +1 día
+no tiene dónde estar: es el siguiente bloque de trabajo.
+
+
+### 4ª parte (madrugada del 15): el «+1 día» ya excava, y por que no lo hacía
+
+Causa real, leída en `js/app.js:2989`: el progreso de cada calada se multiplica por `gameSpeed`,
+**no por `dt`**. El fast-forward aceleraba `dt` y dejaba `gameSpeed=1`, así que las obreras recibían
+un golpe de progreso por *frame* durante un día simulado: el reloj corría, el estómago se vaciaba y
+la tierra no se movía. Arreglado en dos puntos: `passDays` pone `gameSpeed=16` mientras salta (y lo
+devuelve solo si el jugador no lo cambió durante el salto) y subdivide `dt` con el mismo `maxStep`
+del bucle principal en vez de dar un bocanada. Medido en Chrome real, día saltado con granja mediana:
+antes `celdas abiertas 27 -> 27` y `digs 0`; ahora `27 -> 28..33` y `digs 1..12` según la partida.
+No se ha tocado el equilibrio: si un día saltado debe parecerse más a un día a x16, eso es balance y
+va con las tiras del HUD.
+
+### 5ª parte: el sandbox se rebobinó y mintio dos veces
+
+A las 18:15 el entorno volvió a un estado anterior: se fueron dos `commit` de `ant-farm-rpg/.git`,
+la carpeta `.deploy/` y `dist/live/`, y sobre todo `node_modules` + las librerías de sistema del
+Chrome. Con eso `bash test/run-all.sh` dijo **TODO VERDE en 8 segundos** cuando el test de navegador
+tarda ~30: sin puppeteer la suite se salta el bloque y no avisa. El código sobrevivió (el árbol
+coincidía byte a byte con `snapshots/antfarm-20261014-0826-code.tgz`, de ahí que la copia descargable
+haya valido ya para algo), y los commits se re-landearon. Contra el rebobinado queda
+`scripts/setup-sandbox.sh`: reinstala dependencias y librerías y **exige que Chrome arranque de
+verdad** antes de dejar que la suite diga nada. Lección: un test que se salta en silencio vale cero,
+igual que la aserción de píxeles que comparaba full contra full.
+
+El salto «+1 día» (`passDays`) ahora corre `tickStep()` de verdad: el día avanza, la comida baja y
+la partida se guarda al terminar (verificado contra la URL pública: día 1→2, comida 12→6, guardado
+de 57 KB). **Pero en ese día fast-forward no se abrió ni una celda nueva (27 → 27 celdas abiertas)**,
+o sea las obreras no excavaron. Queda como tarea propia: la calada de un ant depende de que alguien le
+asigne `digTarget`, y ese reparto parece mirar el número de *frames* y no el tiempo de juego, que es lo
+que el salto acelera. No se tapa con un aviso: mientras no sepa por qué, el botón no vuelve al HUD.

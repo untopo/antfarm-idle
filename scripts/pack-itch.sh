@@ -11,7 +11,7 @@ STAGE="$OUT/itch-stage"; mkdir -p "$STAGE"
 # itch.io espera index.html en la RAIZ del zip, y sirve todo tal cual.
 cp "$GAME/index.html" "$STAGE/"
 cp -r "$GAME/css" "$GAME/js" "$STAGE/"
-[ -d "$GAME/assets" ] && cp -r "$GAME/assets" "$STAGE/assets"
+[ -d "$GAME/assets" ] && { cp -r "$GAME/assets" "$STAGE/assets"; rm -rf "$STAGE/assets/_archivo"; } # el archivo de diseno no se sube
 # doc minino dentro del zip para que el paquete se explique solo
 { echo "Topo - Granja de Hormigas (HTML5)"; echo
   echo "Abrir index.html. No necesita servidor, ni build, ni dependencias."; echo

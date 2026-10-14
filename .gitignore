@@ -12,9 +12,17 @@ image-search/
 designs/
 uploads/
 mockups/
-assets/
-ant-farm-rpg/assets/
+/assets/
 *.log
 
 dist/
 snapshots/
+
+tools/
+
+.deploy/
+
+# 2026-10-15: el arte del juego SIEGO va en el repo (27 MB, fichero maximo 4,1 MB) porque
+# un remoto sin texturas no es una copia de seguridad, es media granja.
+# Lo que sigue fuera es lo que se regenera o lo que ya vive en los kits: node_modules, dist,
+# snapshots, .deploy, cache del navegador.
