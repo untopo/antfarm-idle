@@ -348,6 +348,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       const cavado = ahora.digs - antes.digs;
       const tierra = ahora.cavadas - antes.cavadas;
       console.log('   salto: ' + JSON.stringify(antes) + ' -> ' + JSON.stringify(ahora));
+      // El boton vive DENTRO del panel del reloj, cuyo cristal abre el calendario al hacer click.
+      // Si el click burbujeaba, al pasar de dia se quedaba un velo negro encima de la granja.
+      const modalAbierto = await page3.evaluate(() => { const m = document.getElementById('calendarModal'); return !!m && m.classList.contains('open'); });
+      ok(!modalAbierto, 'y pulsarlo no deja el calendario desplegado tapando la granja');
       ok(ahora.dia > antes.dia, 'el boton +1 DIA pasa de dia: dia ' + antes.dia + ' -> ' + ahora.dia + ' (' + seg + ' s de simulacion)');
       ok(cavado > 0 && tierra > 0, 'y ese dia trabaja de verdad: ' + cavado + ' bloques cavados y ' + tierra + ' celdas abiertas, comida ' + antes.comida + '->' + ahora.comida);
       ok(!ahora.ocupado && ahora.vel === antes.vel && /\+1/.test(ahora.boton) && ahora.boton.indexOf('\u23f3') < 0,

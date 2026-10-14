@@ -6267,7 +6267,7 @@ function passDays(nDays=1){
   fastStep();
 }
 // Listeners para Pass Day
-document.getElementById('btnDay1')?.addEventListener('click', ()=> passDays(1));
+document.getElementById('btnDay1')?.addEventListener('click', (e)=>{ try{ e.stopPropagation(); }catch(_){ } passDays(1); });
 
 
 
@@ -7036,6 +7036,9 @@ function initCalendar(){
   }
   if(w) w.onclick=(e)=>{
     if(e.target && e.target.id==='calCollapseBtn') return;
+    // Topo: los controles que viven dentro del propio panel (la fila de obreras lleva el boton
+    // +1 DIA) no pueden abrir el calendario al pulsarlos; solo el cristal del reloj lo abre.
+    if(e.target && e.target.closest && e.target.closest('button,select,input')) return;
     if(w.classList.contains('collapsed')) return;
     showCalendarModal();
   };
