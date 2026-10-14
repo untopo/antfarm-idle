@@ -51,7 +51,10 @@ tar czf "$CODE" --exclude='*/node_modules' \
 git bundle create "$BUNDLE" --all >/dev/null
 
 if [ "$FULL" = "--full" ]; then
-  tar czf "$FULLF" ant-farm-rpg
+  # instantanea COMPLETA del proyecto: codigo + arte + tests + scripts, sin basuras ni el propio kit
+  tar czf "$FULLF" --exclude='./node_modules' --exclude='./.git' --exclude='./.cache' --exclude='./.npm' \
+      --exclude='./.config' --exclude='./.local' --exclude='./snapshots' --exclude='./backups' \
+      --exclude='./screenshots' --exclude='./Unselected files' --exclude='./image-search' .
   ( cd snapshots && sha256sum "$(basename "$CODE")" "$(basename "$BUNDLE")" "$(basename "$FULLF")" ) > "$SHA"
 else
   ( cd snapshots && sha256sum "$(basename "$CODE")" "$(basename "$BUNDLE")" ) > "$SHA"
