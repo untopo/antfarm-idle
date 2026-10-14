@@ -58,17 +58,14 @@ function hudValue(id, v){ const el=document.getElementById(id); if(el && el.valu
 
 function shouldUpdateUI(){ const now=performance.now(); if(now - lastUIUpdate < 140) return false; lastUIUpdate=now; return true; }
 
-// sprites reales pixel - hormigas auténticas
+// Sprites de hormiga: los PNG sueltos (pixel-ants-cropped y las hojas antropomorfas) ya no estan
+// en el proyecto, y pedirlos costaba 6x HTTP 404 y dos avisos en consola en cada arranque. Las
+// Image siguen aqui porque el pintado las mira, pero sin src: con *_Ready en false el dibujo
+// empieza a mano, que es el arte unico que qued6 y el mismo que usan los antropomorfos.
 const antSprite = new Image();
-antSprite.src = 'assets/pixel-ants-cropped.png?v=20261015f'; // si falta el PNG la hormiga se dibuja a mano (fallback)
 let antSpriteReady=false;
-antSprite.onload=()=>{ antSpriteReady=true; tlog('ants sprite ready', antSprite.width, antSprite.height); };
-antSprite.onerror=()=>{ console.warn('sprite failed'); };
 const anthroSprite = new Image();
-anthroSprite.src = 'assets/ants-anthro-animated.png?v=20261015f';
 let anthroReady=false;
-anthroSprite.onload=()=>{ anthroReady=true; tlog('anthro ready', anthroSprite.width, anthroSprite.height); };
-anthroSprite.onerror=()=>{ console.warn('anthro failed'); };
 const antWalk6 = new Image();
 antWalk6.src = 'assets/ant-body-walk-6f.png?v=20261015f';
 let antWalk6Ready=false;
@@ -113,14 +110,11 @@ function foodRotProgressPerDt(food, dt){
 }
 
 let useAnthro=false; // al inicio hormigas comunes, con evolución se vuelven antropomorfas
-const anthroAlt1 = new Image(); anthroAlt1.src='assets/ants-humanlike-1-thumb.png?v=20261015f';
-const anthroAlt2 = new Image(); anthroAlt2.src='assets/ants-humanlike-3-thumb.png?v=20261015f';
-let anthroStyle=0; // 0=4-roles sheet, 1=chibi blue, 2=human hoodie
+let anthroStyle=0; // 0=cuarteto, 1=chibi, 2=capucha: los tres con el mismo dibujo
 function cycleAnthroStyle(){
+  // Antes cada estilo cargaba su PNG; esos ficheros se fueron del proyecto y lo unico que
+  // producian eran 404. El ciclo se queda como changeo de nombre porque hay tecla asignada.
   anthroStyle=(anthroStyle+1)%3;
-  if(anthroStyle===0) anthroSprite.src='assets/ants-anthro-animated.png?v=20261015f';
-  else if(anthroStyle===1) anthroSprite.src='assets/ants-humanlike-1.png?v=20261015f';
-  else anthroSprite.src='assets/ants-humanlike-3.png?v=20261015f';
   console.log('anthro style', anthroStyle);
   pushToast(W/2, H/2, '👤 ESTILO '+(anthroStyle+1), '#b47aff');
 }
