@@ -22,4 +22,15 @@ const pp=require("puppeteer");
   const p=await b.newPage(); await p.goto("about:blank");
   console.log("   chrome real:", await p.evaluate(()=>navigator.userAgent.split(" ").pop()));
   await b.close(); })().catch(e=>{ console.log("   chrome NO arranca:", e.message.split("\n")[0]); process.exit(1); });'
+
+echo "== llaves y remotos: el rebobinado deja los permisos y el .git/config como estaban mal =="
+if [ -f .secrets/deploy_key ]; then
+  chmod 600 .secrets/deploy_key 2>/dev/null || true
+  echo "   .secrets/deploy_key con permisos 600 (con 644 ssh la rechaza y el push parece un problema de accesos)"
+fi
+if [ -f .secrets/remotes.txt ] && ! git remote get-url origin >/dev/null 2>&1; then
+  r=$(grep '^privado=' .secrets/remotes.txt | cut -d= -f2)
+  [ -n "$r" ] && { git remote add origin "$r" >/dev/null 2>&1 && echo "   origin re-aniadido: $r"; }
+fi
+
 echo "listo: a partir de aqui 'bash test/run-all.sh' puede decir TODO VERDE"
