@@ -26,3 +26,6 @@ tools/
 # un remoto sin texturas no es una copia de seguridad, es media granja.
 # Lo que sigue fuera es lo que se regenera o lo que ya vive en los kits: node_modules, dist,
 # snapshots, .deploy, cache del navegador.
+
+.secrets/
+.ssh/
