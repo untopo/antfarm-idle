@@ -1,0 +1,51 @@
+name: publicar-demo
+
+# El juego vive en ant-farm-rpg/. GitHub Pages no sabe de subcarpetas: aqui se monta un sitio
+# con la raiz limpia (un index.html que salta a la madriguera) y se publica como artefacto, que
+# es la unica via que funciona con el token por defecto del Actions y sin tocar un boton.
+#
+# Se dispara solo en cada push a master y a mano desde Actions > publicar-demo > Run workflow.
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.despliegue.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: montar el sitio
+        run: |
+          set -eu
+          mkdir -p _sitio
+          cp index.html _sitio/index.html
+          [ -f .nojekyll ] && cp .nojekyll _sitio/.nojekyll || true
+          cp -r ant-farm-rpg _sitio/ant-farm-rpg
+          rm -rf _sitio/ant-farm-rpg/assets/_archivo   # arte muerto: no hace falta servirlo
+          echo "ficheros del sitio: $(find _sitio -type f | wc -l)  $(du -sh _sitio | cut -f1)"
+          echo "prueba de que la pagina y el js estan: $(ls _sitio/ant-farm-rpg/index.html _sitio/ant-farm-rpg/js/app.js | tr '\n' ' ')"
+
+      - uses: actions/configure-pages@v4
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _sitio
+
+      - name: desplegar
+        id: despliegue
+        uses: actions/deploy-pages@v4
