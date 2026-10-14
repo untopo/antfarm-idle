@@ -68,6 +68,11 @@ paquete en 5–8 MB sin tocar una sola forma del juego.
 
 ## Copia de seguridad: el remoto manda, el sandbox no
 
+**Donde vive ahora mismo el proyecto:** `git@github.com:untopo/antfarm-idle.git`
+(rama `master`, privado, y la `deploy key` de este sandbox tiene permiso de escritura). Empujar un hito es
+una orden: `bash scripts/push-ssh.sh`. Si algun dia esto se rebobina y no recuerda la URL, esta linea
+la recuerda; si se perdio la clave privada, `bash scripts/deploy-key.sh` y se vuelve a pegar la publica.
+
 Aprendido dos veces en un dia: el workspace se rebobina y se lleva `node_modules`, las librerias
 del Chrome, `.deploy/` y hasta dos `commit`. Un repo git **local** no es backup; solo lo es lo que
 esta empujado. Por eso:
