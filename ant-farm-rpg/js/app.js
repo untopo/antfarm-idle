@@ -2089,15 +2089,30 @@ function updateQueen(dt){
   // mantener referencia principal
   if(queens.length>0) queen=queens[0];
 }
+// Topo: la cria ya puesta no puede depender de que siga quedando una reina viva. Si la colonia
+// se queda sin reinas (hambre, vejez, golpe de estado) los huevos y pupas que ya estan en el
+// nido siguen su curso: el ancla pasa a ser el enjambre de obreras y, si tampoco queda ninguna,
+// el centro del nido. Antes esto reventaba con "queens[0] is undefined" y NACER no ocurria
+// nunca mas: el contador se quedaba en 0 mientras los huevos se veian crecer.
+function broodAnchor(){
+  if(queens.length>0) return queens[0];
+  if(workers.length>0){ let sx=0, sy=0, n=0; for(const w of workers){ if(w && isFinite(w.x) && isFinite(w.y)){ sx+=w.x; sy+=w.y; n++; } }
+    if(n>0) return {x:sx/n, y:sy/n, faction:workers[0].faction||0}; }
+  return {x:CENTER_COL*CELL, y:(SURFACE_ROW+8)*CELL, faction:0};
+}
 function updateBrood(dt){
   // v8 realismo: larva necesita trofalaxia real de nodrizas
+  const an = broodAnchor();
+  const silentQueenless = queens.length===0;
   for(let i=brood.length-1;i>=0;i--){
     const b=brood[i]; b.time+=dt;
+    const bxp = (b.x!==undefined && b.x!==null) ? b.x : an.x;
+    const byp = (b.y!==undefined && b.y!==null) ? b.y : an.y;
     if(b.type==='larva'){
       // hambre real: sin nodriza con buche, se estanca y puede morir
       if(!b.hunger) b.hunger=0;
-      const nurses = workers.filter(w=>w.role==='NODRIZA' && w.crop>0.14 && dist(w,{x:b.x||queens[0].x,y:b.y||queens[0].y})<64).length;
-      const fed = nurses>0 || workers.some(w=>w.caste==='minim' && w.crop>0.1 && dist(w,{x:b.x||queens[0].x,y:b.y||queens[0].y})<48);
+      const nurses = workers.filter(w=>w.role==='NODRIZA' && w.crop>0.14 && dist(w,{x:bxp,y:byp})<64).length;
+      const fed = nurses>0 || workers.some(w=>w.caste==='minim' && w.crop>0.1 && dist(w,{x:bxp,y:byp})<48);
       if(fed){
         // alimentar: consume buche de nodriza o miel
         if(Math.random()<0.14){
@@ -2108,7 +2123,7 @@ function updateBrood(dt){
         b.hunger=Math.max(0, b.hunger- dt*0.08);
         b.progress+= dt*0.00335;
         // calor óptimo 25°C: si nido frío/caliente, larva crece más lento (simulado por profundidad)
-        if(b.y && b.y > (SURFACE_ROW+10)*CELL) b.progress+= dt*0.00042; // más cálido abajo
+        if(byp > (SURFACE_ROW+10)*CELL) b.progress+= dt*0.00042; // más cálido abajo
       } else {
         b.hunger+= dt*0.028;
         b.progress+= dt*0.00052; // casi estancada sin nodriza
@@ -2118,7 +2133,7 @@ function updateBrood(dt){
           continue;
         }
         // aún hambrienta, pide trofalaxia con partícula
-        if(Math.random()<0.04) particles.push({x:b.x||queens[0].x, y:(b.y||queens[0].y)-6, vx:(Math.random()-0.5)*0.4, vy:-0.4, life:0.7, decay:0.02, color:'#ffaa88'});
+        if(Math.random()<0.04) particles.push({x:bxp, y:byp-6, vx:(Math.random()-0.5)*0.4, vy:-0.4, life:0.7, decay:0.02, color:'#ffaa88'});
       }
     } else {
       b.progress+= dt* (b.type==='egg'? 0.00345 : 0.00325);
@@ -2131,8 +2146,8 @@ function updateBrood(dt){
 if(workers.length < getMaxPopulation()){
           // si es larva real -> nace reina, no obrera
           if(b.isQueen){
-            let _qn2=genPersonalName({faction: (b.faction!==undefined? b.faction : queens[0].faction), role:'REINA', affinity:'NODRIZA', caste:'media', parents:[b.genome.id], genome:b.genome, isQueen:true, rank:'LÍDER', ageDays:0, idCode:'Q'+(queens.length+1)+'-'+Math.random().toString(36).slice(2,4).toUpperCase()});
-            const newQueen={x:queens[0].x+(Math.random()-0.5)*22, y:queens[0].y+(Math.random()-0.5)*12, genome:b.genome, progress:0, state:'GRÁVIDA', age:0, maxAge: getQueenMaxAge(), generation:gen+1, faction: b.faction!==undefined? b.faction : queens[0].faction, health:100, name:_qn2.name, personalName:_qn2.name, nameMeaning:_qn2.meaning, nameStage:_qn2.stage};
+            let _qn2=genPersonalName({faction: (b.faction!==undefined? b.faction : (queens[0]? queens[0].faction : 0)), role:'REINA', affinity:'NODRIZA', caste:'media', parents:[b.genome.id], genome:b.genome, isQueen:true, rank:'LÍDER', ageDays:0, idCode:'Q'+(queens.length+1)+'-'+Math.random().toString(36).slice(2,4).toUpperCase()});
+            const newQueen={x:an.x+(Math.random()-0.5)*22, y:an.y+(Math.random()-0.5)*12, genome:b.genome, progress:0, state:'GRÁVIDA', age:0, maxAge: getQueenMaxAge(), generation:gen+1, faction: b.faction!==undefined? b.faction : queens[0].faction, health:100, name:_qn2.name, personalName:_qn2.name, nameMeaning:_qn2.meaning, nameStage:_qn2.stage};
             // 35% funda nueva facción (cisma) - derrocar líderes, guerra de sucesión
             if(queens.length>=1 && Math.random()<0.35){
               const newFac=society.nextFaction++;
@@ -2149,11 +2164,12 @@ if(workers.length < getMaxPopulation()){
               notifyCanon('👑 NACE REINA', `${newQueen.name} eclosiona - GEN${b.genome.gen}`, 5200);
             }
             queens.push(ensureQueenMeta(newQueen));
-            society.factions.find(f=>f.id===newQueen.faction).members++;
+            { const _fc=society.factions.find(f=>f.id===newQueen.faction); if(_fc) _fc.members++; }
             pushToast(newQueen.x,newQueen.y-18,`👑 ${newQueen.name}`,'#ffcc00',3);
+            if(!silentQueenless) pushEvent('birth','👑 La cria refunda la dinastia',`Sin reina viva: ${newQueen.name} nace y gobierna`);
             enforceQueenCap('nace de cría real');
           } else {
-            const ant=makeAnt(b.genome, {x:queens[0].x+(Math.random()-0.5)*18, y:queens[0].y+(Math.random()-0.5)*10}, {faction: b.faction});
+            const ant=makeAnt(b.genome, {x:an.x+(Math.random()-0.5)*18, y:an.y+(Math.random()-0.5)*10}, {faction: b.faction!==undefined? b.faction : an.faction});
             // HERENCIA TERRARIA/REAL: las nuevas nacen con más info que las anteriores
             // si la colonia ya sabe cavar, la cría hereda bonus de digNeeded y una pizca de IQ espacial
             if(gen>=2){
@@ -2169,7 +2185,8 @@ if(workers.length < getMaxPopulation()){
             // hereda facción y un poco del ánimo de la madre
             pushEvent('birth',`Eclosiona ${ant.id} [${ant.role}] GEN${ant.genome.gen}`, `EXP${ant.traits.exploracion} CAV${ant.traits.construccion} COM${ant.traits.comunica}`);
             if(workers.length<=5) notifyCanon('🐣 ECLOSION', `${ant.id} nace - la colonia crece`, 4800);
-            pushToast(queens[0].x,queens[0].y-18,`🐣 ${ant.id}`,'#b47aff',2.6);
+            pushToast(an.x,an.y-18,`🐣 ${ant.id}`,'#b47aff',2.6);
+            if(silentQueenless) notifyCanon('🐣 REVIENTA EL HUEVO', `${ant.id} nace sin reina - las nodrizas la coronaran enseguida`, 5200);
           }
         } else {
           pushEvent('evo',`Pupa espera: colonia en tope ${getMaxPopulation()} - cava más salas o evoluciona`,'Falta espacio/organizacion');
@@ -2219,7 +2236,7 @@ function updateFungus(dt){
   }
   // crear nuevo jardín cuando colonia crece y aprende hongo
   if(inventions.fungus && fungusGardens.length<3 && workers.length>=8 && colonyFood>6 && Math.random()<0.0009*workers.filter(w=>w.role==='NODRIZA').length){
-    const q=queens[0];
+    const q=broodAnchor();
     fungusGardens.push({x:q.x+(Math.random()-0.5)*44, y:q.y+ 18+Math.random()*34, c:0,r:0, health:0.78, size:0.9, age:0, fed:0});
     pushEvent('evo','🍄 Nuevo jardín fúngico excavado',`Jardines: ${fungusGardens.length}`);
   }
@@ -2244,7 +2261,8 @@ function updateWaste(dt){
   }
   // higiene: si hay mucho waste cerca de queen/brood, cría se enferma
   if(wastePiles.length>0 && brood.length>0){
-    for(let b of brood){ for(let w of wastePiles){ if(Math.hypot((b.x||queens[0].x)-w.x,(b.y||queens[0].y)-w.y)<36) b.progress-= dt*0.0006; } }
+    const wa = broodAnchor();
+    for(let b of brood){ for(let w of wastePiles){ if(Math.hypot((b.x!==undefined&&b.x!==null?b.x:wa.x)-w.x,(b.y!==undefined&&b.y!==null?b.y:wa.y)-w.y)<36) b.progress-= dt*0.0006; } }
   }
 }
 function updateMood(ant, dt){
@@ -5343,7 +5361,7 @@ function tickStep(dt){
           const _clutch = _rescueMode ? 2 : 1;
           for(let _c=0;_c<_clutch;_c++){
             const g=mutateGenome(q.genome,0.12,0.5).genome;
-            brood.push({type:'egg', progress:0, genome:g, time:0, isQueen:false, faction:q.faction, parents:[q.name||q.id,'emergencia'], parentGenomes:[q.genome.id,'-']});
+            brood.push({type:'egg', progress:0, genome:g, time:0, isQueen:false, faction:q.faction, mother:q.id, x:q.x+(Math.random()-0.5)*20, y:q.y+(Math.random()-0.5)*12, hunger:0, parents:[q.name||q.id,'emergencia'], parentGenomes:[q.genome.id,'-']});
           }
           pushEvent('birth',_rescueMode? '🆘 ¡CLUTCH de emergencia! Reina pone 2 huevos (rescate)':'🆘 Huevo de emergencia - la reina sacrifica vida',_rescueMode? 'Rescate activo: 1-2 hormigas → turbo + doble puesta':'Colonia al límite - Minecraft: nunca 0');
           notifyCanon(_rescueMode?'🆘 CLUTCH RESCATE':'🆘 HUEVO EMERGENCIA', _rescueMode?'¡Doble puesta! La colonia no muere':'La reina sacrifica vida para no extinguirse', 5200);
