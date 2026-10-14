@@ -1,5 +1,5 @@
 name=untopo
 email=untopo@users.noreply.github.com
 login=untopo
-remote=git@github.com:untopo/antfarm-rpg.git
+remote=git@github.com:untopo/antfarm-idle.git
 via=ssh-deploy-key
