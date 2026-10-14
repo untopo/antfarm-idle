@@ -290,14 +290,38 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       await sleep(500);
       await page3.evaluate(() => document.getElementById('btnMainCreate').click());
       await sleep(300);
-      await page3.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (h) { const y = [...h.querySelectorAll('button')].find((x) => x.textContent.trim() === 'SÍ'); if (y) y.click(); } document.querySelector('#createSizeScreen [data-size="medium"]').click(); });
+      await page3.evaluate(() => document.querySelector('#createSizeScreen [data-size="medium"]').click());
+      await sleep(350);
+      // El aviso «¿Sobrescribir tu granja actual?» sale DESPUES de elegir el tamano. Contestarlo
+      // antes (como se hacia aqui) dejaba el toldo del dialogo puesto y tapaba todo el HUD.
+      await page3.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (h) { const y = [...h.querySelectorAll('button')].find((x) => x.textContent.trim() === 'SÍ'); if (y) y.click(); } });
       await page3.waitForFunction('window.COLS===64', { timeout: 90000 });
-      await page3.evaluate(() => { const b = document.getElementById('btnOnboardingStart'); if (b) b.click(); });
-      await sleep(400);
+      // Estado "el dueño ya está jugando": sin modal de onboarding, sin pantalla de generando
+      // mundo, sin menu encima. Mientras alguno de esos toldos esta puesto, tapan el HUD y un
+      // click de raton no llega a ningun boton del panel (con .click() por JS se tapaba el bug).
+      const sinToldos = () => { const h = (id) => { const e = document.getElementById(id); return !e || getComputedStyle(e).display === 'none'; };
+        return h('onboardingModal') && h('worldGenScreen') && h('mainMenu') && h('createSizeScreen') && h('splashScreen') && !_dialogStackVisible() && document.body.classList.contains('game-started');
+        function _dialogStackVisible() { return [...document.querySelectorAll('.topo-dialog-host')].some((x) => getComputedStyle(x).display !== 'none'); } };
+      for (let t = 0; t < 60000 && !(await page3.evaluate(sinToldos)); t += 1200) {
+        await page3.evaluate(() => { const b = document.getElementById('btnOnboardingStart'); if (b && b.offsetParent) b.click(); });
+        await sleep(1200);
+      }
+      ok(await page3.evaluate(sinToldos), 'al acabar la creacion no queda ningun toldo tapando la pantalla');
       const estado = () => page3.evaluate(() => ({ dia: day, digs, vel: gameSpeed, comida: colonyFood, cavadas: (() => { let n = 0; for (let r = SURFACE_ROW; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (soil[r][c] === 0) n++; return n; })(), boton: document.getElementById('btnDay1').textContent.trim(), ocupado: (typeof _fastForwarding !== 'undefined') && _fastForwarding }));
-      const btn = await page3.evaluate(() => { const e = document.getElementById('btnDay1'); const b = e.getBoundingClientRect(); const cs = getComputedStyle(e);
-        return { w: Math.round(b.width), h: Math.round(b.height), visible: b.width > 0 && b.height > 0 && cs.display !== 'none', padre: e.parentElement ? e.parentElement.id || e.parentElement.tagName.toLowerCase() : '' }; });
-      ok(btn.visible, 'el boton +1 DIA esta en la fila de los botones, no duplicado en una tira (' + btn.w + 'x' + btn.h + ' dentro de #' + btn.padre + ')');
+      // Medir el tamano no basta: la barra recorta con overflow:hidden y ahi salia un boton
+      // "visible" de 41x28 que el dueño no podia ni ver ni tocar. Se exige que el punto del
+      // centro del boton devuelva el propio boton (elementFromPoint) y que quepa dentro de su barra.
+      const btn = await page3.evaluate(() => { const e = document.getElementById('btnDay1'); if (!e) return { falta: true };
+        const b = e.getBoundingClientRect(); const cs = getComputedStyle(e);
+        let barra = e.parentElement, top = barra; while (top) { const st = getComputedStyle(top); if (st.overflow === 'hidden' || st.overflowX === 'hidden') { barra = top; break; } top = top.parentElement; }
+        const bb = barra.getBoundingClientRect(); const cx = b.x + b.width / 2, cy = b.y + b.height / 2;
+        const golpe = document.elementFromPoint(cx, cy);
+        return { w: Math.round(b.width), h: Math.round(b.height), padre: (e.parentElement.id || e.parentElement.tagName.toLowerCase()),
+          barra: barra.id || barra.tagName.toLowerCase(), dentro: b.right <= bb.right + 0.5 && b.left >= bb.left - 0.5,
+          clicable: !!golpe && (golpe === e || e.contains(golpe)), objetivo: golpe ? (golpe.id || golpe.tagName.toLowerCase()) : 'nada',
+          alto: Math.round(b.height), cs: cs.display }; });
+      ok(btn.visible !== false && !btn.falta && btn.alto > 0 && btn.dentro && btn.clicable,
+        'el boton +1 DIA esta en la fila de abajo del reloj y se le puede dar con el raton (' + btn.w + 'x' + btn.h + ' en #' + btn.padre + ', barra #' + btn.barra + ', dentro ' + btn.dentro + ', el click cae en #' + btn.objetivo + ')');
       // Primero: de manana y a x16 la colonia cava (si esto falla, el mundo esta roto, no el boton).
       // x64 y ventana amplia: con la maquina cargada, medir a x16 en 30 s daba 60/40 de veces
       // segun cuanto le tocase a Chrome. Lo que se comprueba es que la colonia trabaja de dia,
@@ -313,7 +337,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       // hay truco que acorte el salto: se le da margen de sobra y se espera a que se apague solo.
       await page3.evaluate(() => { setGameSpeed(1); time = DAY_LENGTH * 0.30; });
       const antes = await estado();
-      await page3.evaluate(() => document.getElementById('btnDay1').click());
+      const caja = await page3.evaluate(() => { const b = document.getElementById('btnDay1').getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; });
+      await page3.mouse.click(caja.x, caja.y); // con el raton de verdad: si estuviera recortado, esto no clica
       let ahora = antes, t0 = Date.now();
       // El tope va generous: en esta maquina, con varias paginas abiertas, un dia simulado puede
       // tardar 20 s o 100 s. Cortar por reloj corto daba FAIL de medicion, no del boton.
