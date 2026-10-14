@@ -45,27 +45,27 @@ function shouldUpdateUI(){ const now=performance.now(); if(now - lastUIUpdate < 
 
 // sprites reales pixel - hormigas auténticas
 const antSprite = new Image();
-antSprite.src = 'assets/pixel-ants-cropped.png?v=20261015e'; // si falta el PNG la hormiga se dibuja a mano (fallback)
+antSprite.src = 'assets/pixel-ants-cropped.png?v=20261015f'; // si falta el PNG la hormiga se dibuja a mano (fallback)
 let antSpriteReady=false;
 antSprite.onload=()=>{ antSpriteReady=true; tlog('ants sprite ready', antSprite.width, antSprite.height); };
 antSprite.onerror=()=>{ console.warn('sprite failed'); };
 const anthroSprite = new Image();
-anthroSprite.src = 'assets/ants-anthro-animated.png?v=20261015e';
+anthroSprite.src = 'assets/ants-anthro-animated.png?v=20261015f';
 let anthroReady=false;
 anthroSprite.onload=()=>{ anthroReady=true; tlog('anthro ready', anthroSprite.width, anthroSprite.height); };
 anthroSprite.onerror=()=>{ console.warn('anthro failed'); };
 const antWalk6 = new Image();
-antWalk6.src = 'assets/ant-body-walk-6f.png?v=20261015e';
+antWalk6.src = 'assets/ant-body-walk-6f.png?v=20261015f';
 let antWalk6Ready=false;
 antWalk6.onload=()=>{ antWalk6Ready=true; tlog('walk6 ready', antWalk6.width, antWalk6.height); };
 antWalk6.onerror=()=>{ console.warn('walk6 failed'); };
-const antIdle4 = new Image(); antIdle4.src='assets/ant-idle-4f.png?v=20261015e';
+const antIdle4 = new Image(); antIdle4.src='assets/ant-idle-4f.png?v=20261015f';
 let antIdleReady=false; antIdle4.onload=()=>{ antIdleReady=true; tlog('idle4 ready',antIdle4.width,antIdle4.height); };
-const antDig4 = new Image(); antDig4.src='assets/ant-dig-4f.png?v=20261015e';
+const antDig4 = new Image(); antDig4.src='assets/ant-dig-4f.png?v=20261015f';
 let antDigReady=false; antDig4.onload=()=>{ antDigReady=true; tlog('dig4 ready',antDig4.width,antDig4.height); };
-const antRest2 = new Image(); antRest2.src='assets/ant-rest-2f.png?v=20261015e';
+const antRest2 = new Image(); antRest2.src='assets/ant-rest-2f.png?v=20261015f';
 let antRestReady=false; antRest2.onload=()=>{ antRestReady=true; tlog('rest2 ready',antRest2.width,antRest2.height); };
-const queenSprite = new Image(); queenSprite.src='assets/queen-2f.png?v=20261015e';
+const queenSprite = new Image(); queenSprite.src='assets/queen-2f.png?v=20261015f';
 let queenSpriteReady=false; queenSprite.onload=()=>{ queenSpriteReady=true; tlog('queen ready',queenSprite.width,queenSprite.height); };
 const FOOD_DEFS={
   honey:{rotDays:99, color:'#ffb700', cap:'#ffcc33', name:'MIEL'},
@@ -98,14 +98,14 @@ function foodRotProgressPerDt(food, dt){
 }
 
 let useAnthro=false; // al inicio hormigas comunes, con evolución se vuelven antropomorfas
-const anthroAlt1 = new Image(); anthroAlt1.src='assets/ants-humanlike-1-thumb.png?v=20261015e';
-const anthroAlt2 = new Image(); anthroAlt2.src='assets/ants-humanlike-3-thumb.png?v=20261015e';
+const anthroAlt1 = new Image(); anthroAlt1.src='assets/ants-humanlike-1-thumb.png?v=20261015f';
+const anthroAlt2 = new Image(); anthroAlt2.src='assets/ants-humanlike-3-thumb.png?v=20261015f';
 let anthroStyle=0; // 0=4-roles sheet, 1=chibi blue, 2=human hoodie
 function cycleAnthroStyle(){
   anthroStyle=(anthroStyle+1)%3;
-  if(anthroStyle===0) anthroSprite.src='assets/ants-anthro-animated.png?v=20261015e';
-  else if(anthroStyle===1) anthroSprite.src='assets/ants-humanlike-1.png?v=20261015e';
-  else anthroSprite.src='assets/ants-humanlike-3.png?v=20261015e';
+  if(anthroStyle===0) anthroSprite.src='assets/ants-anthro-animated.png?v=20261015f';
+  else if(anthroStyle===1) anthroSprite.src='assets/ants-humanlike-1.png?v=20261015f';
+  else anthroSprite.src='assets/ants-humanlike-3.png?v=20261015f';
   console.log('anthro style', anthroStyle);
   pushToast(W/2, H/2, '👤 ESTILO '+(anthroStyle+1), '#b47aff');
 }
@@ -5466,7 +5466,20 @@ function renderLoop(){ try{ if(!_topoHasWorld){ return; } try{ updateDepthRuler(
   try{ _panelsMaybeDraw(); }catch(e){ drawNN(); } // Topo: los paneles se refrescan a ~7fps y solo si estan visibles
 }catch(e){ console.error('renderLoop',e); }
 }
-function updateColonyUI(){ try{ updateColonyUIInner(); }catch(e){ if(DEBUG_TOPO) console.warn('[HUD] nodos ausentes:', e.message); } }
+let _topoHudMissingWarned=false;
+function updateColonyUI(){
+  try{ updateColonyUIInner(); }
+  catch(e){
+    // Un nodo de HUD que falte no puede congelar nada: se avisa una vez y se sigue.
+    if(!_topoHudMissingWarned){
+      _topoHudMissingWarned=true;
+      const at=e && e.stack ? String(e.stack).split('\n').slice(1,3).join(' <- ') : '';
+      console.warn('[HUD] nodos ausentes:', e.message, at); tlog('[HUD] aviso -> '+at);
+    }
+  }
+  // Topo: el reloj se repinta SIEMPRE, al final y fuera del try. Ningun fallo del HUD
+  // puede volver a dejar la hora clavada (eso era el "dia congelado").
+}
 function updateColonyUIInner(){
   if(!shouldUpdateUI()) return;
   if(!_topoHasWorld) return; // sin mundo no hay colonia que pintar (evita leer queen.state cuando es null)
@@ -5596,9 +5609,9 @@ function updateColonyUIInner(){
     hudText('rewardDetail', rewardsFound+'/3');
     const hudSel=document.getElementById('hudSel');
     const hudTxt=document.getElementById('hudSelTxt');
-    if(sel){
+    if(sel && hudSel){
       hudSel.style.display='flex';
-      hudTxt.textContent=`${sel.id} [${sel.role}] - 3 OJOS ${(sel.sensors?.wallLeft ?? 0).toFixed(1)}/${(sel.sensors?.wallCenter ?? 0).toFixed(1)}/${(sel.sensors?.wallRight ?? 0).toFixed(1)} - TINTA ${(sel.sensors?.commIn1 ?? 0).toFixed(1)},${(sel.sensors?.commIn2 ?? 0).toFixed(1)}`;
+      if(hudTxt) hudTxt.textContent=`${sel.id} [${sel.role}] - 3 OJOS ${(sel.sensors?.wallLeft ?? 0).toFixed(1)}/${(sel.sensors?.wallCenter ?? 0).toFixed(1)}/${(sel.sensors?.wallRight ?? 0).toFixed(1)} - TINTA ${(sel.sensors?.commIn1 ?? 0).toFixed(1)},${(sel.sensors?.commIn2 ?? 0).toFixed(1)}`;
     }
   }
   hudText('tbPop', workers.length);
@@ -5972,44 +5985,39 @@ function syncCorner(n){
     a.classList.add('on');
   }
 }
+const SPEED_STEPS=[1,2,4,8,16,32,64];
+const SPEED_TINT={1:'var(--amber)',2:'var(--amber)',4:'#ff3b30',8:'#b47aff',16:'#ffcc00',32:'#ff9a3c',64:'#ff5a2a'};
 function setGameSpeed(n){
-  gameSpeed=n; turbo=n>1;
-  const b1=document.getElementById('btnSpeed1'), b2=document.getElementById('btnSpeed2'), b4=document.getElementById('btnSpeed4'), b8=document.getElementById('btnSpeed8'), b16=document.getElementById('btnSpeed16'), bt=document.getElementById('btnTurbo');
-  const c1=document.getElementById('btnSpeed1b'), c2=document.getElementById('btnSpeed2b'), c4=document.getElementById('btnSpeed4b'), c8=document.getElementById('btnSpeed8b'), c16=document.getElementById('btnSpeed16b');
-  const v1=document.getElementById('btnVel1'), v2=document.getElementById('btnVel2'), v4=document.getElementById('btnVel4'), v8=document.getElementById('btnVel8'), v16=document.getElementById('btnVel16'), vp=document.getElementById('btnVelPause');
-  if(bt) bt.textContent='⚡x'+n;
-  [b1,b2,b4,b8,b16,c1,c2,c4,c8,c16].forEach(b=>{ if(!b) return; b.style.background='#2a2012'; b.style.color='#fff8dc'; b.style.borderColor='#3a2a1a'; });
-  [v1,v2,v4,v8,v16].forEach(b=>{ if(!b) return; b.style.background='#3e2a14'; b.style.color='#fff8dc'; b.style.borderColor='#000'; });
-  const active = n===1? b1 : n===2? b2 : n===4? b4 : n===8? b8 : b16;
-  const active2 = n===1? c1 : n===2? c2 : n===4? c4 : n===8? c8 : c16;
-  const activeV = n===1? v1 : n===2? v2 : n===4? v4 : n===8? v8 : v16;
-  [active,active2].forEach(a=>{ if(!a) return; 
-    if(n===1) a.style.background='var(--amber)';
-    else if(n===2) a.style.background='var(--amber)';
-    else if(n===4) a.style.background='#ff3b30';
-    else if(n===8) a.style.background='#b47aff';
-    else if(n===16) a.style.background='#ffcc00';
-    a.style.color = (n===4||n===16)? '#000' : (n===8? '#fff':'#000');
-    a.style.borderColor='#000';
-  });
-  if(activeV){ activeV.style.background='#ffcc00'; activeV.style.color='#000'; activeV.style.borderColor='#000'; }
-  syncCorner(n);
-  if(n>1) pushToast(W/2, H/2-18, '⚡ x'+n, n>=8?'#b47aff':(n===4?'#ff3b30':'#ffcc00'),1.2);
+  // Topo: velocidades 1..64. Los botones se repintan por patron de id, no por id concreto:
+  // asi agregar o quitar un boton del markup no puede dejar un reference roto (fue lo que rompio x32).
+  const N=SPEED_STEPS.includes(n)?n:1;
+  gameSpeed=N; turbo=N>1;
+  for(const b of document.querySelectorAll('button[id]')){
+    const m=/^(btnSpeed|btnVel|btnCorner)(\d+)(b?)$/.exec(b.id);
+    if(!m) continue;
+    const v=+m[2], on=v===N, corner=m[1]==='btnCorner';
+    if(corner){ b.textContent = v===1 ? '▶' : 'x'+v; b.title = v===1?'Pausar':'velocidad x'+v; }
+    b.style.background = on ? (SPEED_TINT[v]||'#ffcc00') : (corner?'#2a0f00':(m[1]==='btnVel'?'#3e2a14':'#2a2012'));
+    b.style.color = on ? '#000' : '#fff8dc';
+    b.style.borderColor = on ? '#000' : (corner?'#000':'#3a2a1a');
+  }
+  const bt=document.getElementById('btnTurbo');
+  if(bt) bt.textContent='⚡x'+N;
+  syncCorner(N);
+  if(N>1) pushToast(W/2, H/2-18, '⚡ x'+N, N>=16?'#ff9a3c':(N>=8?'#b47aff':(N===4?'#ff3b30':'#ffcc00')),1.2);
   else pushToast(W/2, H/2-18, '▶ x1','#8a7a5a',0.9);
-  // actualizar label de turbo si existe
-  const k8=document.getElementById('btnCorner8'), k16=document.getElementById('btnCorner16');
-  if(k8) k8.textContent='x8';
-  if(k16) k16.textContent='x16';
-  if(k32) k32.textContent='x32';
-  if(k64) k64.textContent='x64';
+  try{ saveIfChanged(); }catch(e){}
 }
 document.getElementById('btnTurbo').onclick=()=>{
-  const order=[1,2,4,8,16];
-  const idx=order.indexOf(gameSpeed);
-  const nxt=order[(idx+1)%order.length];
-  setGameSpeed(nxt);
+  const idx=SPEED_STEPS.indexOf(gameSpeed);
+  setGameSpeed(SPEED_STEPS[(idx+1)%SPEED_STEPS.length]);
 };
-document.getElementById('btnSpeed1')?.addEventListener('click', ()=> setGameSpeed(1));
+SPEED_STEPS.forEach(v=>{
+  ['btnSpeed'+v,'btnSpeed'+v+'b','btnVel'+v,'btnCorner'+v].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el && !el.dataset.wired){ el.dataset.wired='1'; el.addEventListener('click', ()=> setGameSpeed(v)); }
+  });
+});
 document.getElementById('btnSpeed2')?.addEventListener('click', ()=> setGameSpeed(2));
 document.getElementById('btnSpeed4')?.addEventListener('click', ()=> setGameSpeed(4));
 document.getElementById('btnSpeed8')?.addEventListener('click', ()=> setGameSpeed(8));

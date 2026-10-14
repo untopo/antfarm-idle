@@ -103,6 +103,37 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const moving = await page.evaluate(() => (window._topoDbg ? window._topoDbg() : {}));
     ok(moving.dbg ? moving.dbg.day >= 1 : moving.day >= 1, 'el mundo esta vivo: dia ' + (moving.day) + ' con ' + moving.ants + ' hormigas');
     ok(moving.time > t0.time, 'y el reloj del juego avanza solo (' + Math.round(t0.time) + ' -> ' + Math.round(moving.time) + ')');
+    // --- el reloj de la plaza (placa de madera) debe moverse en el DOM, no solo en el estado ---
+    const domClock = () => page.evaluate(() => {
+      const g = id => { const e = document.getElementById(id); return e ? (e.textContent || '').trim() : null; };
+      return { rc: g('rcTime'), label: g('timeLabel'), t: window._topoDbg ? window._topoDbg().time : 0 };
+    });
+    await page.evaluate(() => { const b = document.getElementById('btnOnboardingStart'); if (b) b.click(); });
+    await page.evaluate(() => setGameSpeed(64));
+    const c0 = await domClock();
+    // seleccionar una hormiga: antes esto reventaba el HUD y congelaba la placa
+    await page.evaluate(() => {
+      const w = (typeof workers !== 'undefined' && workers[0]) || null;
+      if (w && typeof selectedAnt !== 'undefined') { try { selectedAnt = w; } catch (e) {} }
+      try { window.selectAnt && window.selectAnt(w); } catch (e) {}
+    });
+    await sleep(2500);
+    const c1 = await domClock();
+    ok(c0.rc && c1.rc && c0.rc !== c1.rc, 'la placa del reloj se repinta sola: ' + c0.rc + ' -> ' + c1.rc + ' (x64)');
+    ok(c1.label && c0.label !== c1.label, 'el hud de hora del lienzo tambien cambia (' + c0.label + ' -> ' + c1.label + ')');
+    ok(c1.t > c0.t, 'y con una hormiga seleccionada el tiempo no se detiene');
+    const spd = await page.evaluate(() => {
+      const ids = ['btnSpeed32','btnSpeed64','btnSpeed32b','btnSpeed64b'];
+      const before = gameSpeed;
+      let err = null;
+      try { setGameSpeed(32); } catch (e) { err = e.message; }
+      return { present: ids.filter(i => document.getElementById(i)).length, err, after: gameSpeed, before };
+    });
+    ok(spd.present === 4, 'x32 y x64 existen en las dos filas de velocidad (' + spd.present + '/4)');
+    ok(!spd.err, 'setGameSpeed(32) no lanza' + (spd.err ? ' :: ' + spd.err : ''));
+    ok(spd.after === 32, 'y el juego acepta x32 (gameSpeed=' + spd.after + ')');
+    await page.evaluate(() => setGameSpeed(1));
+
     await page.screenshot({ path: 'screenshots/04-mundo-big.png' });
     ok(errs.length === 0, 'cero errores de JS en pestana normal' + (errs[0] ? ' :: ' + errs.slice(0, 2).join(' | ') : ''));
     const f404 = [...new Set(net)];

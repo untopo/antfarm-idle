@@ -54,7 +54,8 @@ if [ "$FULL" = "--full" ]; then
   # instantanea COMPLETA del proyecto: codigo + arte + tests + scripts, sin basuras ni el propio kit
   tar czf "$FULLF" --exclude='./node_modules' --exclude='./.git' --exclude='./.cache' --exclude='./.npm' \
       --exclude='./.config' --exclude='./.local' --exclude='./snapshots' --exclude='./backups' \
-      --exclude='./screenshots' --exclude='./Unselected files' --exclude='./image-search' .
+      --exclude='./screenshots' --exclude='./Unselected files' --exclude='./image-search' \
+      --exclude='./dist' .
   ( cd snapshots && sha256sum "$(basename "$CODE")" "$(basename "$BUNDLE")" "$(basename "$FULLF")" ) > "$SHA"
 else
   ( cd snapshots && sha256sum "$(basename "$CODE")" "$(basename "$BUNDLE")" ) > "$SHA"

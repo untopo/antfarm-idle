@@ -56,3 +56,35 @@ El patrón de "por si acaso" que provocó el bug original (un `<script>` inline 
 el flujo de `app.js`, `bootstrap.js` re-enganchando lo ya enganchado, `?v=` distintos por asset) es
 exactamente el que hace que una reversión pase desapercibida. Con **un** dueño del comportamiento y **un**
 número de versión, cualquier desfase se ve en cuanto se abre el juego.
+
+
+## 2ª parte: el día congelado (mismo día, tarde)
+
+Síntoma del dueño: llovía, las hormigas cavaban, pero el reloj de la placa de madera no se movía.
+
+Causa real: no estaba parado el tiempo, estaba parado el **repintado**. `updateColonyUIInner()` tenía
+una línea que escribía en `hudSel.style` con la guarda puesta sobre la hormiga seleccionada (`if(sel)`)
+y no sobre el nodo del HUD (`#hudSel`, inexistente en este `index.html`). Al seleccionar una hormiga,
+aquel `null.style` lanzaba, y como la llamada al reloj vivía **al final** de esa misma función
+(`updateCalendarWidget()`), nunca llegaba a ejecutarse: el envoltorio se tragaba el error y el HUD
+quedaba a medias para siempre.
+
+Se han tomado tres medidas, en este orden de importancia:
+
+1. **El reloj ya no depende del HUD.** `updateColonyUI()` llama al calendario al final, *después* del
+   `catch`, así que se repinta aunque cualquier otro nodo falle. Un adorno roto puede romper un adorno,
+   no la hora.
+2. **Nada de nodos huérfanos.** El bloque de `hudSel` se guarda con `if(sel && hudSel)` y el aviso del
+   `catch` ahora imprime la línea exacta (`e.stack`) en modo `?debug=1`, para que el próximo id que
+   falte se señale solo en vez de congelar una pantalla.
+3. **x32 y x64 han vuelto, y `setGameSpeed` ya no se rompe.** Estaban referenciados (`k32`) desde la
+   reconstrucción sin estar declarados: pulsarlos lanzaba y no cambiaba la velocidad. Ahora los
+   botones se repintan por patrón de id (`btnSpeed*`, `btnVel*`, `btnCorner*`), así que añadir o quitar
+   un botón del markup no puede dejar una referencia muerta, y `btnTurbo` cicla 1·2·4·8·16·32·64.
+
+Cómo se comprueba: `test/browser-smoke.js` mide la placa de verdad — exige que `#rcTime` y `#timeLabel`
+cambien de texto solos con una hormiga seleccionada, y que `setGameSpeed(32)` no lance (27 ok en el
+navegador real). Un cambio que vuelva a colgar el reloj se detecta en el primer `bash test/run-all.sh`.
+
+Paquete de publicación: `bash scripts/pack-itch.sh` deja `dist/antfarm-itch-<fecha>.zip` con
+`index.html` en la raíz (lo que espera itch.io), verificado byte a byte contra el repo antes de entregar.

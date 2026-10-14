@@ -15,3 +15,6 @@ mockups/
 assets/
 ant-farm-rpg/assets/
 *.log
+
+dist/
+snapshots/
