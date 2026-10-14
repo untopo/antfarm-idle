@@ -61,6 +61,38 @@ node test/browser-smoke.js    # solo el navegador real (creación, iframe sandbo
 y `world-frame-driver.js` son para mirar de dónde viene el coste (la fila "crear mundo (todo)" imprime
 negativos por cómo mide: ignórala, usa "crear mundo (base)").
 
+## Kit de recuperación (por qué existe esto)
+
+El 2026-10-14 el espacio de trabajo volvió solo a una revisión anterior a mitad de sesión y se perdió
+trabajo que no estaba en ningún snapshot (ver `docs/INCIDENTE-20261014.md`). `git` dentro del workspace
+protege de mis errores, no de eso: **lo único que sobrevive es lo que sale del sandbox**.
+
+```bash
+bash scripts/snapshot.sh "lo que sea que acabe de terminar" --full   # commit + bundle + tgz de código + tgz completo
+bash scripts/restore.sh snapshots/antfarm-<ts>-full.tgz --into /tmp/prueba   # comprueba que el kit restaura
+```
+
+`snapshot.sh` deja en `snapshots/`:
+
+| Fichero | Qué es | Tamaño |
+|---|---|---|
+| `antfarm-<ts>-code.tgz` | código (HTML, CSS, JS, docs, tests, scripts) | ~236 KB |
+| `antfarm-<ts>.bundle` | histórico de git clonable (`git clone` y listo) | ~280 KB |
+| `antfarm-<ts>-full.tgz` | **todo** el proyecto, con los ~28 MB de assets | ~44 MB |
+| `antfarm-<ts>-sha256.txt` | huellas para detectar corrupción | 289 B |
+
+Los assets están fuera del historial de `git` a propósito (28 MB por commit hinchan `.git` y el snapshot
+del propio workspace, que es justo lo que queremos evitar); viajan en el `-full.tgz`. Al restaurar, el
+script comprueba sintaxis y lanza `test/create-farm-flow.js` contra la copia restaurada: si el test no
+da 28 ok, la restauración no vale.
+
+Rutina: **cada bloque terminado = tests verdes + `snapshot.sh` + descargar el `-code.tgz`** (y el
+`-full.tgz` cuando haya cambiado arte). Si además quieres remoto, desde TU máquina:
+
+```bash
+git init && git remote add origin <url-de-tu-repo-privado> && git push -u origin HEAD
+```
+
 ## Reglas del proyecto
 
 - **Nada de diálogos del navegador** (`alert/confirm/prompt`): en iframes `sandbox` y en varios móviles
@@ -74,5 +106,6 @@ negativos por cómo mide: ignórala, usa "crear mundo (base)").
   entender cómo cavar o cómo escalar un mapa) viven en los comentarios y en `docs/notas/`, nunca en la UI.
 - **Nada debe quedar colgado**: toda barra de progreso con temporizador lleva vigilante y toda ruta de
   error avisa en pantalla con reintento.
-- Hay `git` en la raíz del workspace: commit tras cada bloque de cambios. Sirve para recuperar trabajo
+- Hay `git` en la raiz y un `scripts/snapshot.sh` que ademas escribe un kit descargable. Ningun bloque se
+  cierra sin: tests verdes + snapshot + descarga del `-code.tgz` (ver "Kit de recuperación" arriba).
   si el entorno restaurara una revisión vieja (ya pasó: ver `docs/INCIDENTE-20261014.md`).

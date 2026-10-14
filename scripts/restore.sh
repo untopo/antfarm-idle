@@ -42,9 +42,9 @@ fi
 echo "-- comprobaciones --"
 node --check "$ROOT/js/app.js" && echo "  sintaxis de app.js: OK"
 if [ -f "$GAME/test/run-all.sh" ]; then
-  ( cd "$GAME" && bash test/create-farm-flow.js 2>&1 | tail -n 2 )
+  ( cd "$GAME" && node test/create-farm-flow.js 2>&1 | tail -n 2 )
 else
-  echo "  (sin test/ en esta rama del kit: prueba bash $GAME/test/run-all.sh si estaba en el .bundle)"
+  echo "  (no hay test/ aqui dentro: bash test/run-all.sh solo funciona desde el -full.tgz o el .bundle)"
 fi
 echo ""
 echo "Arrancar:  cd $GAME && node dev-server.js 8017   ->  http://localhost:8017/"
