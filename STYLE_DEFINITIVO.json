@@ -1,0 +1,85 @@
+{
+  "meta": {
+    "version": "20261012rv",
+    "name": "Ant Farm RPG — Estilo Definitivo Cozy 16-bit",
+    "based_on": "categoria_02_vegetacion (284K transparente) + honey_tight_transparent (66K) — validados sin fondo",
+    "created": "2026-10-12",
+    "author": "Arena Agent + Dueño Granja"
+  },
+  "style": {
+    "name": "Cozy 16-bit Hand-Placed Pixel",
+    "references": ["Stardew Valley", "Terraria", "Forager"],
+    "mood": "cálido, artesanal, granja acogedora, no realista, no sucio",
+    "palette": {
+      "wood_primary": "#7b4a22",
+      "wood_dark": "#6f4220",
+      "wood_light": "#84532a",
+      "soil": "#6d4a2a",
+      "outline": "#000000 (1px sólido, siempre)",
+      "highlight": "#ffffff (1-2px puntual, brillo)",
+      "amber_honey": "#f9a80c",
+      "green_plant": "#3a7d2e",
+      "sky": "NO USAR — fondo transparente",
+      "ground": "NO USAR — fondo transparente"
+    },
+    "outline": "1px negro puro #000 en todo sprite, esquinas en ángulo 90°, sin antialias, sin blur",
+    "shading": "2-3 tonos máximo por color, dithering manual 1px, sin degradados, sin sombra proyectada opaca (solo 1px sutil opcional rgba(0,0,0,0.12))",
+    "background": {
+      "type": "PNG-32 RGBA transparente puro",
+      "alpha_outside_sprite": 0,
+      "alpha_inside_sprite": 255,
+      "disallowed": ["fondo blanco #ffffff opaco", "fondo gris #cccccc", "cielo azul", "suelo verde", "checker", "marco dorado", "label texto", "sombra negra ovalada"],
+      "spacing_between_sprites": "transparente (no blanco, no gris)",
+      "verification": "sample 32x32 grid debe tener >70% píxeles alpha=0, bbox tight alrededor del sprite (<5px padding)"
+    },
+    "technical": {
+      "format": "PNG-32 RGBA (no JPG, no PNG-8)",
+      "resolution": "atlas 1024x1024 o 2048x2048 según categoría",
+      "tile": {
+        "VEG": { "tile": 341, "border": 30, "inner": 280, "grid": "3x3 = 1024", "sprite_size": "180x180 dentro de 280" },
+        "ALIM": { "tile": 704, "crop": 380, "centered": true, "sprite_size": "283x366 honey tall" },
+        "CLIMA": { "tile": 682, "border": 18, "grid": "3x2 = 2048", "inner": "620x900" },
+        "SURFACE": { "tile": 512, "inner": 480, "border": 16, "opaque": true, "note": "único atlas opaco (suelo)" }
+      },
+      "draw": {
+        "imageSmoothingEnabled": false,
+        "filter": "NEAREST",
+        "scale_map": "honey 5-9px (7x8 amt3), plants 16-24px, structures 48px (3xCELL)"
+      }
+    },
+    "prompt_template": {
+      "positive": "cozy 16-bit pixel art {SUBJECT}, isolated on pure transparent background, no sky, no ground, no background, no frame, no text, no shadow, black 1px outline hand-placed pixels, warm wood palette #7b4a22 #6f4220 #84532a, 2-tone shading, Stardew Valley style, crisp pixels, {SIZE} centered, transparent spacing around sprite 40px",
+      "negative": "no white background, no gray background, no checker, no sky, no ground, no cloud, no frame, no border, no label, no text, no shadow blob, no blur, no antialias, no photorealistic, no 3D, no gradient",
+      "placeholders": {
+        "SUBJECT": "ej: 'clover 3-leaf' / 'honey drop amber with white highlight' / 'rain cloud blue'",
+        "SIZE": "ej: '180x180' / '283x366 tall'"
+      },
+      "example_honey": "cozy 16-bit pixel art honey drop amber #f9a80c with white 1px highlight, isolated on pure transparent background, no sky, no ground, no background, no frame, black 1px outline hand-placed pixels, warm wood palette, 2-tone shading, Stardew Valley style, crisp, 283x366 centered, transparent spacing 40px",
+      "example_plant": "cozy 16-bit pixel art clover 3-leaf green #3a7d2e with black 1px outline, isolated on pure transparent background, no sky, no ground, no background, no frame, hand-placed pixels, 180x180 centered, transparent spacing 40px"
+    },
+    "replicable_rules": [
+      "1. Generar SIEMPRE con fondo transparente puro (alpha 0) — verificar con checker 8px: >70% alpha 0",
+      "2. Sprite centrado, <5px padding transparente alrededor, sin marco dorado ni label",
+      "3. Outline 1px #000 obligatorio en todo borde del sprite",
+      "4. Máximo 12-16px en mapa (honey 5-9px, plantas 16-24px) — no gigante 28px",
+      "5. Atlas con spacing transparente, no blanco: TILE = 341/512/704 con BORDER transparente",
+      "6. Guardar como PNG-32, verificar identify: '8-bit sRGB' + alpha, sample transparent >0",
+      "7. Si sale con fondo gris/blanco/cielo, post-procesar: hacer transparente todo píxel light gray (r>185,g>185,b>185 && |r-g|<18) manteniendo highlight blanco solo si es <3px aislado (opcional perder highlight)",
+      "8. Nombre archivo categoria_XX_nombre.png, bump ?v= en index.html tras aplicar"
+    ],
+    "validation_checklist": [
+      "identify file.png => 'PNG ... 8-bit sRGB' y size correcto (1024 o 2048)",
+      "python: sum(alpha==0)/samples >0.70",
+      "bbox tight (<5px padding) via getbbox()",
+      "resize 28px checker: no cuadrado blanco/gris detrás",
+      "en juego: drawImage con imageSmoothingEnabled=false se ve nítido sin fondo"
+    ],
+    "categories": {
+      "01_superficies": { "status": "APLICADA opaca 3.2M 2048", "background": "opaco (única)", "next": "añadir tintes estacionales verde/nieve via código, no nuevo atlas" },
+      "02_vegetacion": { "status": "APLICADA transparente 284K 1024 (fix 20261012rv)", "sprites": ["clover","grassTuft","flowerY","flowerW","berryBush","mushroom","sapling","fruitTree","bush"], "grid": "3x3" },
+      "03_alimentos": { "status": "APLICADA honey 66K transparente (283x366) + atlas 4.0M para berry/manzana", "note": "honey usa honey_tight_transparent.png 66KB, no atlas pesado" },
+      "10_clima": { "status": "APLICADA transparente 1.5M 2048 (fix 20261012rv)", "sprites": ["rain","cloud","snow","leaf","pollen"], "grid": "3x2" },
+      "04_materiales_05_estructuras_06_herramientas_07_personajes_08_brood_09_senales_11_ocultos_12_ui": { "status": "LIMPIADAS (movidas a backup y desactivadas false &&) — revertidas a '?' o procedural hasta regenerar con este JSON" }
+    }
+  }
+}

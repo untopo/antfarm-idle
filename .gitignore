@@ -1,0 +1,15 @@
+node_modules/
+.cache/
+.npm/
+.local/
+snapshots/
+backups/
+screenshots/
+Unselected files/
+image-search/
+designs/
+uploads/
+mockups/
+assets/
+ant-farm-rpg/assets/
+*.log

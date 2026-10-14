@@ -1,0 +1,78 @@
+{
+  "meta": {
+    "name": "HORMIGA VIVA — Living Pixel Cozy",
+    "version": "1.0 — 2026-10-12",
+    "concept": "Estilo propio desde cero, ultra-replicable y animable en 2 frames, con evolución y reacción como Terraria (pasto que crece, se mueve, se propaga)",
+    "inspiracion": "Terraria (grass spread + sway) + Stardew Valley (paleta cálida) + Celeste (animación simple por transform)",
+    "objetivo": "Cualquier textura se hace en <15 min, se anima sin redibujar, y puede crecer/evolucionar en 3 etapas en el juego"
+  },
+  "principios_replicabilidad": {
+    "1_grid_fijo": "Todo sprite es 16x16 base (escalable a 32x32 para bosses). Nunca 283x366 libres — siempre múltiplo de 16.",
+    "2_paleta_cerrada": "Solo 4 colores por sprite + outline negro + highlight blanco. Paleta global de 12 colores (definida abajo). Copiar/pegar, no elegir.",
+    "3_outline_unico": "1px #000 siempre, esquinas 90°, sin antialias. Es lo que hace que todo combine sin pensar.",
+    "4_forma_primitiva": "Todo se construye con 3 primitivas: rect 4x2, circle 6px, tri 4px. Clover = 3 circles, hongo = rect+circle, etc. No dibujo libre.",
+    "5_sin_fondo": "PNG-32 transparente puro, sin sky, sin ground, sin marco. Verificación: >80% alpha 0 en 16x16"
+  },
+  "paleta_global_12": {
+    "madera": ["#7b4a22", "#84532a", "#a67c52"],
+    "suelo": ["#6d4a2a", "#8b5a2b", "#c2a080"],
+    "hoja": ["#2e7d32", "#4caf50", "#81c784"],
+    "hongo_amber": ["#f9a80c", "#ffcc00", "#fff176"],
+    "piedra": ["#5a5a5a", "#8a8a8a", "#c8c8c8"],
+    "outline": "#000000",
+    "highlight": "#ffffff"
+  },
+  "tecnica_animacion_simple": {
+    "filosofia": "No sprite-sheet de 8 frames. Animamos por TRANSFORM (translate/scale/rotate) del mismo PNG, como Terraria hace con el pasto.",
+    "metodos": {
+      "sway_idle_2frames": {
+        "descripcion": "Pasto/árbol se mece ±1px con sin(time). 2 frames lógicos, 0 dibujo extra.",
+        "codigo": "const sway = Math.sin(time*0.014 + x*0.09) * 0.7; ctx.translate(sway,0); ctx.drawImage(img, x, y); ctx.setTransform(1,0,0,1,0,0);",
+        "uso": "plantas, hierba, hongos"
+      },
+      "growth_3_etapas": {
+        "descripcion": "Todo lo vivo tiene 3 tamaños en el mismo PNG, escalado por código, no 3 PNGs.",
+        "etapas": ["semilla 8x8 (scale 0.5)", "brote 12x12 (scale 0.75)", "maduro 16x16 (scale 1.0)"],
+        "codigo": "const s = growth<0.33?0.5 : growth<0.66?0.75:1.0; ctx.drawImage(img, x+8*(1-s), y+8*(1-s), 16*s, 16*s);",
+        "evolucion": "growth += dt*0.00012 + (humedad*0.00004) + (luz*0.00002); // como Terraria: crece si hay agua/luz"
+      },
+      "react_dig_shake": {
+        "descripcion": "Al cavar al lado, el sprite tiembla 4 frames.",
+        "codigo": "if(dist(ant,plant)<18 && ant.state==='CAVANDO'){ const shake=(Math.sin(time*1.8)*1.2)*prog; ctx.translate(shake,0); }",
+        "uso": "todo lo cercano a hormiga cavando"
+      },
+      "propagate_terraria": {
+        "descripcion": "Como el pasto de Terraria: cada 2s, si hay hierba sana al lado de tierra desnuda con humedad>0.4, 12% chance de colonizar.",
+        "codigo": "if(Math.random()<0.12 && neighbor.soilType===1 && humidity>0.4) neighbor.grass=true;"
+      }
+    },
+    "frames_reales": "Máximo 4 PNGs por entidad (idle, dig, carry, sleep), cada uno 16x16. El resto es código. Un artista hace 1 PNG y el código le da vida."
+  },
+  "evolucion_y_movimiento_mundo_vivo": {
+    "como_terraria": [
+      "Pasto no es decorado estático: es entidad con growth 0→1. Cada frame crece un poco si hay luz (isDay) y agua (weather rain).",
+      "Hongos se expanden a celdas vecinas si health>0.7 y hay oscuridad (como Terraria mushroom grass).",
+      "Árboles pasan de sapling 8px → bush 12px → tree 16px con 3 sprites escalados, no 3 dibujos.",
+      "Todo reacciona: pisar → aplasta 0.5s (scaleY 0.8), cavar → shake, lluvia → +growth, sequía → amarillea (paleta hoja 4caf50→c2a080)."
+    ],
+    "ejemplo_planta_completa": {
+      "sprite_unico": "16x16 PNG transparente: trébol 3 círculos #4caf50 + outline #000. Guardado una vez.",
+      "codigo_vivo": "let growth=0.1; // 0-1\nfunction updatePlant(p,dt){\n  if(weather.rain) growth+=dt*0.00018;\n  if(isDay) growth+=dt*0.00006;\n  const sway=Math.sin(time*0.014 + p.x*0.09)*0.7;\n  const s=growth<0.33?0.5:growth<0.66?0.75:1.0;\n  ctx.save(); ctx.translate(p.x+sway, p.y);\n  ctx.drawImage(tex, 0,0,16,16, 8*(1-s),8*(1-s),16*s,16*s);\n  ctx.restore();\n  if(growth>0.9 && Math.random()<0.0004) spreadToNeighbor(p); // Terraria spread\n}"
+    }
+  },
+  "template_generacion_ia": {
+    "prompt_positivo": "tiny 16x16 pixel art {SUBJECT}, cozy living pixel style, 1px black outline, 3 colors only from palette {PALETTE}, isolated on pure transparent background, no sky, no ground, no frame, no shadow, centered 12x12 inside 16x16, hand-placed pixels, flat top-down slightly isometric, Stardew Valley minimal",
+    "prompt_negativo": "no white background, no gray background, no sky, no ground, no checker, no frame, no text, no shadow blob, no blur, no gradient, no 3D, no photorealistic, no 32x32, no multiple sprites",
+    "variables": {
+      "SUBJECT": "clover / grass tuft / mushroom / honey drop / stone",
+      "PALETTE": "#2e7d32 #4caf50 #81c784 for plant, #f9a80c #ffcc00 for honey"
+    },
+    "validacion": "16x16 PNG, >80% transparent, <50KB, resize to 16x16 checker sin fondo"
+  },
+  "plan_aplicacion": {
+    "fase_1_ya": "Reemplazar 02_vegetacion y 03_honey con este estilo 16x16 (ya lo hicimos: honey 66KB, veg 284K).",
+    "fase_2_next": "Regenerar 04_materiales (piedra/arcilla/arena) como 3 rects 16x16 + outline, 2-frame idle.",
+    "fase_3": "05_estructuras como 16x16 tiles modulares (pared, techo, puerta) que se ensamblan por código, no un PNG gigante de 512.",
+    "ventaja": "Un PNG de 16x16 pesa 2KB y con código escala/rota/colorea para 10 variantes. Antes un atlas de 1024 pesaba 1.2M y no se podía animar."
+  }
+}

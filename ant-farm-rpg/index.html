@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ANT FARM — Pixel Real v4 · 16-BIT</title>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache">
+<link rel="stylesheet" href="css/style.css?v=20261015e">
+
+<style id="topoHideUntilStart">
+  #appRoot{display:none !important}
+  #velAntBar, #calendarWidget{visibility:hidden !important; pointer-events:none !important}
+  body.game-started #appRoot{display:flex !important}
+  body.game-started #velAntBar, body.game-started #calendarWidget{visibility:visible !important; pointer-events:auto !important}
+</style>
+</head>
+<body>
+
+
+<!-- FLOW TOPO: Splash -> MainMenu -> CreateSize / Load / Settings / Credits -->
+<div id="splashScreen" style="position:fixed;inset:0;z-index:10000;background:#0a0a0a;display:flex;align-items:center;justify-content:center;transition:opacity 0.82s">
+  <div style="text-align:center">
+    <div style="font-family:'Press Start 2P',monospace;font-size:22px;color:#ffcc00;text-shadow:4px 4px 0 #000;letter-spacing:2px">TOPO STUDIOS</div>
+    <div style="font-family:'VT323',monospace;font-size:22px;color:#8a7a5a;margin-top:10px;letter-spacing:1px">🐜 ANT FARM RPG</div>
+    <div style="margin-top:18px;width:120px;height:4px;background:#1a140f;border:2px solid #000;margin-left:auto;margin-right:auto;box-shadow:2px 2px 0 #000"><div style="height:100%;width:0%;background:#ffcc00;animation: splashLoad 1.1s linear forwards"></div></div>
+  </div>
+  <style>@keyframes splashLoad{from{width:0%}to{width:100%}}</style>
+</div>
+
+
+
+<div id="mainMenu" style="position:fixed;inset:0;z-index:9999;background: linear-gradient(rgba(0,0,0,0.22), rgba(0,0,0,0.32)), url('assets/menu-bg.png') center/cover no-repeat;display:none;align-items:center;justify-content:center;padding:20px;box-sizing:border-box">
+  <div style="width:520px;max-width:100%;background:#1a140f;border:4px solid #000;box-shadow:8px 8px 0 #000;padding:22px;display:flex;flex-direction:column;gap:16px;image-rendering:pixelated;text-align:center">
+    <div style="font-family:'Press Start 2P',monospace;font-size:16px;color:#ffcc00;text-shadow:2px 2px 0 #000">ANT FARM RPG</div>
+    <div style="font-family:'VT323',monospace;font-size:16px;color:#c9b896">Elige qué hacer • Forja tu colonia</div>
+    <button class="pixel-btn primary" id="btnMainCreate" style="width:100%;justify-content:center;padding:16px;font-size:10px">➕ CREAR NUEVA GRANJA</button>
+    <button class="pixel-btn" id="btnMainLoad" style="width:100%;justify-content:center;padding:14px;font-size:9px;background:#000;color:#fff8dc">📂 CARGAR GRANJA</button>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <button class="pixel-btn small" id="btnMainSettings" style="justify-content:center;background:#1a140f;color:#8a7a5a">⚙ SETTINGS</button>
+      <button class="pixel-btn small" id="btnMainCredits" style="justify-content:center;background:#1a140f;color:#8a7a5a">© CRÉDITOS</button>
+    </div>
+    <div style="font-family:'VT323',monospace;font-size:11px;color:#5a4a3a">v20261015e • Topo Studios • Tamaños asesorados para tu equipo</div>
+  </div>
+</div>
+
+<div id="createSizeScreen" style="position:fixed;inset:0;z-index:9998;background: linear-gradient(rgba(0,0,0,0.58), rgba(0,0,0,0.66)), url('assets/menu-bg.png') center/cover no-repeat;backdrop-filter:blur(2px);display:none;align-items:center;justify-content:center;padding:20px;box-sizing:border-box">
+  <div style="width:560px;max-width:100%;background:#1a140f;border:4px solid #000;box-shadow:8px 8px 0 #000;padding:20px;display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00">ELIGE TAMAÑO DEL MUNDO</div>
+      <button class="pixel-btn small" data-close style="background:#1a0f00;color:#8a7a5a">← VOLVER</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+      <button class="pixel-btn" data-size="small" style="padding:14px 8px;flex-direction:column;gap:6px;align-items:center;justify-content:center;background:#2a2012;color:#fff8dc"><span style="font-size:10px">🟩 SMALL</span><span style="font-size:7px;color:#8a7a5a">48×28 • 1344 celdas</span><span style="font-size:6px;color:#2de67a">Móvil o PC modesta · colonia corta</span></button>
+      <button class="pixel-btn" data-size="medium" style="padding:14px 8px;flex-direction:column;gap:6px;align-items:center;justify-content:center;background:var(--amber);color:#000;border-color:#000"><span style="font-size:10px">🟨 MEDIUM</span><span style="font-size:7px;color:#000">64×36 • Recomendado</span><span style="font-size:6px;color:#1a140f">Equilibrado</span></button>
+      <button class="pixel-btn" data-size="big" style="padding:14px 8px;flex-direction:column;gap:6px;align-items:center;justify-content:center;background:#2a2012;color:#fff8dc"><span style="font-size:10px">🟥 BIG</span><span style="font-size:7px;color:#8a7a5a">96×48 • 4608 celdas</span><span style="font-size:6px;color:#ff8c00">PC buena · colonia larga</span></button>
+    </div>
+    <div style="background:#000;border:2px solid #000;padding:8px;font-family:'VT323',monospace;font-size:13px;color:#8a7a5a;line-height:1.3">Cada tamaño trae sus propias cuentas: más terreno, más cofres enterrados, más tarros en la despensa y más bocas que alimentar. Y el trabajo va con el terreno, no por decreto: un <b style="color:#c9b896">SMALL</b> siembra y se mueve más suelto que un <b style="color:#ff8c00">BIG</b>. <b style="color:#ffcc00">MEDIUM</b> es el parejo. Puedes crear varias granjas y cargar después.</div>
+    <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#5a4a3a;text-align:center">Click en un tamaño para crear → verás guía rápida</div>
+  </div>
+</div>
+
+<div id="loadScreen" style="position:fixed;inset:0;z-index:9998;background: linear-gradient(rgba(0,0,0,0.58), rgba(0,0,0,0.66)), url('assets/menu-bg.png') center/cover no-repeat;backdrop-filter:blur(2px);display:none;align-items:center;justify-content:center;padding:20px;box-sizing:border-box">
+  <div style="width:560px;max-width:100%;max-height:86vh;background:#1a140f;border:4px solid #000;box-shadow:8px 8px 0 #000;display:flex;flex-direction:column;overflow:hidden">
+    <div style="background:#000;border-bottom:4px solid #000;padding:12px;display:flex;justify-content:space-between;align-items:center">
+      <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00">📂 CARGAR GRANJA</div>
+      <button class="pixel-btn small" data-close style="background:#1a0f00;color:#8a7a5a">← VOLVER</button>
+    </div>
+    <div id="loadList" style="flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:10px;background:#0f0a05"></div>
+    <div style="background:#000;border-top:3px solid #000;padding:8px;font-family:'VT323',monospace;font-size:12px;color:#8a7a5a;text-align:center">Si cierras la pestaña, tu granja sigue viviendo en tiempo normal (no acelerado) y la recuperas aquí.</div>
+  </div>
+</div>
+
+<div id="settingsScreen" style="position:fixed;inset:0;z-index:9998;background: linear-gradient(rgba(0,0,0,0.58), rgba(0,0,0,0.66)), url('assets/menu-bg.png') center/cover no-repeat;backdrop-filter:blur(2px);display:none;align-items:center;justify-content:center;padding:20px;box-sizing:border-box">
+  <div style="width:420px;max-width:100%;background:#1a140f;border:4px solid #000;box-shadow:8px 8px 0 #000;padding:20px;display:flex;flex-direction:column;gap:12px;text-align:center">
+    <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00">⚙ SETTINGS</div>
+    <div style="font-family:'VT323',monospace;font-size:14px;color:#8a7a5a">Tu granja se guarda sola cada 4 segundos.<br><span style="color:#5a4a3a">ESC abre este menú desde el juego.</span></div>
+    <div id="settingsFarms" style="display:flex;flex-direction:column;gap:6px;max-height:180px;overflow:auto;background:#0f0a05;border:2px solid #000;padding:8px"></div>
+    <div style="display:flex;gap:8px"><button class="pixel-btn small" id="btnWipeSave" style="flex:1;justify-content:center;background:#1a0f00;color:#ff6b6b">🗑 BORRAR GRANJA</button><button class="pixel-btn" data-close style="flex:1;justify-content:center">← VOLVER</button></div>
+  </div>
+</div>
+
+<div id="creditsScreen" style="position:fixed;inset:0;z-index:9998;background: linear-gradient(rgba(0,0,0,0.58), rgba(0,0,0,0.66)), url('assets/menu-bg.png') center/cover no-repeat;backdrop-filter:blur(2px);display:none;align-items:center;justify-content:center;padding:20px;box-sizing:border-box">
+  <div style="width:420px;max-width:100%;background:#1a140f;border:4px solid #000;box-shadow:8px 8px 0 #000;padding:20px;display:flex;flex-direction:column;gap:12px;text-align:center">
+    <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00">© CRÉDITOS</div>
+    <div style="font-family:'VT323',monospace;font-size:16px;color:#c9b896;line-height:1.4">ANT FARM RPG • Hecho con Topo<br><span style="color:#8a7a5a">Arte pixel 16-BIT • Motor propio</span></div>
+    <button class="pixel-btn" data-close style="justify-content:center">← VOLVER</button>
+  </div>
+</div>
+
+<div id="onboardingModal" style="position:fixed;inset:0;z-index:9997;background:rgba(0,0,0,0.58);backdrop-filter:blur(2px);display:none;align-items:center;justify-content:center;padding:20px;box-sizing:border-box">
+  <div style="width:min(640px,92vw);background:#1a140f;border:4px solid #000;box-shadow:8px 8px 0 #000;overflow:hidden">
+    <div style="background:#000;border-bottom:4px solid #000;padding:12px 14px;display:flex;justify-content:space-between;align-items:center">
+      <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00">DÍA 0 — MUNDO NUEVO</div>
+      <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#8a7a5a">ANT FARM</div>
+    </div>
+    <div style="padding:18px 16px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;gap:12px;align-items:center"><div style="width:52px;height:52px;background:#ffcc00;border:3px solid #000;display:grid;place-items:center;font-size:24px;box-shadow:3px 3px 0 #000">🍯</div><div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#ffcc00">1 — PON MIEL</div><div style="font-family:'VT323',monospace;font-size:16px;color:#fff8dc;margin-top:4px">Toca el pasto verde de arriba para soltar miel.</div></div></div>
+      <div style="display:flex;gap:12px;align-items:center"><div style="width:52px;height:52px;background:#ff3b30;border:3px solid #000;display:grid;place-items:center;font-size:20px;box-shadow:3px 3px 0 #000">⛏</div><div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#ff3b30">2 — CAVA</div><div style="font-family:'VT323',monospace;font-size:16px;color:#fff8dc;margin-top:4px">Mantén <b style="color:#ffcc00">SHIFT + click</b> en la tierra para cavar túneles.</div></div></div>
+      <div style="display:flex;gap:12px;align-items:center"><div style="width:52px;height:52px;background:#000;border:3px solid #000;display:grid;place-items:center;font-size:20px;box-shadow:3px 3px 0 #000">👁</div><div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#2de67a">3 — MÍRALAS</div><div style="font-family:'VT323',monospace;font-size:16px;color:#fff8dc;margin-top:4px">Toca una hormiga para ver su ficha. Arriba verás tu <b style="color:#ffcc00">economía</b> en vivo.</div></div></div>
+    </div>
+    <div style="background:#000;border-top:4px solid #000;padding:10px 12px;display:flex;justify-content:flex-end">
+      <button id="btnOnboardingStart" style="font-family:'Press Start 2P',monospace;font-size:9px;padding:12px 18px;background:#2de67a;border:3px solid #000;color:#000;box-shadow:4px 4px 0 #000;cursor:pointer">¡A JUGAR! →</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- PANTALLA CARGA MUNDO - generacion propia -->
+<div id="worldGenScreen" style="position:fixed;inset:0;z-index:9996;background: linear-gradient(rgba(26,20,15,0.72), rgba(0,0,0,0.78)), url('assets/menu-bg.png') center/cover no-repeat;display:none;align-items:center;justify-content:center;padding:20px;box-sizing:border-box">
+  <div style="width:520px;max-width:100%;background:#000;border:4px solid #000;box-shadow:8px 8px 0 #000;padding:20px;display:flex;flex-direction:column;gap:14px;image-rendering:pixelated">
+    <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00;text-align:center;letter-spacing:1px">⛏ GENERANDO MUNDO...</div>
+    <div id="genSizeLabel" style="font-family:'Press Start 2P',monospace;font-size:8px;color:#8a7a5a;text-align:center">MEDIUM 64×36</div>
+    <div id="genSeedLabel" style="font-family:'VT323',monospace;font-size:13px;color:#5a4a3a;text-align:center">Seed: -</div>
+    <div style="height:18px;background:#1a140f;border:3px solid #000;position:relative;overflow:hidden;box-shadow:inset 0 0 0 2px #000">
+      <div id="genBar" style="position:absolute;left:0;top:0;bottom:0;width:0%;background:linear-gradient(90deg,#2de67a 0%, #ffcc00 100%);transition:width 0.15s linear;box-shadow:2px 0 0 #000"></div>
+      <div id="genBarText" style="position:absolute;inset:0;display:grid;place-items:center;font-family:'Press Start 2P',monospace;font-size:7px;color:#fff;text-shadow:1px 1px 0 #000">0%</div>
+    </div>
+    <div id="genStatus" style="font-family:'VT323',monospace;font-size:16px;color:#c9b896;text-align:center;min-height:20px">Tallando terreno...</div>
+    <div id="genSub" style="font-family:'VT323',monospace;font-size:12px;color:#8a7a5a;text-align:center">Cada bloque da forma a tu hogar</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;font-family:'Press Start 2P',monospace;font-size:6px;color:#5a4a3a">
+      <span>⬛ Suelo</span><span>🌿 Plantas</span><span>💎 Tesoros</span>
+    </div>
+  </div>
+</div>
+
+<div class="app" id="appRoot" style="display:none">
+  <header>
+    <div class="brand">
+      <div class="logo">◉</div>
+      <div>
+        <div class="head-title">ANT FARM — PIXEL ART</div>
+        <div class="head-sub">GIGANTE · 16-BIT · LECTURA INSTANTÁNEA</div>
+      </div>
+      <div class="head-stats">
+        <div class="h-stat">POP <b id="hPop">3</b>/12</div>
+        <div class="h-stat">COMIDA <b id="hFood">0</b></div>
+        <div class="h-stat">GEN <b id="hGen">0</b></div>
+        <div class="h-stat">FIT <b id="hFit">0.00</b></div>
+        <div class="h-stat live">IQ <b id="hIQ">100</b></div>
+        <div class="h-stat iq">♛ <b id="hQueen">GRÁVIDA</b></div>
+        <button class="pixel-btn small" id="btnAnthro" style="background:#b47aff;color:#fff;padding:6px 8px;font-size:7px" title="Cambiar a antropomorfo">👤 ANTHRO</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <div class="h-stat" style="font-family:'Press Start 2P',monospace;font-size:8px">LVL <b id="hLvl">1</b> <span id="hXpText" style="color:#8a7a5a;font-size:9px">0/100</span> <span style="display:inline-block;width:52px;height:10px;background:#000;border:2px solid #000;position:relative;overflow:hidden;margin-left:4px"><i id="hXpFill" style="position:absolute;left:0;top:0;bottom:0;width:0%;background:var(--amber);display:block"></i></span></div>
+      <button class="pixel-btn" id="btnFood">🍯 MIEL</button>
+      <button class="pixel-btn" id="btnBreed">♛ CRIAR</button>
+      <button class="pixel-btn" id="btnMut">🧬 MUTAR</button>
+      <button class="pixel-btn" id="btnPause">⏸</button>
+      <div style="display:flex;gap:4px;align-items:center;background:#000;border:3px solid #000;padding:3px 4px;box-shadow:3px 3px 0 #000">
+        <span style="font-family:'Press Start 2P',monospace;font-size:7px;color:#8a7a5a;margin-right:2px">VEL</span>
+        <button class="pixel-btn small" id="btnSpeed1" style="background:var(--amber);color:#000;min-width:36px">x1</button>
+        <button class="pixel-btn small" id="btnSpeed2" style="background:#2a2012;color:#fff8dc;min-width:36px">x2</button>
+        <button class="pixel-btn small" id="btnSpeed4" style="background:#2a2012;color:#fff8dc;min-width:36px">x4</button>
+        <button class="pixel-btn small" id="btnSpeed8" style="background:#2a2012;color:#fff8dc;min-width:36px">x8</button>
+        <button class="pixel-btn small" id="btnSpeed16" style="background:#2a2012;color:#fff8dc;min-width:36px">x16</button>
+
+      </div>
+      <button class="pixel-btn" id="btnTurbo" style="display:none">⚡x1</button>
+      <button class="pixel-btn" id="btnTaskbar">▼</button>
+    </div>
+  </header>
+
+  <div id="economyBar" style="height:28px;background:#1a140f;border-bottom:3px solid #000;display:flex;align-items:center;gap:6px;padding:0 10px;flex-shrink:0;font-family:'Press Start 2P',monospace;font-size:7px;color:#c9b896">
+    <span style="color:#8a7a5a">ECONOMÍA</span>
+    <span class="eco-item" style="background:#000;border:2px solid #000;padding:3px 6px;display:flex;gap:4px;align-items:center"><span>🍯</span><b id="ecoFood" style="color:#ffcc00">0</b></span>
+    <span class="eco-item" style="background:#000;border:2px solid #000;padding:3px 6px;display:flex;gap:4px;align-items:center"><span>🌿</span><b id="ecoFiber" style="color:#2de67a">0</b></span>
+    <span class="eco-item" style="background:#000;border:2px solid #000;padding:3px 6px;display:flex;gap:4px;align-items:center"><span>🪨</span><b id="ecoStone" style="color:#8a8a8a">0</b></span>
+    <span class="eco-item" style="background:#000;border:2px solid #000;padding:3px 6px;display:flex;gap:4px;align-items:center"><span>🧱</span><b id="ecoClay" style="color:#c08060">0</b></span>
+    <span class="eco-item" style="background:#000;border:2px solid #000;padding:3px 6px;display:flex;gap:4px;align-items:center"><span>🪵</span><b id="ecoWood" style="color:#a67c52">0</b></span>
+    <span style="flex:1"></span>
+    <span style="font-family:'VT323',monospace;font-size:11px;color:#5a4a3a">Icono + número • hover para detalle</span>
+  </div>
+
+
+  <main>
+    <div class="farm-pane">
+      <div class="farm-top">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="expand-btn" id="btnExpand">⛶ GRANDE</button><span>CLICK = MIEL · SHIFT+CLICK = CAVAR · CLICK HORMIGA = SEGUIR</span></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <div class="layer-toggles">
+            <button class="tog on amber" id="togEyes">◉ OJOS</button>
+            <button class="tog on purp" id="togTrail">· RASTRO</button>
+            <button class="tog on" id="togInk">⬡ TINTA</button>
+            <button class="tog on" id="togFront">⛏ FRENTE</button>
+          </div>
+          <span style="opacity:0.25">|</span>
+          <span id="camLabel" style="font-family:'Press Start 2P',monospace;font-size:8px;color:var(--cyan)">2 CÁMARAS</span>
+          <div style="display:flex;gap:4px;align-items:center;background:#000;border:3px solid #1a1a1a;padding:3px 4px;box-shadow:2px 2px 0 #000;margin-right:6px">
+            <span style="font-family:'Press Start 2P',monospace;font-size:7px;color:var(--amber)">VEL</span>
+            <button class="zoom-btn" id="btnSpeed1b" style="width:40px;height:30px;font-size:10px;background:var(--amber);color:#000">x1</button>
+            <button class="zoom-btn" id="btnSpeed2b" style="width:40px;height:30px;font-size:10px;background:#000;color:#fff8dc">x2</button>
+            <button class="zoom-btn" id="btnSpeed4b" style="width:40px;height:30px;font-size:10px;background:#000;color:#fff8dc">x4</button>
+            <button class="zoom-btn" id="btnSpeed8b" style="width:40px;height:30px;font-size:10px;background:#000;color:#fff8dc">x8</button>
+            <button class="zoom-btn" id="btnSpeed16b" style="width:44px;height:30px;font-size:10px;background:#000;color:#fff8dc">x16</button>
+
+          </div>
+          <div class="zoom-controls">
+            <button class="zoom-btn" id="btnZoomOut">−</button>
+            <div class="zoom-label" id="zoomLabel">130%</div>
+            <button class="zoom-btn" id="btnZoomIn">+</button>
+            <button class="zoom-btn" id="btnZoomReset">⤢</button>
+            <span id="timeLabel" style="font-family:'Press Start 2P',monospace;font-size:8px;color:#8a7a5a;margin-left:4px">00:00</span>
+          </div>
+        </div>
+      </div>
+      <div class="canvas-wrap" id="canvasWrap">
+        <canvas id="farmCanvas" width="960" height="576"></canvas>
+        <div class="notify-stack" id="notifyStack"></div>
+        <div class="frame-label"><span>🔬 VIDRIO v4 REAL</span><span style="opacity:0.35">|</span><span id="frameInfo">PIXEL REAL · CAVADO ANIMADO</span><span style="opacity:0.35">|</span><span style="font-size:7px">ARRASTRA · RUEDA ZOOM · DOBLE CLICK CENTRA</span></div>
+
+        
+        <div class="depth-ruler" id="depthRuler" title="Profundidad — click para saltar">
+        <div class="depth-track"></div>
+        <div class="depth-ticks" id="depthTicks">
+          <div class="depth-tick major" style="top:0%"><span>0</span></div>
+          <div class="depth-tick" style="top:16%"><span>5</span></div>
+          <div class="depth-tick major" style="top:33%"><span>10</span></div>
+          <div class="depth-tick" style="top:50%"><span>15</span></div>
+          <div class="depth-tick major" style="top:66%"><span>20</span></div>
+          <div class="depth-tick" style="top:83%"><span>25</span></div>
+          <div class="depth-tick major" style="top:100%"><span>30</span></div>
+        </div>
+        <div class="depth-viewport" id="depthViewport" style="top:0%;height:18%"></div>
+        <div class="depth-cursor" id="depthCursor" style="top:9%"><span id="depthCursorVal">0</span></div>
+      </div>
+        <div class="narration" id="narration">
+          <div class="ico">💬</div>
+          <div class="txt" id="narrationTxt"><b>Colonia despierta.</b> <small>Todo es pixel gordo y legible. Mira las burbujas sobre cada hormiga.</small></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ai-pane">
+      <div class="ai-tabs">
+        <div class="ai-tab active" data-tab="colony">COLONIA</div>
+        <div class="ai-tab" data-tab="brain">CEREBRO</div>
+        <div class="ai-tab" data-tab="history">HISTORIAL</div>
+      </div>
+      <div class="ai-body" id="tab-colony">
+        <div class="ai-section">
+          <div class="ai-head"><span>🏘 COLONIA</span><span id="colonyAge">0 min</span></div>
+          <div class="colony-grid">
+            <div class="colony-card"><div class="k">POBLACIÓN</div><div class="v good" id="cPop">3</div><div class="k" id="cPopDetail">3 obreras + 1 reina</div></div>
+            <div class="colony-card"><div class="k">DESPENSA</div><div class="v amber" id="cFood">0</div><div class="k">raciones 🍯</div></div>
+            <div class="colony-card"><div class="k">FITNESS</div><div class="v" id="cFit">0.00</div><div class="k">colonia</div></div>
+            <div class="colony-card"><div class="k">IQ COLONIA</div><div class="v purple" id="cIQ">100</div><div class="k" id="cIQLabel">100=real</div></div>
+          </div>
+          <div class="role-row" id="roleRow">
+            <div class="role-chip" style="border-top:4px solid var(--amber)"><b id="rRec">0</b><small id="rRecD">0%</small><br><small>RECOLECT</small></div>
+            <div class="role-chip" style="border-top:4px solid var(--red)"><b id="rCav">0</b><small id="rCavD">0%</small><br><small>EXCAV</small></div>
+            <div class="role-chip" style="border-top:4px solid var(--purple)"><b id="rNod">0</b><small id="rNodD">0%</small><br><small>NODRIZA</small></div>
+            <div class="role-chip" style="border-top:4px solid var(--cyan)"><b id="rExp">0</b><small id="rExpD">0%</small><br><small>EXPLOR</small></div>
+          </div>
+          <div style="margin-top:10px;display:flex;gap:6px">
+            <span style="flex:1;background:#000;border:3px solid #000;padding:8px;text-align:center;font-family:'Press Start 2P',monospace;font-size:7px">CÁMARAS <b id="cCham" style="color:var(--cyan)">2</b></span>
+            <span style="flex:1;background:#000;border:3px solid #000;padding:8px;text-align:center;font-family:'Press Start 2P',monospace;font-size:7px">TINTA <b id="cComms" style="color:var(--cyan)">0</b></span>
+            <span style="flex:1;background:#000;border:3px solid #000;padding:8px;text-align:center;font-family:'Press Start 2P',monospace;font-size:7px">RECOMP <b id="cRew" style="color:var(--amber)">0/3</b></span>
+          </div>
+          <div class="explain">
+            <b>Lee sin leer:</b> Cada hormiga lleva <b style="background:var(--amber);color:#000;padding:2px 4px">BURBUJA</b> gigante encima. <span style="background:var(--green);color:#000;padding:2px 4px">🍯→CASA</span> = lleva miel. <span style="background:var(--red);color:#fff;padding:2px 4px">⛏ CAVA 60%</span> = picando. <span style="background:var(--cyan);color:#000;padding:2px 4px">⬢ CIAN</span> = grita comida. Todo pixel art, sin letras raras.
+          </div>
+        </div>
+        <div class="ai-section">
+          <div class="ai-head"><span>♛ REINA + CRÍA</span><span id="queenStatus">GRÁVIDA</span></div>
+          <div class="queen-box" id="queenBox" style="cursor:pointer" title="Click para ficha única de la reina">
+            <div class="queen-avatar">♛</div>
+            <div style="flex:1">
+              <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--purple)">ADA REINA</div>
+              <div style="font-family:'VT323',monospace;font-size:16px;color:#c9b896;margin-top:3px">GEN <b id="qGen" style="color:var(--purple)">0</b> • Huevos <b id="qEggs" style="color:var(--amber)">0</b> • <span id="qFert" style="color:var(--green)">ALTA</span></div>
+              <div style="height:12px;background:#000;border:2px solid #000;margin-top:6px;position:relative;overflow:hidden"><div id="qProgress" style="position:absolute;left:0;top:0;bottom:0;width:0%;background:var(--purple)"></div></div>
+              <div style="font-family:'VT323',monospace;font-size:14px;color:#8a7a5a;margin-top:3px" id="qProgressLabel">próximo huevo 0%</div>
+            </div>
+          </div>
+          <div class="brood-row" id="broodRow"></div>
+          <div style="margin-top:10px;display:flex;gap:8px">
+            <button class="pixel-btn small" id="btnLay" style="flex:1">♛ PONER HUEVO (3)</button>
+            <button class="pixel-btn small" id="btnHatch" style="flex:1">⏩ ECLOSIONAR</button>
+          </div>
+        </div>
+        <div class="ai-section" id="societySection">
+          <div class="ai-head"><span>⚔ SOCIEDAD</span><span id="societyStatus">estable</span></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
+            <div style="background:#000;border:2px solid #000;padding:6px;text-align:center">
+              <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#8a7a5a">REINAS</div>
+              <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:var(--purple)" id="queenCount">1 ♛</div>
+              <div style="font-family:'VT323',monospace;font-size:12px;color:#8a7a5a" id="queenAge">— 0d • fértil</div>
+            </div>
+            <div style="background:#000;border:2px solid #000;padding:6px;text-align:center">
+              <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#8a7a5a">FACCIONES</div>
+              <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:var(--amber)" id="factionCount">1</div>
+              <div style="font-family:'VT323',monospace;font-size:12px;color:#8a7a5a" id="factionList">— colonia única</div>
+            </div>
+          </div>
+          <div style="margin-top:8px;background:#000;border:2px solid #000;padding:8px">
+            <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#8a7a5a;margin-bottom:6px">ÁNIMO COLECTIVO</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-family:'VT323',monospace;font-size:13px" id="moodBars"></div>
+          </div>
+          <div style="margin-top:8px;display:flex;gap:6px">
+            <span id="warStatus" style="flex:1;background:#0a1a0a;border:2px solid #1a3d1a;padding:6px;text-align:center;font-family:'Press Start 2P',monospace;font-size:7px;color:#2de67a">☮ PAZ</span>
+            <span id="cultStatus" style="flex:1;background:#0a0a1a;border:2px solid #2a1a3d;padding:6px;text-align:center;font-family:'Press Start 2P',monospace;font-size:7px;color:#b47aff">— sin culto</span>
+          </div>
+          <div id="societyLog" style="margin-top:8px;max-height:90px;overflow-y:auto;font-family:'VT323',monospace;font-size:12px;color:#8a7a5a;border:1px solid #1a1a1a;padding:4px"></div>
+          <div style="margin-top:8px;background:#0a0a1a;border:2px solid #1a1a3a;padding:8px">
+            <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#b47aff;display:flex;justify-content:space-between;align-items:center">🗣️ IDIOMA <span id="langFluency" style="color:#fff">0%</span></div>
+            <div style="font-family:'VT323',monospace;font-size:13px;color:#c9b896;margin-top:6px;line-height:1.3" id="langStatus">gibberish — balbuceo inicial</div>
+            <div style="font-family:'VT323',monospace;font-size:12px;color:#8a7a5a;margin-top:6px;max-height:70px;overflow-y:auto;border:1px solid #1a1a1a;padding:4px;background:#000" id="langDict">— sin palabras fijas aún —</div>
+            <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#8a7a5a;margin-top:6px">SVO/SOV + sufijos reales • como simlish pero evoluciona a idioma real traducible</div>
+          </div>
+        </div>
+        <div class="ai-section">
+          <div class="ai-head"><span>🐜 ELENCO</span><span id="antCountLabel">3 obreras</span></div>
+          <div class="ant-list" id="antList"></div>
+        </div>
+        <div class="ai-section">
+          <div class="ai-head"><span>📈 EVOLUCIÓN</span><span id="chartLabel">GEN 0</span></div>
+          <div class="chart-wrap"><canvas id="chartCanvas" width="400" height="76"></canvas></div>
+          <div style="display:flex;gap:6px;margin-top:8px">
+            <span style="flex:1;background:#000;border:2px solid #000;padding:6px;text-align:center;font-family:'Press Start 2P',monospace;font-size:7px">MAX FIT <b id="maxFit" style="color:var(--green)">0</b></span>
+            <span style="flex:1;background:#000;border:2px solid #000;padding:6px;text-align:center;font-family:'Press Start 2P',monospace;font-size:7px">NODOS <b id="avgNodes" style="color:var(--purple)">8.0</b></span>
+            <span style="flex:1;background:#000;border:2px solid #000;padding:6px;text-align:center;font-family:'Press Start 2P',monospace;font-size:7px">TINTA <b id="avgComms" style="color:var(--cyan)">0</b></span>
+          </div>
+        </div>
+        </div>
+        <div class="ai-section" id="ecoSection">
+          <div class="ai-head"><span>🌿 MUNDO VIVO</span><span id="ecoAge">día 1</span></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:8px">
+            <div style="background:#0f1f0a;border:2px solid #1a3a1a;padding:6px;text-align:center">
+              <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#7ad35f">FERTILIDAD</div>
+              <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#2de67a" id="ecoFert">62%</div>
+              <div style="font-family:'VT323',monospace;font-size:11px;color:#8a7a5a" id="ecoSeason">primavera</div>
+            </div>
+            <div style="background:#1a1a0a;border:2px solid #2a2a1a;padding:6px;text-align:center">
+              <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#8a7a5a">PLANTAS</div>
+              <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#ffdd57" id="ecoPlants">12 🌿</div>
+              <div style="font-family:'VT323',monospace;font-size:11px;color:#8a7a5a" id="ecoPlantTypes">treboles</div>
+            </div>
+            <div style="background:#0a1a2a;border:2px solid #1a2a3a;padding:6px;text-align:center">
+              <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#7ec8e3">CLIMA</div>
+              <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#fff" id="ecoWeather">☀️ claro</div>
+              <div style="font-family:'VT323',monospace;font-size:11px;color:#8a7a5a" id="ecoRain">seco</div>
+            </div>
+          </div>
+          <div style="margin-top:8px;background:#000;border:2px solid #000;padding:8px">
+            <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#8a7a5a;display:flex;justify-content:space-between">📦 MATERIALES <span id="ecoMatsHint" style="color:#5a6a5a">piedra/arcilla/…</span></div>
+            <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-top:6px;font-family:'Press Start 2P',monospace;font-size:7px" id="ecoMats">
+              <span style="background:#1a1a1a;border:2px solid #000;padding:6px 2px;text-align:center;color:#8a8a8a">🪨<br><b id="matStone">0</b></span>
+              <span style="background:#1a1a1a;border:2px solid #000;padding:6px 2px;text-align:center;color:#8a8a8a">🏺<br><b id="matClay">0</b></span>
+              <span style="background:#1a1a1a;border:2px solid #000;padding:6px 2px;text-align:center;color:#8a8a8a">⏳<br><b id="matSand">0</b></span>
+              <span style="background:#1a1a1a;border:2px solid #000;padding:6px 2px;text-align:center;color:#8a8a8a">🧵<br><b id="matFiber">0</b></span>
+              <span style="background:#1a1a1a;border:2px solid #000;padding:6px 2px;text-align:center;color:#8a8a8a">🪵<br><b id="matWood">0</b></span>
+            </div>
+            <div style="font-family:'VT323',monospace;font-size:12px;color:#8a7a5a;margin-top:6px" id="ecoInv">— aún cavan tierra común —</div>
+          </div>
+          <div style="margin-top:8px;background:#0f1f0a;border:2px solid #1a3a1a;padding:6px;font-family:'VT323',monospace;font-size:12px;color:#2de67a" id="ecoLog">La pradera respira. El pasto crece poco a poco.</div>
+        </div>
+      </div>
+
+      <div class="ai-body" id="tab-brain" style="display:none">
+        <div class="ai-section">
+          <div class="ai-head"><span>🧠 CEREBRO — <span id="selectedName">—</span></span><span><button class="pixel-btn small" id="btnSimple" style="padding:6px 8px;font-size:7px">SIMPLE</button> <button class="pixel-btn small" id="btnExpert" style="padding:6px 8px;font-size:7px;background:var(--amber);color:#000">EXPERTO</button></span></div>
+          <div class="nn-wrap"><canvas id="nnCanvas" width="400" height="140"></canvas></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:4px;margin-top:8px">
+            <span style="background:#000;border:2px solid #000;padding:6px;text-align:center;font-family:'Press Start 2P',monospace;font-size:7px">GIRO <b id="outSteer" style="color:var(--amber)">0.00</b></span>
+            <span style="background:#000;border:2px solid #000;padding:6px;text-align:center;font-family:'Press Start 2P',monospace;font-size:7px">VEL <b id="outSpeed" style="color:var(--green)">0.00</b></span>
+            <span style="background:#000;border:2px solid #000;padding:6px;text-align:center;font-family:'Press Start 2P',monospace;font-size:7px">CAVA <b id="outDig" style="color:var(--red)">0.00</b></span>
+            <span style="background:#000;border:2px solid #000;padding:6px;text-align:center;font-family:'Press Start 2P',monospace;font-size:7px">T1 <b id="outC1" style="color:var(--cyan)">0.00</b></span>
+            <span style="background:#000;border:2px solid #000;padding:6px;text-align:center;font-family:'Press Start 2P',monospace;font-size:7px">T2 <b id="outC2" style="color:var(--purple)">0.00</b></span>
+          </div>
+        </div>
+        <div class="ai-section">
+          <div class="ai-head"><span>📡 11 SENSORES</span><span>LIVE</span></div>
+          <div class="sensors" id="sensors"></div>
+        </div>
+        <div class="ai-section" id="simplePanel">
+          <div class="ai-head"><span>✨ RASGOS</span><span>0-100</span></div>
+          <div class="trait-grid" id="traitGrid">
+            <div class="trait"><div class="trait-top"><b style="color:var(--cyan)">EXPLORA</b><span id="tExp">0</span></div><div class="trait-bar"><div id="bExp" style="background:var(--cyan);height:100%;width:0%"></div></div><small>Ve lejos</small></div>
+            <div class="trait"><div class="trait-top"><b style="color:var(--red)">CAVA</b><span id="tCav">0</span></div><div class="trait-bar"><div id="bCav" style="background:var(--red);height:100%;width:0%"></div></div><small>Construye</small></div>
+            <div class="trait"><div class="trait-top"><b style="color:var(--green)">RECOLECTA</b><span id="tRec">0</span></div><div class="trait-bar"><div id="bRec" style="background:var(--green);height:100%;width:0%"></div></div><small>Precisa</small></div>
+            <div class="trait"><div class="trait-top"><b style="color:var(--purple)">CUIDA</b><span id="tCui">0</span></div><div class="trait-bar"><div id="bCui" style="background:var(--purple);height:100%;width:0%"></div></div><small>Cría</small></div>
+            <div class="trait" style="grid-column:span 2"><div class="trait-top"><b style="color:var(--cyan)">⬡ COMUNICA</b><span id="tCom">0</span></div><div class="trait-bar"><div id="bCom" style="background:var(--cyan);height:100%;width:0%"></div></div><small>Pinta tinta — más alto = más charla</small></div>
+          </div>
+        </div>
+        <div class="ai-section" id="expertPanel" style="display:none">
+          <div class="ai-head"><span>🧬 GENOMA</span><span id="genId">GEN-0</span></div>
+          <div class="genome-box">
+            <div class="genome-dna" id="dnaStr">0000 0000</div>
+            <div style="display:flex;gap:6px;font-size:12px;margin-top:6px">
+              <span style="flex:1;background:rgba(255,204,0,0.1);border:2px solid rgba(255,204,0,0.2);padding:6px;text-align:center">NODOS <b id="nodeCount">8</b></span>
+              <span style="flex:1;background:rgba(45,230,122,0.08);border:2px solid rgba(45,230,122,0.2);padding:6px;text-align:center">FIT <b id="fitVal">0.0</b></span>
+              <span style="flex:1;background:rgba(0,229,255,0.08);border:2px solid rgba(0,229,255,0.18);padding:6px;text-align:center">TINTA <b id="commsVal">0</b></span>
+            </div>
+            <div style="font-family:'VT323',monospace;font-size:14px;color:#8a7a5a;margin-top:6px">Última mutación:</div>
+            <div style="font-family:'VT323',monospace;font-size:16px;background:#000;border:2px solid #000;padding:8px;margin-top:3px;min-height:28px" id="lastMut">— inicialización —</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="ai-body" id="tab-history" style="display:none">
+        <div class="ai-section">
+          <div class="ai-head"><span>📜 HISTORIAL</span><span><button class="pixel-btn small" id="btnClearHist" style="padding:6px 8px;font-size:7px">LIMPIAR</button></span></div>
+          <div class="event-log" id="eventLog"></div>
+          <div class="explain">
+            <b>Tinta:</b> <span style="color:var(--cyan)">⬢ CIAN = comida</span>, <span style="color:#ffdd57">⬣ AMARILLO = ayuda</span>, <span style="color:#ff6b9d">◆ MAGENTA</span> — pintan el suelo y otras la leen.
+          </div>
+        </div>
+        <div class="ai-section">
+          <div class="ai-head"><span>🎁 RECOMPENSAS</span><span id="rewardDetail">0/3</span></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+            <div style="background:#000;border:3px solid #000;padding:10px;text-align:center;opacity:0.4" id="rew1"><div style="font-size:20px">?</div><b style="font-family:'Press Start 2P',monospace;font-size:7px">SEMILLAS</b></div>
+            <div style="background:#000;border:3px solid #000;padding:10px;text-align:center;opacity:0.4" id="rew2"><div style="font-size:20px">?</div><b style="font-family:'Press Start 2P',monospace;font-size:7px">AGUA</b></div>
+            <div style="background:#000;border:3px solid #000;padding:10px;text-align:center;opacity:0.4" id="rew3"><div style="font-size:20px">?</div><b style="font-family:'Press Start 2P',monospace;font-size:7px">HONGO</b></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="taskbar" id="taskbar"><canvas id="taskbarCanvas" width="200" height="56"></canvas><div style="flex:1;min-width:0"><div style="font-family:'Press Start 2P',monospace;font-size:8px">◉ <span id="tbName">Colonia</span> • POP <span id="tbPop">3</span> • IQ <span id="tbIQ">100</span> <span style="color:var(--green)">●LIVE</span></div><div style="font-family:'VT323',monospace;font-size:16px;color:#8a7a5a;margin-top:4px" id="tbDesc">> pixel art · GEN0</div><div style="height:8px;background:#000;border:2px solid #000;margin-top:6px"><div id="tbXp" style="height:100%;width:0%;background:var(--amber)"></div></div></div><div style="display:flex;flex-direction:column;gap:8px"><button class="pixel-btn primary" id="btnRestore" style="font-size:8px">▲</button><button class="pixel-btn" id="btnTbFood" style="font-size:8px">[+]</button></div></div>
+
+<!-- ONBOARDING - Mundo recién creado -->
+<div id="onboardingLegacy" style="position:fixed;inset:0;z-index:9997;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);backdrop-filter:blur(2px);">
+  <div style="width:min(640px,92vw);background:#1a140f;border:4px solid #000;box-shadow:8px 8px 0 #000;padding:0;overflow:hidden;image-rendering:pixelated">
+    <div style="background:#000;border-bottom:4px solid #000;padding:12px 14px;display:flex;align-items:center;justify-content:space-between">
+      <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00">DÍA 0 — MUNDO NUEVO</div>
+      <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#8a7a5a">ANT FARM</div>
+    </div>
+    <div id="onStep" style="padding:18px 16px">
+      <!-- step injected by JS -->
+    </div>
+    <div style="background:#000;border-top:4px solid #000;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <div style="display:flex;gap:6px;align-items:center">
+        <span id="onDots" style="display:flex;gap:6px"></span>
+        <span id="onHint" style="font-family:'VT323',monospace;font-size:14px;color:#8a7a5a;margin-left:8px"></span>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button id="onSkip" style="pointer-events:auto;font-family:'Press Start 2P',monospace;font-size:7px;padding:8px 10px;background:#2a2012;border:3px solid #000;color:#8a7a5a;box-shadow:3px 3px 0 #000;cursor:pointer">SALTAR</button>
+        <button id="onNext" style="pointer-events:auto;font-family:'Press Start 2P',monospace;font-size:8px;padding:10px 14px;background:#ffcc00;border:3px solid #000;color:#000;box-shadow:4px 4px 0 #000;cursor:pointer">SIGUIENTE →</button>
+      </div>
+    </div>
+  </div>
+
+
+
+</div>
+
+<!-- PERFIL DE HORMIGA — compacto sin scroll, cabe completo 220x~420 -->
+<div id="antProfile" style="display:none;position:fixed;top:0;right:14px;width:220px;max-width:220px;max-height:calc(100vh - 220px);background:#fff8dc;border:4px solid #000;border-top:none;box-shadow:6px 6px 0 #000;z-index:90;overflow:hidden;transform:translateY(-12px) scaleY(0);opacity:0;transition:transform 0.22s cubic-bezier(.2,.8,.2,1), opacity 0.22s;transform-origin:top">
+  <div style="background:#1a140f;min-height:100%;display:flex;flex-direction:column">
+    <div style="background:#000;padding:8px 10px;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #000">
+      <span style="font-family:'Press Start 2P',monospace;font-size:8px;color:#ffcc00;letter-spacing:0.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px" id="profileTitle">A3X9 [RECOLECTORA]</span>
+      <button id="btnCloseProfile" style="background:#ff3b30;color:#fff;border:2px solid #000;padding:4px 8px;font-family:'Press Start 2P',monospace;font-size:7px;cursor:pointer;box-shadow:2px 2px 0 #000">✕</button>
+    </div>
+    <div style="padding:8px 10px;display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;gap:8px;align-items:flex-start">
+        <div style="width:64px;height:64px;min-width:64px;background:#000;border:2px solid #000;display:grid;place-items:center;position:relative;overflow:hidden;box-shadow:2px 2px 0 #000">
+          <canvas id="profileCanvas" width="64" height="64" style="image-rendering:pixelated;width:64px;height:64px"></canvas>
+          <span id="profileFactionDot" style="position:absolute;top:3px;right:3px;width:10px;height:10px;background:#ffcc00;border:2px solid #000;box-shadow:1px 1px 0 #000"></span>
+        </div>
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+          <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#8a7a5a;letter-spacing:0.4px">ID • EDAD • VIDA</div>
+          <div style="font-family:'Press Start 2P',monospace;font-size:8px;color:#fff;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="profileId">A3X9 — 4d / 12d • ❤ 87%</div>
+          <div style="font-family:'VT323',monospace;font-size:12px;color:#c9b896;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="profileRole">RECOLECTORA • F0 • GEN-3</div>
+          <div style="font-family:'Press Start 2P',monospace;font-size:5px;color:#5a4a3a;margin-top:2px">ÁNIMO</div>
+        </div>
+      </div>
+      <div id="profileMoodIcons" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:3px" id="profileTabs">
+        <button class="pixel-btn small" data-ptab="rasgos" style="min-width:0;width:auto;background:var(--amber);color:#000;padding:5px 0;font-size:6px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">RASGOS</button>
+        <button class="pixel-btn small" data-ptab="estado" style="min-width:0;width:auto;background:#1a140f;color:#8a7a5a;padding:5px 0;font-size:6px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">ESTADO</button>
+        <button class="pixel-btn small" data-ptab="arbol" style="min-width:0;width:auto;background:#1a140f;color:#8a7a5a;padding:5px 0;font-size:6px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">ÁRBOL</button>
+        <button class="pixel-btn small" data-ptab="hist" style="min-width:0;width:auto;background:#1a140f;color:#8a7a5a;padding:5px 0;font-size:6px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">HIST</button>
+      </div>
+      <div id="profileTab_rasgos">
+        <div style="background:#000;border:2px solid #000;padding:6px">
+          <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#8a7a5a;letter-spacing:0.3px">RASGOS 0-100 — legibles</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:6px" id="profileTraits"></div>
+        </div>
+      </div>
+      <div id="profileTab_estado" style="display:none">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+          <div style="background:#000;border:2px solid #000;padding:6px;text-align:center">
+            <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#8a7a5a">FITNESS</div>
+            <div style="font-family:'Press Start 2P',monospace;font-size:12px;color:#2de67a;line-height:1;margin-top:2px" id="profileFitness">1.24</div>
+            <div style="font-family:'VT323',monospace;font-size:10px;color:#8a7a5a;line-height:1" id="profileDeliveries">3 ent • 2 exc</div>
+          </div>
+          <div style="background:#000;border:2px solid #000;padding:6px;text-align:center">
+            <div style="font-family:'Press Start 2P',monospace;font-size:5px;color:#8a7a5a">CRIMEN • SEG</div>
+            <div style="font-family:'Press Start 2P',monospace;font-size:12px;color:#ff3b30;line-height:1;margin-top:2px" id="profileCrimes">0 • 0</div>
+            <div style="font-family:'VT323',monospace;font-size:10px;color:#8a7a5a;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="profileBelief">— sin culto</div>
+          </div>
+        </div>
+      </div>
+      <div id="profileTab_arbol" style="display:none">
+        <div style="background:#000;border:2px solid #000;padding:6px">
+          <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#b47aff">ÁRBOL</div>
+          <div style="font-family:'VT323',monospace;font-size:11px;color:#c9b896;margin-top:4px;line-height:1.25;max-height:78px;overflow:hidden" id="profileTree">—</div>
+        </div>
+      </div>
+      <div id="profileTab_hist" style="display:none">
+        <div style="background:#0a0a1a;border:2px solid #1a1a3a;padding:6px">
+          <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#00e5ff">HISTORIAL — 5 últimos</div>
+          <div style="font-family:'VT323',monospace;font-size:11px;color:#8a7a5a;margin-top:4px;line-height:1.25;max-height:78px;overflow:hidden" id="profileHistory"></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:2px">
+        <button id="btnFollowAnt" class="pixel-btn small" style="flex:1;padding:6px 4px;font-size:7px">👁 SEGUIR</button>
+        <button id="btnExileAnt" class="pixel-btn small" style="flex:1;background:#ff3b30;color:#fff;padding:6px 4px;font-size:7px">⚔ EXILIAR</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- PERFIL DE REINA — unificado visual con hormiga (220px, 64x64, tabs idénticos) -->
+<div id="queenProfile" style="display:none;position:fixed;top:0;right:14px;width:220px;max-width:220px;max-height:calc(100vh - 220px);background:#fff8dc;border:4px solid #000;border-top:none;box-shadow:6px 6px 0 #000;z-index:90;overflow:hidden;transform:translateY(-12px) scaleY(0);opacity:0;transition:transform 0.22s cubic-bezier(.2,.8,.2,1), opacity 0.22s;transform-origin:top">
+  <div style="background:#1a140f;min-height:100%;display:flex;flex-direction:column">
+    <div style="background:#000;padding:8px 10px;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #000">
+      <span style="font-family:'Press Start 2P',monospace;font-size:8px;color:#ffcc00;letter-spacing:0.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px" id="queenProfileTitle">ADA 👑 REINA F0</span>
+      <button id="btnCloseQueen" style="background:#ff3b30;color:#fff;border:2px solid #000;padding:4px 8px;font-family:'Press Start 2P',monospace;font-size:7px;cursor:pointer;box-shadow:2px 2px 0 #000">✕</button>
+    </div>
+    <div style="padding:8px 10px;display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;gap:8px;align-items:flex-start">
+        <div style="width:64px;height:64px;min-width:64px;background:#000;border:2px solid #000;display:grid;place-items:center;position:relative;overflow:hidden;box-shadow:2px 2px 0 #000">
+          <canvas id="queenProfileCanvas" width="64" height="64" style="image-rendering:pixelated;width:64px;height:64px"></canvas>
+          <span id="queenProfileDot" style="position:absolute;top:3px;right:3px;width:10px;height:10px;background:#ffcc00;border:2px solid #000;box-shadow:1px 1px 0 #000"></span>
+          <span style="position:absolute;bottom:2px;left:2px;background:#b47aff;color:#fff;font-family:'Press Start 2P',monospace;font-size:4px;padding:1px 3px;line-height:1">♛ REINA</span>
+        </div>
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+          <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#8a7a5a;letter-spacing:0.4px">ID • EDAD • VIDA</div>
+          <div style="font-family:'Press Start 2P',monospace;font-size:8px;color:#fff;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:#000;padding:2px 4px;border:1px solid #1a1a1a" id="queenProfileId">sin colonia — elige un tamaño</div>
+          <div style="font-family:'VT323',monospace;font-size:12px;color:#c9b896;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="queenProfileRole">REINA • F0 • GEN-0</div>
+          <div style="font-family:'Press Start 2P',monospace;font-size:5px;color:#5a4a3a;margin-top:2px">ESTADO</div>
+          <div style="display:flex;gap:4px;align-items:center">
+            <div style="flex:1;height:8px;background:#1a1a1a;border:1px solid #000;position:relative;overflow:hidden"><div id="queenProgressBar" style="position:absolute;left:0;top:0;bottom:0;width:0%;background:#b47aff"></div></div>
+            <span style="font-family:'Press Start 2P',monospace;font-size:5px;color:#b47aff;white-space:nowrap" id="queenProgressLbl">0%</span>
+          </div>
+          <div style="font-family:'VT323',monospace;font-size:10px;color:#8a7a5a;line-height:1" id="queenStateLabel">GRÁVIDA</div>
+        </div>
+      </div>
+      <div id="queenProfileMood" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:3px" id="queenProfileTabs">
+        <button class="pixel-btn small" data-qtab="rasgos" style="min-width:0;width:auto;background:var(--amber);color:#000;padding:5px 0;font-size:6px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">RASGOS</button>
+        <button class="pixel-btn small" data-qtab="estado" style="min-width:0;width:auto;background:#1a140f;color:#8a7a5a;padding:5px 0;font-size:6px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">ESTADO</button>
+        <button class="pixel-btn small" data-qtab="arbol" style="min-width:0;width:auto;background:#1a140f;color:#8a7a5a;padding:5px 0;font-size:6px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">ÁRBOL</button>
+        <button class="pixel-btn small" data-qtab="hist" style="min-width:0;width:auto;background:#1a140f;color:#8a7a5a;padding:5px 0;font-size:6px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">HIST</button>
+      </div>
+      <div id="queenTab_rasgos">
+        <div style="background:#000;border:2px solid #000;padding:6px">
+          <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#ff6b9d;letter-spacing:0.3px">👑 PERSONALIDAD 6 RASGOS</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:6px" id="queenProfilePersonalities"></div>
+          <div style="font-family:'VT323',monospace;font-size:10px;color:#8a7a5a;margin-top:6px;line-height:1">Fertilidad=huevos/día • Feromona=control • Maternal=cuidado</div>
+          <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#8a7a5a;margin-top:8px">RASGOS BASE (genoma)</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:4px" id="queenProfileTraits"></div>
+        </div>
+      </div>
+      <div id="queenTab_estado" style="display:none">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+          <div style="background:#000;border:2px solid #000;padding:6px;text-align:center">
+            <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#8a7a5a">NIVEL</div>
+            <div style="font-family:'Press Start 2P',monospace;font-size:12px;color:#ffcc00;line-height:1;margin-top:2px" id="queenGrowthLvl">0</div>
+            <div style="font-family:'VT323',monospace;font-size:10px;color:#8a7a5a;line-height:1" id="queenGrowthSize">48 px</div>
+          </div>
+          <div style="background:#000;border:2px solid #000;padding:6px;text-align:center">
+            <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#8a7a5a">VIDA</div>
+            <div style="font-family:'Press Start 2P',monospace;font-size:12px;color:#2de67a;line-height:1;margin-top:2px" id="queenGrowthProg">0% vida</div>
+            <div style="font-family:'VT323',monospace;font-size:10px;color:#8a7a5a;line-height:1" id="queenHealthVal">100%</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">
+          <div style="background:#000;border:2px solid #000;padding:6px;text-align:center">
+            <div style="font-family:'Press Start 2P',monospace;font-size:5px;color:#8a7a5a">🥚 HUEVOS TOTAL</div>
+            <div style="font-family:'VT323',monospace;font-size:14px;color:#ffcc00" id="queenEggsLaid">0</div>
+          </div>
+          <div style="background:#000;border:2px solid #000;padding:6px;text-align:center">
+            <div style="font-family:'Press Start 2P',monospace;font-size:5px;color:#8a7a5a">🐣 CRÍAS / COLONIA</div>
+            <div style="font-family:'VT323',monospace;font-size:11px;color:#b47aff" id="queenBroodCount">0</div>
+            <div style="font-family:'VT323',monospace;font-size:10px;color:#00e5ff" id="queenFollowers">0 obreras</div>
+          </div>
+        </div>
+        <div style="margin-top:6px;background:#000;border:2px solid #000;padding:6px">
+          <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#8a7a5a">GENOMA</div>
+          <div style="font-family:'VT323',monospace;font-size:11px;color:#c9b896" id="queenGenomeId">GEN-0 • — • 8 nodos</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:8px;color:#5a5a5a;word-break:break-all" id="queenDnaStr">0000</div>
+        </div>
+      </div>
+      <div id="queenTab_arbol" style="display:none">
+        <div style="background:#000;border:2px solid #000;padding:6px">
+          <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#b47aff">🌳 LINAJE REAL</div>
+          <div style="font-family:'VT323',monospace;font-size:11px;color:#c9b896;margin-top:4px;line-height:1.25;max-height:78px;overflow:hidden" id="queenProfileTree">—</div>
+        </div>
+      </div>
+      <div id="queenTab_hist" style="display:none">
+        <div style="background:#0a0a1a;border:2px solid #1a1a3a;padding:6px">
+          <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#00e5ff">📜 HISTORIAL — 6 últimos</div>
+          <div style="font-family:'VT323',monospace;font-size:11px;color:#8a7a5a;margin-top:4px;line-height:1.25;max-height:78px;overflow:hidden" id="queenProfileHistory"></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:2px">
+        <button id="btnFollowQueen" class="pixel-btn small" style="flex:1;padding:6px 4px;font-size:7px">👁 SEGUIR</button>
+        <button id="btnFeedQueen" class="pixel-btn small" style="flex:1;background:#2de67a;color:#000;padding:6px 4px;font-size:7px">🍯 ALIMENTAR (2)</button>
+        <button id="btnMoveQueen" class="pixel-btn small" style="flex:1;background:#b47aff;color:#fff;padding:6px 4px;font-size:7px">🚚 MIGRAR</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CONTROLES ESQUINA FIJA - siempre visibles, zoom no los afecta -->
+<!-- CALENDARIO PERMANENTE — fijo arriba-derecha, medio reloj Stardew adaptado colmena -->
+<!-- CALENDARIO PERMANENTE — híbrido A+C arte pixel madera + panal + teal -->
+
+  <!-- HUD VEL+OBRERAS — barra única sobre calendario, réplica exacta mockup -->
+  <div id="velAntBar" style="position:fixed;right:14px;top:14px;z-index:999;width:240px;height:42px;box-sizing:border-box;background:#3e2a14;border:3px solid #000;box-shadow:4px 4px 0 #000;display:flex;align-items:stretch;overflow:hidden;image-rendering:pixelated;border-radius:2px">
+    <div style="position:absolute;inset:0;background:repeating-linear-gradient(0deg, transparent 0 5px, rgba(0,0,0,0.18) 5px 6px), linear-gradient(180deg,#4a321c 0%, #3e2a14 35%, #2e1e0f 100%);opacity:0.95;pointer-events:none"></div>
+    <!-- VEL + botones -->
+    <div style="position:relative;flex:1;display:flex;align-items:center;gap:3px;padding:3px 6px 3px 7px;z-index:1">
+      <span style="font-family:'Press Start 2P',monospace;font-size:7px;color:#ffcc00;letter-spacing:0.4px;margin-right:2px;text-shadow:1px 1px 0 #000, 0 0 4px rgba(255,204,0,0.6);line-height:1">VEL</span>
+      <button class="pixel-btn small" id="btnVelPause" title="Pausa (Espacio)" style="min-width:28px;width:28px;height:28px;padding:0;background:#1a0f00;border:2px solid #000;color:#6a5a3a;font-size:10px;display:grid;place-items:center;box-shadow:1px 1px 0 #000">⏸</button>
+      <button class="pixel-btn small" id="btnVel1" title="x1 (tecla 1)" style="min-width:30px;width:30px;height:28px;padding:0;background:#ffcc00;border:2px solid #000;color:#000;font-family:'Press Start 2P';font-size:8px;display:grid;place-items:center;box-shadow:1px 1px 0 #000;text-shadow:none">x1</button>
+      <button class="pixel-btn small" id="btnVel2" title="x2" style="min-width:30px;width:30px;height:28px;padding:0;background:#3e2a14;border:2px solid #000;color:#fff8dc;font-family:'Press Start 2P';font-size:7px;display:grid;place-items:center;box-shadow:1px 1px 0 #000">x2</button>
+      <button class="pixel-btn small" id="btnVel4" title="x4" style="min-width:30px;width:30px;height:28px;padding:0;background:#3e2a14;border:2px solid #000;color:#fff8dc;font-family:'Press Start 2P';font-size:7px;display:grid;place-items:center;box-shadow:1px 1px 0 #000">x4</button>
+      <button class="pixel-btn small" id="btnVel8" title="x8" style="min-width:30px;width:30px;height:28px;padding:0;background:#3e2a14;border:2px solid #000;color:#fff8dc;font-family:'Press Start 2P';font-size:7px;display:grid;place-items:center;box-shadow:1px 1px 0 #000">x8</button>
+      <button class="pixel-btn small" id="btnVel16" title="x16" style="min-width:32px;width:32px;height:28px;padding:0;background:#3e2a14;border:2px solid #000;color:#fff8dc;font-family:'Press Start 2P';font-size:7px;display:grid;place-items:center;box-shadow:1px 1px 0 #000">x16</button>
+    </div>
+    <div style="position:relative;width:3px;background:#000;flex-shrink:0;z-index:1;margin:3px 0;box-shadow:inset 1px 0 0 rgba(255,255,255,0.08)"></div>
+    <!-- OBRERAS -->
+    <div style="position:relative;width:74px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:2px 4px;flex-shrink:0;z-index:1">
+      <div style="display:flex;align-items:center;gap:5px">
+        <span style="width:22px;height:16px;display:inline-flex;align-items:center;justify-content:center;font-size:15px;line-height:1;filter:drop-shadow(1px 1px 0 #000) drop-shadow(0 0 2px rgba(255,255,255,0.5))">🐜</span>
+        <span id="velAntCount" style="font-family:'Press Start 2P',monospace;font-size:13px;color:#fffef0;line-height:1;text-shadow:1px 1px 0 #000, 0 0 6px rgba(255,255,255,0.35);min-width:22px">0</span>
+      </div>
+      <span style="font-family:'Press Start 2P',monospace;font-size:5px;color:#fff8dc;letter-spacing:0.5px;text-shadow:1px 1px 0 #000;line-height:1">OBRERAS</span>
+    </div>
+  </div>
+
+  <div id="calendarWidget" style="box-sizing:border-box" title="Click abre calendario — 12 días por estación">
+  <div class="rc-hud">
+    <div class="rc-card" id="rcCard">
+      <div class="rc-bgs" id="rcBgs"></div>
+      <div class="rc-night" id="rcNight"></div>
+      <div class="rc-frame-wood"></div>
+      <div class="rc-frame"></div>
+      <div class="rc-snowcap" id="rcSnowcap"></div>
+      <div class="rc-banners" id="rcBanners"></div>
+      <div class="rc-clock">
+        <div class="rc-time" id="rcTime">06:43</div>
+        <svg class="rc-arc" viewBox="0 0 132 64">
+          <defs>
+            <linearGradient id="rcArcg" x1="0" x2="1" y1="0" y2="0">
+              <stop offset="0" stop-color="#ff9d2e"/><stop offset=".35" stop-color="#ffd23f"/>
+              <stop offset=".65" stop-color="#4fb4f0"/><stop offset="1" stop-color="#6a63d8"/>
+            </linearGradient>
+          </defs>
+          <path d="M17 46 Q66 -8 115 46" fill="none" stroke="#2a170a" stroke-width="7" stroke-linecap="round" opacity=".18"/>
+          <path d="M17 46 Q66 -8 115 46" fill="none" stroke="url(#rcArcg)" stroke-width="4" stroke-linecap="round"/>
+        </svg>
+        <img class="rc-ico rc-sun" id="rcIcoSun" alt="">
+        <span id="rcPhase">AMANECER</span>
+        <img class="rc-ico rc-moon" id="rcIcoMoon" alt="">
+        <img class="rc-walker" id="rcWalker" alt="">
+      </div>
+      <div class="rc-txt" id="rcBigday">1</div>
+      <div class="rc-txt" id="rcCaste">OBRERA</div>
+      <div class="rc-txt" id="rcDia">DIA <b id="rcDiaN">1</b> ANO <b id="rcAnoN">1</b></div>
+      <div class="rc-txt" id="rcSday">Season day<br><span id="rcSdayV">1/12 Sem 1</span></div>
+      <div class="rc-txt" id="rcWorld">WORLD AGE :<br><span id="rcWorldV">0 min</span></div>
+      <div class="rc-txt" id="rcPlabel">SEASON PROGR.</div>
+      <div class="rc-pbar"><div id="rcPfill"></div></div>
+    </div>
+  </div>
+  <div class="rc-mini" id="rcMini">
+    <span class="rc-mini-time" id="rcMiniTime">06:43</span>
+    <span class="rc-mini-season" id="rcMiniSeason"><img id="rcMiniIcon" alt=""> <span id="rcMiniSeasonName">BROTE</span></span>
+    <span class="rc-mini-day" id="rcMiniDay">1</span>
+    <div class="rc-mini-bar"><div class="rc-mini-bar-fill" id="rcMiniBar"></div></div>
+  </div>
+  <button id="calCollapseBtn" title="Minimizar / Expandir">—</button>
+    <div id="calAntRow" style="height:22px;min-height:22px;background:#3e2a14;border-top:3px solid #000;display:flex;align-items:center;justify-content:center;gap:6px;padding:0 6px;box-sizing:border-box;image-rendering:pixelated">
+      <span style="font-size:11px;line-height:1;filter:drop-shadow(1px 1px 0 #000)">🐜</span>
+      <span id="calAntCount" style="font-family:'Press Start 2P',monospace;font-size:9px;color:#fffef0;text-shadow:1px 1px 0 #000;line-height:1">0</span>
+      <span style="font-family:'Press Start 2P',monospace;font-size:6px;color:#ffcc00;text-shadow:1px 1px 0 #000">OBRERAS</span>
+      <span style="font-family:'VT323',monospace;font-size:10px;color:#c9b896;opacity:0.9">ACTIVAS</span>
+    </div>
+</div>
+
+<!-- HISTORIA IMPORTANTE -->
+<div id="historyFab" title="Historia importante (inventos, religión, crímenes)">📜</div>
+<div id="historyDrawer">
+  <div class="hd-head"><span style="font-family:'Press Start 2P';font-size:8px;color:#ffcc00">📜 HISTORIA IMPORTANTE</span><span style="display:flex;gap:4px;align-items:center"><select id="historyFilter" style="background:#000;color:#fff;border:2px solid #000;font-family:VT323;font-size:12px"><option value="all">TODO</option><option value="canon">★ CANON</option><option value="invention">INVENTO</option><option value="crime">CRIMEN</option><option value="evo">EVO</option></select><button onclick="toggleHistory(false)" style="background:#ff3b30;color:#fff;border:2px solid #000;padding:4px 8px;font-family:'Press Start 2P';font-size:7px">✕</button></span></div>
+  <div style="background:#000;padding:6px 8px;display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #1a1a1a"><span style="font-family:VT323;font-size:12px;color:#8a7a5a" id="historyCount">0 eventos</span><button onclick="importantHistory=[];renderHistoryDrawer()" style="background:#1a140f;color:#8a7a5a;border:2px solid #000;padding:2px 6px;font-family:VT323;font-size:11px">LIMPIAR</button></div>
+  <div class="hd-body" id="historyBody"></div>
+</div>
+<button id="hudToggle" style="display:none" title="Plegar a la izquierda (mini) / Expandir">←</button>
+<button id="narrationToggle" title="Ocultar/mostrar barra inferior">—</button>
+<!-- CALENDARIO GRANDE — 12 días por estación, 6 días por semana, único colmena -->
+  <div id="calendarModal">
+    <div class="cal-modal-box">
+      <div class="cal-modal-head">
+        <div class="cal-modal-title"><span id="calModalIcon">🌱</span> <span id="calModalTitle">BROTE — PRIMAVERA</span><span style="font-size:7px;color:#8a7a5a" id="calModalSubtitle">12 días • 2 semanas</span></div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <span class="cal-modal-year" id="calModalYear">AÑO 1</span>
+          <button id="btnCloseCalendar" style="background:#ff3b30;color:#fff;border:3px solid #000;padding:6px 10px;font-family:'Press Start 2P',monospace;font-size:8px;cursor:pointer">✕</button>
+        </div>
+      </div>
+      <div class="cal-season-tabs" id="calSeasonTabs">
+        <div class="cal-tab s-prima active" data-s="0">🌱 BROTE<br><small style="font-size:6px">1-12</small></div>
+        <div class="cal-tab s-vera" data-s="1">☀️ SOL<br><small style="font-size:6px">13-24</small></div>
+        <div class="cal-tab s-oto" data-s="2">🍂 COSECHA<br><small style="font-size:6px">25-36</small></div>
+        <div class="cal-tab s-inv" data-s="3">❄️ ESCARCHA<br><small style="font-size:6px">37-48</small></div>
+      </div>
+      <div id="calGrid" class="cal-grid"></div>
+      <div class="cal-legend">
+        <span><b style="background:#ffcc00;color:#000;padding:1px 4px">HOY</b> actual</span>
+        <span><b style="background:#1a140f;color:#8a7a5a;padding:1px 4px;border:1px solid #000">■</b> pasado</span>
+        <span><b style="background:#000;color:#8a7a5a;padding:1px 4px;border:1px solid #000">□</b> futuro</span>
+        <span>🟡 huevo de reina</span><span>🍯 cosecha</span><span>🌧 lluvia</span>
+      </div>
+      <div style="background:#000;border-top:3px solid #000;padding:8px 10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
+        <span id="calModalInfo" style="font-family:'VT323',monospace;font-size:13px;color:#c9b896">Día 1 de Brote • Año 1 • Semana 1 (Obrera)</span>
+        <div style="display:flex;gap:6px">
+          <button class="pixel-btn small" id="btnCalPrev">‹ AÑO-1</button>
+          <button class="pixel-btn small" id="btnCalNext">AÑO+1 ›</button>
+          <button class="pixel-btn small" id="btnCalToday" style="background:var(--amber);color:#000">HOY</button>
+        </div>
+      </div>
+    </div>
+      
+  </div>
+
+  <!-- Motor del juego — núcleo profesional modular -->
+  
+
+<script src="js/app.js?v=20261015e"></script>
+<script>
+// Vigia del arranque: si js/app.js no termino de cargar, decirlo en pantalla en vez de dejar
+// botones sordos. Es lo unico que vive en el HTML; el juego entero esta en js/app.js.
+(function(){
+  function fail(msg){
+    if(document.getElementById('topoBootFail')) return;
+    const d=document.createElement('div');
+    d.id='topoBootFail';
+    d.style.cssText='position:fixed;inset:0;z-index:10099;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box';
+    d.innerHTML='<div style="max-width:440px;background:#1a140f;border:4px solid #000;box-shadow:8px 8px 0 #000;padding:18px;text-align:center"><div style="font-family:\'Press Start 2P\',monospace;font-size:11px;color:#ff8c00;line-height:1.6">EL MOTOR NO ARRANCO</div><div style="font-family:\'VT323\',monospace;font-size:15px;color:#c9b896;margin-top:10px;line-height:1.4">'+msg+'</div><button id="topoBootReload" class="pixel-btn primary" style="margin-top:14px;justify-content:center">RECARGAR</button></div>';
+    document.body.appendChild(d);
+    const b=document.getElementById('topoBootReload'); if(b) b.onclick=function(){ location.reload(); };
+  }
+  window.addEventListener('error', function(e){ if(!window._topoFlowReady) fail(String((e&&e.message)||'error de carga')+' · '+((e&&e.filename)?String(e.filename).split('/').pop():'js/app.js')); });
+  setTimeout(function(){ if(!window._topoFlowReady) fail('js/app.js no termino de cargar. Suele ser cache vieja: recarga forzada (Ctrl+Shift+R).'); }, 3000);
+})();
+</script>
+
+
+
+</body>
+</html>
+<!-- TEST Wed Oct 14 00:54:12 UTC 2026 -->
