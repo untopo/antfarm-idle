@@ -262,6 +262,54 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       await page2.screenshot({ path: 'screenshots/07-iframe-mundo.png' });
     }
     if (blocked2.length) console.log('   avisos del navegador sobre dialogos: ' + blocked2.slice(0, 2).join(' | '));
+
+    // --- LAS TIRAS RECUPERADAS Y EL SALTO DE DIA, como comprobacion permanente ------------
+    {
+      const tiras = await page.evaluate(() => {
+        const vis = (id) => { const e = document.getElementById(id); if (!e) return null; const b = e.getBoundingClientRect(); const cs = getComputedStyle(e);
+          return { w: Math.round(b.width), h: Math.round(b.height), visible: cs.display !== 'none' && cs.visibility !== 'hidden' && b.width > 0 && b.height > 0 }; };
+        const cal = document.getElementById('calendarWidget');
+        return { hud: vis('mainHud'), dia: vis('dayControls'), btn: vis('btnDay1'), vel: vis('cornerControls'), sel: vis('hudSel'),
+          anchoCal: cal ? Math.round(cal.getBoundingClientRect().width) : -1 };
+      }).catch(() => ({}));
+      ok(tiras.dia && tiras.dia.visible && tiras.btn && tiras.btn.visible,
+        'las tiras del HUD estan de vuelta y a la vista (dayControls ' + (tiras.dia || {}).w + 'x' + (tiras.dia || {}).h + ' · boton +1 dia ' + (tiras.btn || {}).w + 'x' + (tiras.btn || {}).h + ')');
+      ok(tiras.vel && tiras.vel.visible,
+        'la barra de velocidades x1..x16 + pausa existe y se puede pulsar (' + (tiras.vel || {}).w + 'x' + (tiras.vel || {}).h + ')');
+      ok(tiras.anchoCal > 0 && Math.abs(tiras.dia.w - tiras.anchoCal) <= 24,
+        'cuelgan bajo el reloj y heredan su ancho (' + tiras.dia.w + ' px de tira contra ' + tiras.anchoCal + ' px de calendario)');
+      // El salto de dia se mide en una pagina NUEVA y limpia: en la pagina principal los tests
+      // anteriores ensucian el lote del suelo (el conjunto sucio pasa del umbral y cada calada
+      // pinta el mapa entero), y ahi la colonia trabaja ~14x mas despacio. Medir ahi daria FAIL
+      // por la medicion, no por el boton.
+      const page3 = await browser.newPage();
+      await page3.setViewport({ width: 1280, height: 760 });
+      await page3.goto('http://127.0.0.1:' + PORT + '/index.html', { waitUntil: 'networkidle2', timeout: 60000 });
+      await page3.evaluate(() => { const b = document.getElementById('btnSplashEnter'); if (b) b.click(); });
+      await sleep(500);
+      await page3.evaluate(() => document.getElementById('btnMainCreate').click());
+      await sleep(300);
+      await page3.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (h) { const y = [...h.querySelectorAll('button')].find((x) => x.textContent.trim() === 'SÍ'); if (y) y.click(); } document.querySelector('#createSizeScreen [data-size="medium"]').click(); });
+      await page3.waitForFunction('window.COLS===64', { timeout: 90000 });
+      await page3.evaluate(() => { const b = document.getElementById('btnOnboardingStart'); if (b) b.click(); });
+      await sleep(400);
+      const estado = () => page3.evaluate(() => ({ dia: day, digs, vel: gameSpeed, comida: colonyFood, cavadas: (() => { let n = 0; for (let r = SURFACE_ROW; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (soil[r][c] === 0) n++; return n; })(), boton: document.getElementById('btnDay1').textContent.trim(), ocupado: (typeof _fastForwarding !== 'undefined') && _fastForwarding }));
+      const antes = await estado();
+      await page3.evaluate(() => document.getElementById('btnDay1').click());
+      let ahora = antes;
+      for (let k = 0; k < 40; k++) { await sleep(1500); ahora = await estado(); if (ahora.dia > antes.dia && !ahora.ocupado) break; }
+      const ms = 0;
+      const cavado = ahora.digs - antes.digs;
+      const tierra = ahora.cavadas - antes.cavadas;
+      console.log('   salto: ' + JSON.stringify(antes) + ' -> ' + JSON.stringify(ahora));
+      ok(ahora.dia > antes.dia, 'el boton +1 DIA pasa de dia: dia ' + antes.dia + ' -> ' + ahora.dia);
+      ok(cavado > 0 && tierra > 0, 'y ese dia trabaja de verdad: ' + cavado + ' bloques cavados y ' + tierra + ' celdas abiertas, comida ' + antes.comida + '->' + ahora.comida);
+      ok(ahora.vel === antes.vel, 'al terminar devuelve la velocidad que habia (x' + antes.vel + ' antes, x' + ahora.vel + ' despues)');
+      ok(/\+1 DIA|\+1 DÍA/.test(ahora.boton) && !ahora.ocupado, 'y el boton queda libre con su etiqueta: ' + JSON.stringify(ahora.boton));
+      await page3.screenshot({ path: 'screenshots/08-tiras-hud.png' });
+      await page3.close();
+      await page.screenshot({ path: 'screenshots/08-tiras-hud.png' });
+    }
   } finally {
     if (!process.env.KEEP) await browser.close();
     server.close();

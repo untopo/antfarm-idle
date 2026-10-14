@@ -161,3 +161,23 @@ de 57 KB). **Pero en ese día fast-forward no se abrió ni una celda nueva (27 �
 o sea las obreras no excavaron. Queda como tarea propia: la calada de un ant depende de que alguien le
 asigne `digTarget`, y ese reparto parece mirar el número de *frames* y no el tiempo de juego, que es lo
 que el salto acelera. No se tapa con un aviso: mientras no sepa por qué, el botón no vuelve al HUD.
+
+
+### 6ª parte (15 por la mañana): las tiras vuelven y el +1 día se puede pulsar
+
+El HTML habia perdido el contenedor del HUD y con él todo lo que el JS ya sabia rellenar
+(`btnDay1`, `btnCorner1..16`, `btnCornerPause`, `hudSel`/`hudSelTxt`, `dayControls`, `cornerControls`,
+`mainHud`). Estaban en el CSS y en el JS, sin nada en medio. Se montaron **dentro de `#calendarWidget`**
+para que cuelguen bajo el reloj con su mismo ancho (220 px) y no tapen el mapa; las dos reglas
+`.hud-strips{ display:none !important }` (lineas 40 y 150) se levantaron y los 340 px fijos de
+`.hud-strips > div` se anularon dentro del calendario.
+
+En el mismo golpe se quitaron los 6 ficheros que daban 404: `pixel-ants-cropped.png` y las hojas
+antropomorfas ya no se piden (el pintado a mano es el arte unico, y los antropomorfos dibujan igual
+por acuerdo de diseño), y se declaró un favicon vacio para el ultimo 404. La consola queda limpia.
+
+Comprobado en navegador real, sobre una pagina nueva y limpia (en la pagina principal los tests
+anteriores ensucian el lote del suelo y la colonia trabaja ~14x mas despacio, ahi medir daria FAIL
+por la medicion): `dia 1 -> 2`, `8 bloques cavados`, `8 celdas abiertas`, velocidad `x1` antes y
+`x1` despues, boton `⏩ +1 DÍA` otra vez habilitado. Son cuatro aserciones permanentes en
+`test/browser-smoke.js`, que ahora da **36 ok**.
