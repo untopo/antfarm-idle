@@ -2233,10 +2233,13 @@ function capacidadAlmacen(){ return 14 + storageCells().length*2 + granerosConst
 // mas material = mas cuadros, no cuadros mas gordos.
 const _CUADRO=6;
 function _boteAlmacen(cx, cy, w, h, col, col2, brillo, puntos){
-  ctx.fillStyle='#000'; ctx.fillRect(cx-1, cy-h-1, w+2, h+2);
-  ctx.fillStyle=col; ctx.fillRect(cx, cy-h, w, h);
-  ctx.fillStyle=col2; ctx.fillRect(cx, cy-Math.max(1,h*0.34), w, Math.max(1,h*0.34));
-  if(brillo){ ctx.fillStyle='#fff'; ctx.fillRect(cx+1, cy-h+1, 1, Math.max(1,h*0.4)); }
+  // el mismo sello que el terreno: nada de marco negro, si no cara de arriba clara, canto de abajo oscuro
+  // y la junta de un pixel que separa un bulto del siguiente
+  _bloque(ctx, cx, cy-h, w, h, col);
+  // la banda de contenido va por el MEDIO: si pisa la ultima fila se come la sombra del bloque y el
+  // bulto lee al reves que el terreno (luz abajo), que es justamente lo que se quito del atlas
+  ctx.fillStyle=col2; ctx.fillRect(cx+1, cy-Math.max(2,Math.round(h*0.62)), w-2, Math.max(1,Math.round(h*0.28)));
+  if(brillo){ ctx.fillStyle='#fff'; ctx.fillRect(cx+1, cy-h+1, 1, Math.max(1,Math.round(h*0.4))); }
   if(puntos){ ctx.fillStyle=puntos; ctx.fillRect(cx+1, cy-h+1, 1, 1); ctx.fillRect(cx+3, cy-3, 1, 1); }
 }
 // cuantos cuadros le tocan a una cantidad: 1 hasta 8, 2 hasta 27, 3 hasta 64, 4 mas
@@ -4254,6 +4257,35 @@ const _VOX = {
 // reescaladas que salian con costuras entre celda y celda.
 const _HIERBA = ['#5aa02c','#7ec23a','#b07a2a','#e9f2fb'];
 const _HIERBA_SECA = '#a8a02c';
+// ─────────── EL SELLO DE LA CASA ───────────
+// Topo pidio «voxel graphics and technology sencilla»: todo lo dibujado a mano sale por aqui. Un rectangulo
+// de color con su cara de luz arriba, su sombra abajo, su corte en el lado y su junta de un pixel. El terreno
+// ya iba asi; ahora van igual las plantas, la miel, la comida y los objetos, para que el prado y la colmena
+// se lean como el mismo mundo de bloques y no como pegatinas de otro dibujante.
+function _tilde16(h,dd){
+  const n=parseInt(h.slice(1),16);
+  const r1=Math.max(0,Math.min(255,(n>>16)+dd)), r2=Math.max(0,Math.min(255,((n>>8)&255)+dd)), r3=Math.max(0,Math.min(255,(n&255)+dd));
+  return '#'+((r1<<16)|(r2<<8)|r3).toString(16).padStart(6,'0');
+}
+function _bloque(g,x,y,w,h,col,k){
+  k = (k===undefined)? 1 : k;
+  const x0=Math.floor(x), y0=Math.floor(y), w0=Math.max(1,Math.floor(w)), h0=Math.max(1,Math.floor(h));
+  g.fillStyle=col; g.fillRect(x0,y0,w0,h0);
+  if(h0>=2){ g.fillStyle=_tilde16(col,Math.round(40*k)); g.fillRect(x0,y0,w0,1); g.fillStyle=_tilde16(col,-Math.round(46*k)); g.fillRect(x0,y0+h0-1,w0,1); }
+  if(h0>=5 && w0>=2){ g.fillStyle=_tilde16(col,-24); g.fillRect(x0+w0-1,y0+1,1,h0-2); }
+  if(w0>=4 && h0>=3){ g.fillStyle='rgba(0,0,0,0.14)'; g.fillRect(x0,y0,1,h0); }
+}
+// el verde del prado: el MISMO que pinta la franja de hierba del terreno, para que una mata plantada encima
+// de una casilla no sea de otro color que la propia casilla
+function _hierbaHoy(){
+  let h=_HIERBA[(_soilSeason|0)%4]||_HIERBA[0];
+  if((_soilSeason|0)===1 && !_soilWet) h=_HIERBA_SECA;
+  if(_soilWet && (_soilSeason|0)!==3) h=_tilde16(h,-14);
+  return h;
+}
+// lo que cambia de un tipo a otro sin cambiar de dibujante: dos plantas seguidas no salen calcadas
+function _humorPlant(ax,ay,n){ return (Math.floor(ax)*7 + Math.floor(ay)*13 + n*29) % 5; }
+
 function paintCacheCellTextured(c,r){
   const g=soilCacheCtx, x=c*CELL, y=r*CELL;
   const _h=((c*7+r*13)%5), _h2=((c*11+r*5)%4);       // el "ruido" sale de la coordenada: no parpadea al repintar
@@ -4272,10 +4304,9 @@ function paintCacheCellTextured(c,r){
   // mismo material no pueden salir calcadas, que era la queja. Establecido por coordenada, no al azar.
   // OJO: todo esto se hace sobre el HEX, porque adjust() devuelve 'rgb(...)' y realimentarlo producia un
   // color invalido que canvas se tragaba en silencio (la franja de luz salia del color del relleno anterior).
-  const _tilde=(h,dd)=>{ const n=parseInt(h.slice(1),16); const r1=Math.max(0,Math.min(255,(n>>16)+dd)), r2=Math.max(0,Math.min(255,((n>>8)&255)+dd)), r3=Math.max(0,Math.min(255,(n&255)+dd)); return '#'+((r1<<16)|(r2<<8)|r3).toString(16).padStart(6,'0'); };
-  let col=_tilde(d.col, _h - 2);
+  let col=_tilde16(d.col, _h - 2);
   const _px=(n)=>((c*13 + r*7 + n*29 + _h*5 + _h2*3) % 11) + 2;
-  if(_soilWet) col=_tilde(col,-16);                                             // mojado: mas oscuro y apagado
+  if(_soilWet) col=_tilde16(col,-16);                                             // mojado: mas oscuro y apagado
   const luz=adjust(col, 42), sombra=adjust(col,-56), corte=adjust(col,-28);
   // cara frontal
   g.fillStyle=col; g.fillRect(x,y,CELL,CELL);
@@ -4355,7 +4386,7 @@ tlog('[TEX] superficies override instalado');
 
 // === TEXTURAS DEFINITIVAS 02 - VEGETACIÓN ATLAS 1024 ===
 const texVegetacion = new Image();
-texVegetacion.src = 'assets/textures/categoria_02_vegetacion.png';
+// texVegetacion.src ya NO se pide: plantas, comida y miel se pintan en bloques (ver _bloque). El PNG sigue en disco.
 let texVegetacionReady = false;
 texVegetacion.onload = ()=>{ texVegetacionReady=true; tlog('[TEX] vegetacion 1024 atlas ready'); };
 texVegetacion.onerror = ()=>console.warn('[TEX] vegetacion failed');
@@ -4374,10 +4405,10 @@ caveMush: vegSrc(2,2)
 };
 // === TEXTURAS DEFINITIVAS 03 - ALIMENTOS ATLAS 2816 ===
 const texAlimentos = new Image();
-texAlimentos.src = 'assets/textures/categoria_03_alimentos.png';
+// texAlimentos.src ya NO se pide: plantas, comida y miel se pintan en bloques (ver _bloque). El PNG sigue en disco.
 // miel regenerada individual PNG blanco 66KB - carga ligera para no congelar
 const texHoneyNew = new Image();
-texHoneyNew.src = 'assets/textures/honey_tight_transparent.png';
+// texHoneyNew.src ya NO se pide: plantas, comida y miel se pintan en bloques (ver _bloque). El PNG sigue en disco.
 let texHoneyNewReady=false;
 texHoneyNew.onload = ()=>{ texHoneyNewReady=true; tlog('[TEX] honey 283x366 ready'); };
 let texAlimentosReady = false;
@@ -4659,125 +4690,90 @@ function drawFarm(ctx,W,H,isMini=false){
       const px=Math.floor(pl.x), py=SURFACE_Y-14;
       const g=pl.growth;
       const sway=Math.sin(time*0.014 + pl.x*0.09)* (0.5 + g*0.4);
-      // atlas definitive
-      if(texVegetacionReady){
-        let src=null;
-        if(pl.type==='clover') src=VEG_MAP.clover;
-        else if(pl.type==='grassTuft') src=VEG_MAP.grassTuft;
-        else if(pl.type==='flowerY') src=VEG_MAP.flowerY;
-        else if(pl.type==='flowerW') src=VEG_MAP.flowerW;
-        else if(pl.type==='berryBush') src=VEG_MAP.berryBush;
-        else if(pl.type==='mushroom') src=VEG_MAP.mushroom;
-        else if(pl.type==='sapling') src=VEG_MAP.sapling;
-        else if(pl.type==='fruitTree') src=VEG_MAP.fruitTree;
-        else src=VEG_MAP.clover;
-        if(src){
-          ctx.imageSmoothingEnabled=false;
-          // size by growth: 18 at g0 → 36 at g1, bigger for trees
-          let baseW=22, baseH=22;
-          if(pl.type==='berryBush'){ baseW=28; baseH=28; }
-          else if(pl.type==='fruitTree'){ baseW=36; baseH=36; }
-          else if(pl.type==='sapling'){ baseW=24; baseH=30; }
-          else if(pl.type==='mushroom'){ baseW=20; baseH=20; }
-          const s = g<0.25?0.55: g<0.55?0.75: g<0.85?0.92:1;
-          const dw=Math.floor(baseW*s), dh=Math.floor(baseH*s);
-          // sway offset
-          const dx = Math.floor(px - dw/2 + sway);
-          const dy = Math.floor(py - dh + 6);
-          try{ ctx.drawImage(texVegetacion, src.sx, src.sy, src.sw, src.sh, dx, dy, dw, dh); }catch(e){}
-          // fruit indicator if mature berry/mushroom/tree with cooldown ready
-          if((pl.type==='berryBush' || pl.type==='mushroom' || pl.type==='fruitTree') && g>0.88 && pl.fruitCooldown<120){
-            ctx.fillStyle='rgba(255,255,255,0.85)'; ctx.fillRect(dx+dw/2-1, dy-2,2,2);
-          }
-          continue; // atlas drawn, skip old rects
-        }
-      }
-      // fallback procedural if atlas not ready (kept for safety)
+      // PLANTAS EN BLOQUES (Topo: «haced lo mismo con las plantas, super simplificadas»). El atlas de
+      // vegetacion deja de pedirse y cada tipo se pinta aqui, con su cara de luz y su sombra, del mismo
+      // corte que los cuadros del terreno. El despliegue sale de la coordenada de la planta: dos matas
+      // seguidas no salen calcadas y al repintar no parpadea (nada de Math.random en el pintado).
+      const _v=_hierbaHoy(), _vC=_tilde16(_v,36), _vO=_tilde16(_v,-42);
+      const _hp=(n)=>_humorPlant(px,py,n);
       const g2=g;
       if(pl.type==='clover'){
-        const sz = 3 + g2*4;
-        ctx.fillStyle=g2<0.3?'#2d6a1a': g2<0.7?'#3a8d22':'#2e9a1e';
-        ctx.fillRect(px+sway*0.3, py - sz, 3, sz);
-        if(g2>0.45){
-          ctx.fillStyle='#3fcf2e'; ctx.fillRect(px-2+sway*0.2, py - sz +1, 3,2); ctx.fillRect(px+2+sway*0.2, py - sz +2, 3,2);
-          ctx.fillStyle='#1e5a0f'; ctx.fillRect(px+1+sway*0.2, py - sz +3,1,1);
-        }
-        if(g2>0.85){ ctx.fillStyle='#7ad35f'; ctx.fillRect(px+1+sway*0.3, py - sz,1,1); }
+        const sz=3+g2*4 + (_hp(0)?0:1);
+        _bloque(ctx,px-1+sway*0.3,py-sz,3,sz,_v);
+        if(g2>0.45){ _bloque(ctx,px-3+sway*0.2,py-sz+1,4,3,_vC); _bloque(ctx,px+2+sway*0.2,py-sz+2,4,3,_v); }
+        if(g2>0.85){ ctx.fillStyle='#fff8dc'; ctx.fillRect(Math.floor(px+1+sway*0.3),Math.floor(py-sz),1,1); }
       } else if(pl.type==='grassTuft'){
-        const h= 4 + g2*6;
-        ctx.fillStyle='#2d7a1a'; ctx.fillRect(px+sway, py - h, 2, h); ctx.fillStyle='#7ad35f'; ctx.fillRect(px+sway, py - h,1,2);
-        if(g2>0.6){ ctx.fillStyle='#3a9d23'; ctx.fillRect(px+4+sway*0.5, py - (h*0.6),1, h*0.6); }
-      } else if(pl.type==='flowerY'){
-        const h=5+g2*5;
-        ctx.fillStyle='#2a7a1a'; ctx.fillRect(px, py - h, 2, h);
+        const h=4+g2*6+_hp(1)%2, x0=px+sway;
+        _bloque(ctx,x0,py-h,2,h,_v);
+        _bloque(ctx,x0+3,py-Math.round(h*0.72),2,Math.round(h*0.72),_vO);
+        if(g2>0.6){ _bloque(ctx,x0-3,py-Math.round(h*0.55),1,Math.round(h*0.55),_vC); }
+        ctx.fillStyle=_vC; ctx.fillRect(Math.floor(x0),Math.floor(py-h),1,1);
+      } else if(pl.type==='flowerY'||pl.type==='flowerW'){
+        const h=5+g2*5+_hp(2)%2, amarillo=pl.type==='flowerY';
+        _bloque(ctx,px,py-h,2,h,_v);
         if(g2>0.42){
-          const fx=px+1, fy=py - h -2;
-          ctx.fillStyle=g2>0.85?'#ffdd57':'#e0c044'; ctx.fillRect(fx-1,fy,4,2); ctx.fillRect(fx,fy-1,2,4);
-          ctx.fillStyle='#fff'; ctx.fillRect(fx,fy+1,1,1); ctx.fillStyle='#7a4a00'; ctx.fillRect(fx, fy+2,1,1);
-          if(g2>0.9){ ctx.fillStyle='rgba(255,221,87,0.45)'; ctx.fillRect(fx-2,fy-1,6,1); }
-        }
-      } else if(pl.type==='flowerW'){
-        const h=5+g2*5;
-        ctx.fillStyle='#2a7a1a'; ctx.fillRect(px, py - h, 2, h);
-        if(g2>0.42){
-          const fx=px+1, fy=py - h -2;
-          ctx.fillStyle='#ffffff'; ctx.fillRect(fx-1,fy,4,2); ctx.fillRect(fx,fy-1,2,4);
-          ctx.fillStyle='#ffdd57'; ctx.fillRect(fx,fy+1,1,1);
+          const fx=px+1, fy=py-h-2;
+          const pet = amarillo? (g2>0.85?'#ffdd57':'#e0c044') : '#f2f0e4';
+          _bloque(ctx,fx-2,fy,5,3,pet); _bloque(ctx,fx,fy-2,2,6,pet);
+          ctx.fillStyle=amarillo?'#7a4a00':'#ffdd57'; ctx.fillRect(Math.floor(fx),Math.floor(fy+1),1,1);
+          if(g2>0.9){ ctx.fillStyle='rgba(255,221,87,0.40)'; ctx.fillRect(Math.floor(fx-3),Math.floor(fy-1),7,1); }
         }
       } else if(pl.type==='berryBush'){
-        const h= 7 + g2*10;
-        ctx.fillStyle='#5a3a1a'; ctx.fillRect(px, py - h, 3, h);
+        const h=7+g2*10+_hp(3)%2;
+        _bloque(ctx,px,py-h,3,h,'#5a3a1a');
         if(g2>0.32){
-          const fh = g2<0.6? 10 : g2<0.85? 14 : 18;
-          ctx.fillStyle=g2<0.5?'#2e6b1a': g2<0.8?'#2d7a1a':'#1e8a0f';
-          ctx.fillRect(px-6, py - h - fh +6, 14, fh);
-          ctx.fillStyle='#3fbf2e'; ctx.fillRect(px-4, py - h - fh +8, 8,4);
-          if(g2>0.72){ ctx.fillStyle='#1a4a0f'; ctx.fillRect(px-2, py - h -2, 2,2); }
+          const fh=(g2<0.6?10:g2<0.85?14:18)+_hp(4)%3;
+          _bloque(ctx,px-6,py-h-fh+6,14,fh,_v);
+          _bloque(ctx,px-4,py-h-fh+8,8,4,_vC);
+          if(g2>0.72){ _bloque(ctx,px-2,py-h-2,3,2,_vO); }
           if(g2>0.88){
-            ctx.fillStyle='#6a1a7a'; ctx.fillRect(px-5, py - h -6,3,3); ctx.fillRect(px+3, py - h -8,3,3);
-            ctx.fillStyle='#a83ac2'; ctx.fillRect(px-4, py - h -5,1,1); ctx.fillRect(px+4, py - h -7,1,1);
-            ctx.fillStyle='#d27aee'; ctx.fillRect(px+1, py - h -10,3,3);
+            const _mad = _tilde16('#8b2ba0', _hp(1)%2?0:18);
+            _bloque(ctx,px-5,py-h-6,3,3,_mad); _bloque(ctx,px+3,py-h-8,3,3,'#6a1a7a'); _bloque(ctx,px+1,py-h-10,3,3,_mad);
+            ctx.fillStyle='#d27aee'; ctx.fillRect(Math.floor(px-4),Math.floor(py-h-5),1,1); ctx.fillRect(Math.floor(px+4),Math.floor(py-h-7),1,1);
           }
         }
       } else if(pl.type==='mushroom'){
-        const h= 2 + g2*5;
-        ctx.fillStyle='#d9c8b0'; ctx.fillRect(px, py - h,2, h+1);
+        const h=2+g2*5+_hp(2)%2;
+        _bloque(ctx,px,py-h,2,h+1,'#d9c8b0');
         if(g2>0.35){
-          const capW = 8 + g2*6, capH= 5 + g2*3;
-          ctx.fillStyle=g2<0.7?'#c27a3a':'#d68a4a';
-          ctx.fillRect(px - capW/2 +1, py - h - capH, capW, capH);
-          ctx.fillStyle='#fff8dc'; ctx.fillRect(px - capW/2 +2, py - h - capH +2,2,2); ctx.fillRect(px+2, py - h - capH+1,2,1);
-          ctx.fillStyle='#8b5a2b'; ctx.fillRect(px, py -1,2,2);
+          const capW=8+g2*6+_hp(3)%3, capH=5+g2*3;
+          _bloque(ctx,px-capW/2+1,py-h-capH,capW,capH, g2<0.7?'#c27a3a':'#d68a4a');
+          ctx.fillStyle='#fff8dc'; ctx.fillRect(Math.floor(px-capW/2+2),Math.floor(py-h-capH+2),2,1);
+          ctx.fillRect(Math.floor(px+2),Math.floor(py-h-capH+1),2,1);
+          ctx.fillStyle='#8b5a2b'; ctx.fillRect(Math.floor(px),Math.floor(py-1),2,2);
         }
       } else if(pl.type==='fruitTree'){
-        const h= 6 + g2*20;
-        ctx.fillStyle='#5a2a0a'; ctx.fillRect(px, py - h, 4, h);
+        const h=6+g2*20+_hp(4)%3;
+        _bloque(ctx,px,py-h,4,h,'#5a2a0a');
         if(g2>0.22){
-          const crownY = py - h - (g2*12);
-          const crownR = g2<0.45? 10 : g2<0.78? 16 : 20;
-          ctx.fillStyle=g2<0.5?'#2e8a1f': g2<0.8?'#1e7a0f':'#0f5a0a';
-          ctx.fillRect(px - crownR/2, crownY, crownR, crownR*0.75);
-          ctx.fillStyle='#3fbf2e'; ctx.fillRect(px - crownR/2+3, crownY+3, crownR-6, 4);
-          if(g2>0.72){ ctx.fillStyle='#3a1a05'; ctx.fillRect(px+1, py - h +4, 2, 6); }
+          const crownY=py-h-(g2*12), crownR=(g2<0.45?10:g2<0.78?16:20)+_hp(1)%4;
+          _bloque(ctx,px-crownR/2,crownY,crownR,Math.round(crownR*0.75), g2<0.5?_v: g2<0.8?_tilde16(_v,-18):_vO);
+          _bloque(ctx,px-crownR/2+3,crownY+3,crownR-6,4,_vC);
+          if(g2>0.72){ ctx.fillStyle='#3a1a05'; ctx.fillRect(Math.floor(px+1),Math.floor(py-h+4),2,6); }
           if(g2>0.58){
-            const appleY = crownY + 6;
-            ctx.fillStyle='#d91e1e'; ctx.fillRect(px - crownR/2 +4, appleY, 3,3); ctx.fillRect(px + crownR/2 -6, appleY+2, 3,3); ctx.fillRect(px -2, appleY+4, 3,3);
-            ctx.fillStyle='#ff6b6b'; ctx.fillRect(px - crownR/2 +5, appleY+1,1,1); ctx.fillStyle='#fff'; ctx.fillRect(px -1, appleY+5,1,1);
-            if(g2>0.88){ ctx.fillStyle='#ff2a2a'; ctx.fillRect(px+2, appleY-4,3,3); ctx.fillStyle='#ffd93d'; ctx.fillRect(px+3, appleY-3,1,1); }
+            const appleY=crownY+6;
+            _bloque(ctx,px-crownR/2+4,appleY,3,3,'#d91e1e'); _bloque(ctx,px+crownR/2-6,appleY+2,3,3,'#d91e1e');
+            _bloque(ctx,px-2,appleY+4,3,3,'#c01818');
+            ctx.fillStyle='#ff8a8a'; ctx.fillRect(Math.floor(px-crownR/2+5),Math.floor(appleY+1),1,1);
+            if(g2>0.88){ _bloque(ctx,px+2,appleY-4,3,3,'#ff2a2a'); ctx.fillStyle='#ffd93d'; ctx.fillRect(Math.floor(px+3),Math.floor(appleY-3),1,1); }
           }
-          ctx.fillStyle='rgba(0,0,0,0.18)'; ctx.fillRect(px+3, py -2, 2, 2);
+          _bloque(ctx,px+3,py-2,2,2,'#2a1b08');
         }
       } else if(pl.type==='sapling'){
-        const h= 4 + g2*18;
-        ctx.fillStyle='#6b3a1f'; ctx.fillRect(px, py - h, 3, h);
+        const h=4+g2*18+_hp(0)%3;
+        _bloque(ctx,px,py-h,3,h,'#6b3a1f');
         if(g2>0.25){
-          const crownY = py - h - (g2*10);
-          const crownR = g2<0.4? 6 : g2<0.7? 10 : 16;
-          ctx.fillStyle=g2<0.4?'#7ad35f': g2<0.7?'#3a9d23':'#1e6a0f';
-          ctx.fillRect(px - crownR/2, crownY, crownR, crownR*0.7);
-          ctx.fillStyle='#2d7a1a'; ctx.fillRect(px - crownR/2+2, crownY+2, crownR-4,2);
-          if(g2>0.85){ ctx.fillStyle='#3a5a0f'; ctx.fillRect(px - crownR/2 -2, crownY+4,2,6); ctx.fillRect(px + crownR/2, crownY+4,2,6); }
+          const crownY=py-h-(g2*10), crownR=(g2<0.4?6:g2<0.7?10:16)+_hp(2)%3;
+          _bloque(ctx,px-crownR/2,crownY,crownR,Math.round(crownR*0.7), g2<0.4?_vC: g2<0.7?_v:_vO);
+          if(g2>0.85){ _bloque(ctx,px-crownR/2-2,crownY+4,2,6,_vO); _bloque(ctx,px+crownR/2,crownY+4,2,6,_vO); }
         }
+      } else {
+        // lo que no sea de los tipos conocidos: un mata baja, para que ninguna planta quede invisible
+        _bloque(ctx,px-2,py-4,5,4,_v);
+      }
+      // la fruta lista se sigue anunciando como lo que es: un punto claro en la copa, no un cartel
+      if((pl.type==='berryBush' || pl.type==='mushroom' || pl.type==='fruitTree') && g>0.88 && pl.fruitCooldown<120){
+        ctx.fillStyle='rgba(255,255,255,0.85)'; ctx.fillRect(Math.floor(px-1),Math.floor(py-6),2,2);
       }
     }
     for(let x=0;x<W;x+=14){
@@ -4787,15 +4783,14 @@ function drawFarm(ctx,W,H,isMini=false){
       if(_pl && _pl.growth>0.62 && _pl.type!=='grassTuft') continue;
       const seed=(x*13)%7;
       const f=fertility[c]||0.5;
-      if(f<0.42 && Math.random()<0.5) continue;
-      const h1= 4 + (seed%4) + f*2;
-      const sway=Math.sin(time*0.015 + x*0.08)*0.6;
-      ctx.fillStyle= seed<2? '#1e5a0f' : seed<4? '#2d7a1a' : '#3a9d23';
-      ctx.fillRect(x+3+sway, SURFACE_Y-14 - h1, 2, h1);
-      ctx.fillStyle='#7ad35f'; ctx.fillRect(x+3+sway, SURFACE_Y-14 - h1, 1, 2);
-      if(seed%3===0 && f>0.55){
-        ctx.fillStyle='#2d7a1a'; ctx.fillRect(x+7+sway*0.5, SURFACE_Y-14 - (3+f*2), 1, 3+f*2);
-      }
+      // la fertilidad manda de forma estable (antes era Math.random por frame: el prado parpadeaba y
+      // podian salir y desaparecer briznas sin que nadie las plantara)
+      if(f<0.42 && ((x*5+3)%7)<3) continue;
+      const _v=_hierbaHoy(), sway=Math.sin(time*0.015 + x*0.08)*0.6;
+      const h1= 4 + (seed%4) + Math.round(f*2);
+      _bloque(ctx,x+3+sway,SURFACE_Y-14-h1,2,h1, seed<2? _tilde16(_v,-26) : seed<4? _v : _tilde16(_v,18));
+      if(seed%3===0 && f>0.55){ _bloque(ctx,x+7+sway*0.5,SURFACE_Y-14-(3+f*2),1,3+f*2,_tilde16(_v,10)); }
+      if(f>0.78 && seed===5){ _bloque(ctx,x+10+sway,SURFACE_Y-18,2,2,'#f2f0e4'); }
     }
     for(let x=20;x<W;x+=48){
       const c=Math.floor(x/CELL);
@@ -4928,26 +4923,18 @@ function drawFarm(ctx,W,H,isMini=false){
     for(let pl of plants){
       if(!pl.cave) continue;
       if(soil[pl.rr] && soil[pl.rr][pl.c]===0){
-        if(texVegetacionReady){
-          const src=VEG_MAP.caveMush;
-          const g=pl.growth;
-          ctx.imageSmoothingEnabled=false;
-          const base=22; const sc = g<0.3?0.6: g<0.7?0.85:1;
-          const dw=Math.floor(base*sc), dh=Math.floor(base*sc);
-          const x=pl.c*CELL+8 - dw/2, y=pl.rr*CELL+8 - dh/2 +2;
-          const sway=Math.sin(time*0.012 + pl.c*0.7)*1.2;
-          try{ ctx.drawImage(texVegetacion, src.sx, src.sy, src.sw, src.sh, Math.floor(x+sway), Math.floor(y), dw, dh); }catch(e){}
-          continue;
-        }
+        // (fuera el atlas de vegetacion: la seta de cueva se pinta en bloques, como todo)
         const x=pl.c*CELL+6, y=pl.rr*CELL+8;
         const g=pl.growth;
         if(g>0.12){
-          ctx.fillStyle='#d9c8b0'; ctx.fillRect(x+2, y-2,2,3);
-          const capW=6+Math.floor(g*6), capH=4+Math.floor(g*2);
-          ctx.fillStyle=g>0.6?'#8a6a9a':'#6a4a7a';
-          ctx.fillRect(x - capW/2 +3, y-2 - capH, capW, capH);
-          ctx.fillStyle='#e8d8f0'; ctx.fillRect(x - capW/2 +4, y-2 - capH+1,1,1);
-          if(g>0.85){ ctx.fillStyle='#fff'; ctx.fillRect(x, y-2 - capH,1,1); }
+          const _h=_humorPlant(pl.c*CELL,pl.rr*CELL,1);
+          _bloque(ctx,x+2,y-2,2,3,'#d9c8b0');
+          const capW=6+Math.floor(g*6)+_h%3, capH=4+Math.floor(g*2);
+          _bloque(ctx,x-capW/2+3,y-2-capH,capW,capH, g>0.6?'#8a6a9a':'#6a4a7a');
+          ctx.fillStyle='#e8d8f0'; ctx.fillRect(Math.floor(x-capW/2+4),Math.floor(y-2-capH+1),2,1);
+          if(g>0.85){ ctx.fillStyle='#fff'; ctx.fillRect(Math.floor(x),Math.floor(y-2-capH),1,1); }
+          // y su apoyo: la fila de abajo hace sombra sobre el suelo del tunel
+          ctx.fillStyle='rgba(0,0,0,0.30)'; ctx.fillRect(Math.floor(x-capW/2+3),Math.floor(y+1),capW,1);
         }
       }
     }
@@ -4992,9 +4979,7 @@ function drawFarm(ctx,W,H,isMini=false){
         else if(t==='semillaRara') bg='#b47aff';
         else if(t==='hongo' || t==='hongoCueva') bg='#8b5a2b';
         else if(t==='semillas') bg='#ffcc00';
-        ctx.fillStyle=bg; ctx.fillRect(x+2,y+2,12,12);
-        ctx.strokeStyle='#000'; ctx.lineWidth=1.5; ctx.strokeRect(x+2,y+2,12,12);
-        ctx.fillStyle='#000'; ctx.globalAlpha=0.12; ctx.fillRect(x+2,y+13,12,1); ctx.globalAlpha=1;
+        _bloque(ctx,x+2,y+2,12,12,bg);
         // icono pixel 8x8 centrado
         const cx=x+8, cy=y+8;
         ctx.imageSmoothingEnabled=false;
@@ -5202,53 +5187,34 @@ function drawFarm(ctx,W,H,isMini=false){
   }
   // FOODS - gota de miel pixel art pequeña, no contamina
   function drawHoneyDrop(ctx,cx,cy,amt){
+    // LA MIEL EN BLOQUES (Topo: «lo mismo con la miel, super simplificada»): la gota es un escalon de tres
+    // franjas - cuello, barriga y punta - con su cara clara arriba y su ambar apagado abajo. Mide 8-14 px
+    // segun cuanto hay, que es la banda que pidio el dueño, y ya no hay contorno negro ni PNG que descargar.
     const col = amt>=3 ? '#ffb700' : amt===2 ? '#ffcc33' : '#ffda66';
-    const acol = amt>=3 ? '#ff8c00' : '#ffaa22';
-    // tamaño según cantidad: 8x10, 10x12, 12x14
     const w = amt>=3? 12 : amt===2? 10 : 8;
     const h = amt>=3? 14 : amt===2? 12 : 10;
     const x = Math.floor(cx - w/2), y = Math.floor(cy - h/2);
-    // sombra sutil
-    ctx.fillStyle='rgba(0,0,0,0.18)'; ctx.fillRect(x+2, y+h, w-2, 2);
-    // contorno gota (pixel)
-    // cuerpo con forma gota
-    ctx.fillStyle='#000';
-    // outline - dibujar silueta gota
-    if(w===12){
-      // 12x14 outline
-      ctx.fillRect(x+4,y,4,1); ctx.fillRect(x+2,y+1,8,1); ctx.fillRect(x+1,y+2,10,1);
-      for(let yy=3; yy<10; yy++) ctx.fillRect(x,y+yy,12,1);
-      ctx.fillRect(x+1,y+10,10,1); ctx.fillRect(x+2,y+11,8,1); ctx.fillRect(x+3,y+12,6,1); ctx.fillRect(x+5,y+13,2,1);
-    } else if(w===10){
-      ctx.fillRect(x+3,y,4,1); ctx.fillRect(x+2,y+1,6,1); ctx.fillRect(x+1,y+2,8,1);
-      for(let yy=3; yy<9; yy++) ctx.fillRect(x,y+yy,10,1);
-      ctx.fillRect(x+1,y+9,8,1); ctx.fillRect(x+2,y+10,6,1); ctx.fillRect(x+4,y+11,2,1);
-    } else {
-      ctx.fillRect(x+3,y,2,1); ctx.fillRect(x+2,y+1,4,1); ctx.fillRect(x+1,y+2,6,1);
-      for(let yy=3; yy<8; yy++) ctx.fillRect(x,y+yy,8,1);
-      ctx.fillRect(x+1,y+8,6,1); ctx.fillRect(x+2,y+9,4,1);
-    }
-    // relleno interior ámbar
-    ctx.fillStyle=col;
-    if(w===12){
-      ctx.fillRect(x+1,y+3,10,7); ctx.fillRect(x+2,y+10,8,1); ctx.fillRect(x+3,y+11,6,1);
-      ctx.fillRect(x+2,y+2,8,1); ctx.fillRect(x+4,y+1,4,1);
-    } else if(w===10){
-      ctx.fillRect(x+1,y+3,8,6); ctx.fillRect(x+2,y+9,6,1); ctx.fillRect(x+3,y+2,6,1);
-    } else {
-      ctx.fillRect(x+1,y+3,6,5); ctx.fillRect(x+2,y+8,4,1); ctx.fillRect(x+2,y+2,4,1);
-    }
-    // brillo interior más oscuro abajo
-    ctx.fillStyle=acol; ctx.fillRect(x+2,y+h-4, w-4,2);
-    // brillo blanco pequeño arriba-izq
-    ctx.fillStyle='#fff'; 
-    if(w===12){ ctx.fillRect(x+3,y+3,2,2); ctx.fillRect(x+3,y+5,1,2); }
-    else if(w===10){ ctx.fillRect(x+3,y+3,2,2); }
-    else { ctx.fillRect(x+2,y+3,1,2); }
-    // puntita de miel abajo
-    ctx.fillStyle='#fff8b0'; ctx.fillRect(x+w/2-0.5,y+h-2,1,1);
+    ctx.fillStyle='rgba(0,0,0,0.22)'; ctx.fillRect(x+2, y+h, w-3, 1);                 // apoyo en el suelo
+    const _cuello=Math.max(4, w-4), _y1=y+Math.round(h*0.30), _y2=y+Math.round(h*0.74);
+    _bloque(ctx, x+(w-_cuello)/2, y, _cuello, Math.round(h*0.30), _tilde16(col, 24));
+    _bloque(ctx, x, _y1, w, _y2-_y1, col);
+    _bloque(ctx, x+2, _y2, Math.max(2,w-4), Math.max(2, y+h-_y2-1), _tilde16(col,-46));
+    ctx.fillStyle='#fff8dc'; ctx.fillRect(x+2, _y1+1, 2, 1);                          // el brillo de siempre, dos pixeles
+    if(amt>=3){ ctx.fillStyle='rgba(255,248,176,0.55)'; ctx.fillRect(x+w-3, _y1+2, 1, 2); }
   }
-  // FOOD POR TIPO MATERIAL - Terraria/Dwarf Fortress: cada alimento textura y podredumbre propia
+  // gancho de medida (test/voxel-objetos.js): pinta UNA gota en un lienzo suelto y dice cuanto mide el
+  // bulto entero. Es la funcion de pintar de verdad, no una copia: si alguien cambia la banda de tamano, aqui salta.
+  if(!window._muestraMiel){ window._muestraMiel=(amt)=>{ try{
+      const c=document.createElement('canvas'); c.width=32; c.height=32; const g=c.getContext('2d');
+      drawHoneyDrop(g,16,16,amt);
+      const d=g.getImageData(0,0,32,32).data; let x0=99,x1=-1,y0=99,y1=-1;   // solo lo opaco: la linea de apoyo no cuenta como gota
+      for(let i=0;i<d.length;i+=4){ if(d[i+3]<200) continue; const px=(i/4)%32, py=Math.floor((i/4)/32);
+        if(px<x0)x0=px; if(px>x1)x1=px; if(py<y0)y0=py; if(py>y1)y1=py; }
+      const _lum=(yy)=>{ let t=0,n=0; for(let px=0;px<32;px++){ const i=(yy*32+px)*4; if(d[i+3]<200) continue; t+=0.3*d[i]+0.59*d[i+1]+0.11*d[i+2]; n++; } return n? t/n : -1; };
+      const _arriba=_lum(y0), _medio=_lum(Math.floor((y0+y1)/2)), _abajo=_lum(y1);
+      return { w:x1-x0+1, h:y1-y0+1, x0, y0, arriba:_arriba, medio:_medio, abajo:_abajo };
+    }catch(e){ return { error:e.message }; } }; }
+  // CADA ALIMENTO, EL SUYO: cada tipo tiene su bulto y su podredumbre a la vista
   function drawFoodItem(ctx,cx,cy,f){
     const amt=f.amount||1, type=f.ftype||'honey', fresh=f.fresh!=null? f.fresh : 1;
     const def=FOOD_DEFS[type]||FOOD_DEFS.honey;
@@ -5259,64 +5225,24 @@ function drawFarm(ctx,W,H,isMini=false){
       for(let i=0;i<q;i++){ const bx=Math.floor(cx+4+i*3), by=Math.floor(cy+4);
         ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(bx,by+1,3,2);
         ctx.fillStyle=i%2?'#c9a06a':'#b98f57'; ctx.fillRect(bx,by,3,2); } };
-    // atlas definitivo 03 - cada food en su celda transparente
-    // miel nueva regenerada: usa PNG individual 66KB para no congelar (atlas 4MB pesado)
-    if(type==='honey' && typeof texHoneyNewReady!=='undefined' && texHoneyNewReady){
-      ctx.imageSmoothingEnabled=false;
-      const base = amt>=6? 9 : amt>=3? 7 : amt===2? 6 : 5;
-      const s2 = 1 + Math.min(amt-1,5)*0.04;
-      const dw2=Math.floor(base*s2), dh2=Math.floor(base*s2*1.18);
-      const dx2=Math.floor(cx - dw2/2), dy2=Math.floor(cy - dh2/2 -1);
-      try{ ctx.drawImage(texHoneyNew, 0,0, texHoneyNew.width, texHoneyNew.height, dx2, dy2, dw2, dh2); }catch(e){}
-      if(amt>2){ _bulto(); }
-      return;
-    }
-    if(texAlimentosReady){
-      let src=null;
-      if(type==='honey') src=ALIM_MAP.honey;
-      else if(type==='berry') src=ALIM_MAP.berry;
-      else if(type==='mushroom') src=ALIM_MAP.mushroom;
-      else if(type==='apple') src=ALIM_MAP.apple;
-      else if(type==='seed') src=ALIM_MAP.seed;
-      else if(type==='grassSeed') src=ALIM_MAP.grassSeed;
-      else src=ALIM_MAP.honey;
-      if(src){
-        ctx.imageSmoothingEnabled=false;
-        // miel subida un pelo por pedido - 5-9px base (un pelo más que 4-6), cabe en celda 16px
-        const base = amt>=6? 9 : amt>=3? 7 : amt===2? 6 : 5;
-        const s = 1 + Math.min(amt-1,5)*0.04;
-        const dw=Math.floor(base*s), dh=Math.floor(base*s*1.18);
-        const dx=Math.floor(cx - dw/2), dy=Math.floor(cy - dh/2 -1);
-        // sombra sutil 1px en suelo para legibilidad, sin bloque negro
-        // try{ ctx.fillStyle='rgba(0,0,0,0.12)'; ctx.fillRect(dx+1, dy+dh-1, dw-2, 1); }catch(e){}
-        try{ ctx.drawImage(texAlimentos, src.sx, src.sy, src.sw, src.sh, dx, dy, dw, dh); }catch(e){}
-        // podredumbre overlay si hace falta
-        if(rot>0.45){
-          ctx.fillStyle= rot>0.65? 'rgba(60,20,0,0.32)' : 'rgba(60,40,0,0.18)';
-          ctx.fillRect(dx+dw*0.2, dy+dh*0.5, dw*0.6, dh*0.25);
-        }
-      if(amt>2){ _bulto(); }
-        return;
-      }
-    }
-    // fallback procedural si atlas no listo
+    // (los dos atlas de comida y de miel dejan de consultarse: todo esto se pinta a mano, en bloques)
     const w = amt>=3? 12 : amt===2? 10 : 8;
     const h = amt>=3? 14 : amt===2? 12 : 10;
+    // CADA ALIMENTO, SU BULTO: dos tonos, luz arriba y sombra abajo, sin contorno negro. Lo que se pudre
+    // se ve pudrir (la franja oscura), y lo que hay debajo del racimo es el suelo, no un numero.
     if(type==='honey'){
       drawHoneyDrop(ctx,cx,cy,amt);
-      if(rot>0.5){
-        ctx.fillStyle='rgba(60,40,0,0.22)'; ctx.fillRect(Math.floor(cx-w/2), Math.floor(cy-h/2), w, h);
-      }
+      if(rot>0.5){ ctx.fillStyle='rgba(60,40,0,0.22)'; ctx.fillRect(Math.floor(cx-w/2), Math.floor(cy-h/2), w, h); }
       return;
     }
     if(type==='berry'){
       const x=Math.floor(cx-4), y=Math.floor(cy-4);
       const col = rot>0.6 ? '#4a144a' : rot>0.3? '#5a1a5a' : def.color;
       const cap = rot>0.6 ? '#6a2a6a' : def.cap;
-      ctx.fillStyle='#000'; ctx.fillRect(x-1,y-1,10,10);
-      ctx.fillStyle=col; ctx.fillRect(x,y,6,6); ctx.fillRect(x+4,y+2,4,4);
-      ctx.fillStyle=cap; ctx.fillRect(x+1,y+1,2,2); ctx.fillRect(x+5,y+3,1,1);
-      if(rot>0.4){ ctx.fillStyle='rgba(0,0,0,0.35)'; ctx.fillRect(x+2,y+2,3,3); }
+      ctx.fillStyle='rgba(0,0,0,0.22)'; ctx.fillRect(x+1,y+9,8,1);
+      _bloque(ctx,x,y,6,6,col); _bloque(ctx,x+4,y+2,4,4,_tilde16(col,26));
+      ctx.fillStyle=cap; ctx.fillRect(x+1,y+1,2,1);
+      if(rot>0.4){ ctx.fillStyle='rgba(0,0,0,0.35)'; ctx.fillRect(x+2,y+3,3,2); }
       if(amt>2){ _bulto(); }
       return;
     }
@@ -5324,30 +5250,29 @@ function drawFarm(ctx,W,H,isMini=false){
       const x=Math.floor(cx-4), y=Math.floor(cy-6);
       const stemCol = rot>0.5? '#9a7a5a' : '#d9c8b0';
       const capCol = rot>0.5? '#6b4420' : def.cap;
-      ctx.fillStyle='#000'; ctx.fillRect(x+2,y,4,10);
-      ctx.fillStyle=stemCol; ctx.fillRect(x+3,y+2,2,8);
-      ctx.fillStyle='#000'; ctx.fillRect(x,y,8,6);
-      ctx.fillStyle=capCol; ctx.fillRect(x+1,y+1,6,4);
-      ctx.fillStyle='#fff8dc'; ctx.fillRect(x+2,y+2,1,1);
-      if(rot>0.4){ ctx.fillStyle='rgba(40,20,0,0.35)'; ctx.fillRect(x+1,y+1,6,1); }
+      ctx.fillStyle='rgba(0,0,0,0.22)'; ctx.fillRect(x+1,y+10,7,1);
+      _bloque(ctx,x+3,y+2,2,8,stemCol);
+      _bloque(ctx,x,y,8,6,capCol);
+      ctx.fillStyle='#fff8dc'; ctx.fillRect(x+1,y+1,2,1);
+      if(rot>0.4){ ctx.fillStyle='rgba(40,20,0,0.35)'; ctx.fillRect(x+1,y+4,6,1); }
       return;
     }
     if(type==='apple'){
       const x=Math.floor(cx-5), y=Math.floor(cy-5);
       const col = rot>0.6 ? '#6b0f0f' : def.color;
-      ctx.fillStyle='#000'; ctx.fillRect(x-1,y-1,10,10);
-      ctx.fillStyle=col; ctx.fillRect(x,y,8,8);
-      ctx.fillStyle=def.cap; ctx.fillRect(x+2,y+2,2,2); ctx.fillStyle='#fff'; ctx.fillRect(x+1,y+1,1,1);
+      ctx.fillStyle='rgba(0,0,0,0.22)'; ctx.fillRect(x+1,y+8,8,1);
+      _bloque(ctx,x,y,8,8,col);
+      ctx.fillStyle=def.cap; ctx.fillRect(x+2,y+2,2,1); ctx.fillStyle='#fff'; ctx.fillRect(x+1,y+1,1,1);
       if(rot>0.4){ ctx.fillStyle='rgba(0,0,0,0.28)'; ctx.fillRect(x+2,y+5,4,2); }
-      ctx.fillStyle='#7a4a1a'; ctx.fillRect(x+3,y-2,2,2);
+      _bloque(ctx,x+3,y-2,2,2,'#7a4a1a');
       return;
     }
     if(type==='seed' || type==='grassSeed'){
       const x=Math.floor(cx-3), y=Math.floor(cy-3);
-      ctx.fillStyle='#000'; ctx.fillRect(x-1,y-1,6,5);
-      ctx.fillStyle=def.color; ctx.fillRect(x,y,4,3);
+      ctx.fillStyle='rgba(0,0,0,0.22)'; ctx.fillRect(x,y+4,6,1);
+      _bloque(ctx,x,y,4,3,def.color);
       ctx.fillStyle=def.cap; ctx.fillRect(x+1,y+1,1,1);
-      if(amt>2){ ctx.fillStyle='#000'; ctx.font='5px "Press Start 2P"'; ctx.textAlign='center'; ctx.fillText('x'+amt, cx, y+7); }
+      if(amt>2){ _bulto(); }
       return;
     }
     drawHoneyDrop(ctx,cx,cy,amt);

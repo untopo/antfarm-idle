@@ -19,6 +19,17 @@ else
   echo "puppeteer no instalado - salteado (node test/browser-smoke.js lo pide solo: npm i puppeteer)"
 fi
 
+# Los tres de pintura se corren DE UNO EN UNO: abren Chrome y si comparten la maquina los
+# Runtime.evaluate revientan por CPU, no por culpa del juego (medido).
+for t in fondo-pinta voxel-graficos voxel-objetos live-hud; do
+  printf '\n=== test/%s.js (pintura en navegador) ===\n' "$t"
+  if node "test/$t.js" > /tmp/_vp.out 2>&1; then
+    tail -n 2 /tmp/_vp.out
+  else
+    echo ">> FALLOS EN $t"; grep -E "^ *FAIL|FALLOS" /tmp/_vp.out | head -n 8; fail=1
+  fi
+done
+
 printf '\n=== sintaxis ===\n'
 node --check ant-farm-rpg/js/app.js && echo "app.js OK"
 node -e '
