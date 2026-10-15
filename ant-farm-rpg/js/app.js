@@ -698,7 +698,7 @@ function spawnNaturalPlant(forceType=null){
   // busca columna fértil vacía sin hueco ni planta
   let cands=[];
   for(let c=1;c<COLS-1;c++){
-    if(soil[SURFACE_ROW][c]===0) continue; // hueco túnel
+    if(!_pieSuperficie(c)) continue;    // sin tierra debajo del cesped no se siembra: no hay donde prender
     if(getPlantAt(c)) continue;
     if(fertility[c] < 0.52) continue;
     cands.push(c);
@@ -826,12 +826,19 @@ function updateEcosystem(dt){
   // crecimiento de plantas
   for(let i=plants.length-1;i>=0;i--){
     const pl=plants[i];
-    // Topo: si debajo del trébol queda un hueco, el trébol se cae - no crecen en el aire
-    if(!pl.cave){
-      if(!soil[SURFACE_ROW] || soil[SURFACE_ROW][pl.c]!==1){ plants.splice(i,1); continue; }
-    } else if(pl.rr!==undefined && (!soil[pl.rr] || soil[pl.rr][pl.cr]!==0)){
-      plants.splice(i,1); continue; // el tunel se rellenó: el hongo se queda sin cámara
+    if(pl.cave){
+      if(pl.rr!==undefined && (!soil[pl.rr] || soil[pl.rr][pl.cr]!==0)){
+        plants.splice(i,1); continue;   // el tunel se rellenó: el hongo se queda sin camara
+      }
     }
+    // sin pie no hay raiz: la planta no se arranca de golpe (eso no lo ve nadie y no explica nada), se
+    // seca delante de la camara - encoge, pierde el color y deja de dar fruto hasta desaparecer
+    const _pie = pl.cave ? _pieCueva(pl.cr!==undefined?pl.cr:pl.c, pl.rr) : _pieSuperficie(pl.c);
+    if(!_pie){
+      pl.seca = 1;
+      pl.growth -= 0.0022*dt;
+      if(pl.growth <= 0.02){ plants.splice(i,1); continue; }
+    } else if(pl.seca) pl.seca = 0;
     const f=fertility[pl.c];
     const growthRate = (0.00055 + f*0.00062)*dt*rainBoost*seasonBoost*sunBoost;
     // trébol crece rápido, árbol lento
@@ -843,8 +850,6 @@ function updateEcosystem(dt){
     else if(pl.type==='grassTuft') mult=1.15;
     pl.growth=Math.min(1, pl.growth + growthRate*mult);
     pl.age+=dt;
-    // muerte si hueco se abre (túnel debajo)
-    if(soil[SURFACE_ROW][pl.c]===0){ plants.splice(i,1); continue; }
     // fruto / comida
     if(pl.growth>=0.92){
       pl.fruitCooldown-=dt;
@@ -904,7 +909,7 @@ function updateEcosystem(dt){
   // cada tile con pasto maduro intenta infectar adyacente como Terraria: horizontal/vertical/diagonal a suelo desnudo
   if(dt>0 && worldAge>0.12){
     for(let c=0;c<COLS;c++){
-      if(soil[SURFACE_ROW][c]!==1) continue; // solo superficie de tierra
+      if(!_pieSuperficie(c)) continue; // solo superficie de tierra, y con tierra debajo
       const hasPlant = plants.some(pl=> pl.c===c && !pl.cave);
       if(hasPlant) continue; // ya ocupado
       // buscar vecino con pasto maduro (clover/grassTuft >0.62) en 8 direcciones Terraria
@@ -913,12 +918,11 @@ function updateEcosystem(dt){
         if(dc===0 && dr===0) continue;
         const nc=c+dc; if(nc<0||nc>=COLS) continue;
         const np = plants.find(pl=> pl.c===nc && (pl.type==='clover' || pl.type==='grassTuft') && pl.growth>0.62);
-        if(np && soil[SURFACE_ROW][nc]===1) { neighborMature=true; break; }
+        if(np && _pieSuperficie(nc)) { neighborMature=true; break; }
       }
       if(!neighborMature) continue;
-      // luz: debe estar expuesto a cielo (no soil arriba, día con sol o al menos no cueva)
-      const isExposed = soil[SURFACE_ROW][c]===1 && (SURFACE_ROW===6); // superficie siempre expuesta si no hay hueco
-      if(!isExposed) continue;
+      // luz: al aire, sobre cesped de verdad (el hueco abierto por debajo ya lo descarta el pie)
+      if(!_pieSuperficie(c)) continue;
       // fertilidad y clima progresivo: no crece en suelo árido, lluvia y fertilidad ayudan
       const f=fertility[c]||0.5;
       const spreadChance = (0.00042 + f*0.00055 + (rainBoost-1)*0.00022) * dt * (worldAge*0.08+0.6);
@@ -939,7 +943,7 @@ function updateEcosystem(dt){
   if(Math.random()<0.00022*dt && worldAge>0.7){
     for(let c=2;c<COLS-2;c++){
       for(let r=SURFACE_ROW+6;r<ROWS-6;r++){
-        if(soil[r][c]===0 && soilType[r+1] && soilType[r+1][c]!==0 && soil[r-1] && soil[r-1][c]!==0 && Math.random()<0.0006){ // techo y suelo: nada de crecer en el aire
+        if(_pieCueva(c,r) && soil[r-1] && soil[r-1][c]!==0 && Math.random()<0.0006){ // techo y suelo: nada de crecer en el aire
           // hay techo y suelo, posibilidad de hongo de cueva
           if(Math.random()<0.12 && mound.some(m=>Math.abs(m.x - c*CELL)<28 && m.isPuddle)){
             plants.push({c, x:c*CELL+8, y:r*CELL+14, type:'caveMush', growth:0.12, maxGrowth:1, age:0, fruitCooldown:DAY_LENGTH*0.5, variant:0, cave:true, cr:c, rr:r});
@@ -2676,7 +2680,9 @@ function updateFungus(dt){
     }
     // patógeno si basurero cerca
     for(let w of wastePiles){ if(Math.hypot(w.x-f.x,w.y-f.y)<48) f.health-= dt*0.00012; }
-    if(f.health<=0){ fungusGardens.splice(i,1); pushEvent('death','🍄 Jardín fúngico muere - falta cuidado/humedad'); }
+    // y si le quitan el lecho (alguien cava el suelo de la camara) el sustrato se va: se apaga rapido
+    if(!soil[f.r+1] || soil[f.r+1][f.c]===0) f.health -= dt*0.0016;
+    if(f.health<=0){ fungusGardens.splice(i,1); pushEvent('death', (!soil[f.r+1] || soil[f.r+1][f.c]===0) ? '🍄 Jardín fúngico perdido - le cavaron el suelo de debajo' : '🍄 Jardín fúngico muere - falta cuidado/humedad'); }
   }
   // crear nuevo jardín cuando la colonia crece y aprende hongo. El sitio y el momento salen del USO (los
   // votos de las obreras que guardan setas y semillas alli), no del dado: asi el huerto aparece donde la
@@ -2703,8 +2709,9 @@ function updateFungus(dt){
           pushEvent('invention',`🍄 Cultivo descubierto: ${_votos} cargas de sustrato manten el jardin de la camara`, `Aprendizaje por uso - GEN${gen}, IQ ${Math.round(colonyIQ)}`);
           notifyCanon('🍄 CULTIVO', 'Las obreras aprenden a mantener el hongo donde tiran el sustrato', 5200);
         }
-      } else if(!soil[_mejor.r] || soil[_mejor.r][_mejor.c]!==0){
+      } else if(!soil[_mejor.r] || soil[_mejor.r][_mejor.c]!==0 || !soil[_mejor.r+1] || soil[_mejor.r+1][_mejor.c]===0){
         delete _huertoVotos[_clave];                          // alguien tumbo el suelo: se busca otro rincon
+        // (y no se funda sobre el vacio: el hongo necesita lecho, igual que la mata necesita tierra)
       } else {
         fungusGardens.push({x:gx, y:gy, c:_mejor.c, r:_mejor.r, health:0.78, size:0.9, age:0, fed:0});
         delete _huertoVotos[_clave];
@@ -4289,6 +4296,21 @@ function _hierbaHoy(){
   return h;
 }
 // lo que cambia de un tipo a otro sin cambiar de dibujante: dos plantas seguidas no salen calcadas
+// EL PIE DE UNA PLANTA (Topo: «si no hay pasto, tierra o una superficie apropiada, no deberia crecer
+// nada»). Dos cosas, y las dos de verdad: la casilla de la superficie intacta y tierra debajo para meter
+// la raiz. Con la casilla de abajo abierta -una calada que pasa rozando el cesped, o la boca del nido-
+// la mata se queda colgando sobre el hueco: eso era lo que se veia. Se usa el MISMO criterio que pinta
+// la franja de hierba (ahi donde no hay pasto tampoco hay planta), para que no se contradigan.
+function _pieSuperficie(c){
+  try{ return !!soil[SURFACE_ROW] && !!soil[SURFACE_ROW+1] && soil[SURFACE_ROW][c]!==0 && soil[SURFACE_ROW+1][c]!==0; }
+  catch(e){ return false; }
+}
+// y la seta de tunele: su propia casilla tiene que ser hueco (la camara) y debajo tiene que haber suelo
+// donde se agarra el micelio; sin suelo no hay sustrato, por mucho que la camara siga abierta
+function _pieCueva(cr,rr){
+  try{ return !!soil[rr] && !!soil[rr+1] && soil[rr][cr]===0 && soil[rr+1][cr]!==0; }
+  catch(e){ return false; }
+}
 function _humorPlant(ax,ay,n){ return (Math.floor(ax)*7 + Math.floor(ay)*13 + n*29) % 5; }
 
 function paintCacheCellTextured(c,r){
@@ -4723,7 +4745,10 @@ function drawFarm(ctx,W,H,isMini=false){
       // vegetacion deja de pedirse y cada tipo se pinta aqui, con su cara de luz y su sombra, del mismo
       // corte que los cuadros del terreno. El despliegue sale de la coordenada de la planta: dos matas
       // seguidas no salen calcadas y al repintar no parpadea (nada de Math.random en el pintado).
-      const _v=_hierbaHoy(), _vC=_tilde16(_v,36), _vO=_tilde16(_v,-42);
+      // y si esta seca (perdio la tierra debajo) el mismo dibujo sale en color paja: se ve como se cae,
+      // en vez de desaparecer de golpe y sin explicacion
+      const _verdeVivo=_hierbaHoy();
+      const _v= pl.seca? _mezcla16(_verdeVivo,'#b8762e',0.72) : _verdeVivo, _vC=_tilde16(_v,36), _vO=_tilde16(_v,-42);
       const _hp=(n)=>_humorPlant(px,py,n);
       const g2=g;
       if(pl.type==='clover'){
@@ -4957,9 +4982,9 @@ function drawFarm(ctx,W,H,isMini=false){
         const g=pl.growth;
         if(g>0.12){
           const _h=_humorPlant(pl.c*CELL,pl.rr*CELL,1);
-          _bloque(ctx,x+2,y-2,2,3,'#d9c8b0');
+          _bloque(ctx,x+2,y-2,2,3, pl.seca? '#8f8374' : '#d9c8b0');
           const capW=6+Math.floor(g*6)+_h%3, capH=4+Math.floor(g*2);
-          _bloque(ctx,x-capW/2+3,y-2-capH,capW,capH, g>0.6?'#8a6a9a':'#6a4a7a');
+          _bloque(ctx,x-capW/2+3,y-2-capH,capW,capH, pl.seca? (g>0.6?'#7a6a5a':'#5a4a3f') : (g>0.6?'#8a6a9a':'#6a4a7a'));
           ctx.fillStyle='#e8d8f0'; ctx.fillRect(Math.floor(x-capW/2+4),Math.floor(y-2-capH+1),2,1);
           if(g>0.85){ ctx.fillStyle='#fff'; ctx.fillRect(Math.floor(x),Math.floor(y-2-capH),1,1); }
           // y su apoyo: la fila de abajo hace sombra sobre el suelo del tunel
