@@ -373,6 +373,18 @@ function initSoil(){
   // exponer para debug
   window._spawnTreasure=(c,r,t)=>spawnSmartTreasure(c,r,t);
   window._treasures=()=>hiddenRewards.map(t=>({c:t.c,r:t.r,type:t.type,found:t.found}));
+  // gancho de prueba: pega obreras de mentira repartidas por el nido para ver como se lee una colonia grande
+  // sin esperar diez dias de simulacion. Vive solo en consola; el juego no lo llama nunca.
+  window._fakes=(n)=>{ try{
+      const base=workers[0]; if(!base) return 0;
+      for(let i=0;i<n;i++){
+        const cl=JSON.parse(JSON.stringify(base));
+        cl.x=4*CELL+((i*37)%Math.max(1,COLS-8))*CELL+3; cl.y=(SURFACE_ROW+4)*CELL+((i*53)%12)*CELL+4;
+        cl.state='IDLE'; cl.selected=false; cl._renderX=cl.x; cl._renderY=cl.y; cl._debugFake=true;
+        workers.push(cl);
+      }
+      return workers.length;
+    }catch(err){ console.warn('_fakes',err&&err.message); return -1; } };
   markSoilDirty();
 }
 // === LA ENTRADA ===
@@ -4092,7 +4104,7 @@ function paintCacheCell(c,r,isMini){
 // paintCellActive cambia cuando el override del atlas entra en juego; asi el atajo no depende de
 // que version de rebuildSoilCache sea la ultima definida (antes pasaba que el override se comia
 // el repintado por celdas y cada calada volvia a costar un mapa entero).
-let paintCellActive=null, _soilSeason=0, _soilWet=false, _soilIncWarned=0;
+let paintCellActive=null, _soilSeason=0, _soilWet=false, _soilIncWarned=0, _voxMini=false;
 function soilIncrementalReady(isMini){
   return !isMini && !!paintCellActive && !!soilDirtyCells && soilDirtyCells!==false
     && soilDirtyCells.size>0 && soilDirtyCells.size*6 < COLS*(ROWS-SURFACE_ROW);
@@ -4139,27 +4151,17 @@ function soilRepaintMoundsOver(cells){
   }
 }
 function soilDrawMoundTile(m){
-  // igual que el lazo original: si un monticulo esta raro, se omite ese, no se abandona el lote
+  // monticulo y charco como voxel bajo: un ladron de tierra apoyado en el suelo, con su cara de arriba clara.
+  // (Estaban definidas DOS veces esta funcion, la copia antigua sobraba.)
   try{
     const mx=Math.floor(m.x/16)*16, my=Math.floor(m.y/16)*16;
-    if(texSuperficiesReady){
-      const src = m.isPuddle ? TEX_MAP.puddle : TEX_MAP.mound;
-      soilCacheCtx.drawImage(texSuperficies, src.sx, src.sy, src.sw, src.sh, mx-0.5, my-0.5, CELL+1, CELL+1);
+    if(m.isPuddle){
+      soilCacheCtx.fillStyle='#3b5f86'; soilCacheCtx.fillRect(mx+1,my+10,14,4);
+      soilCacheCtx.fillStyle='#6f9dc4'; soilCacheCtx.fillRect(mx+2,my+10,12,1);
     } else {
-      soilCacheCtx.fillStyle = m.isPuddle ? 'rgba(90,150,220,0.55)' : 'rgba(120,80,40,0.7)';
-      soilCacheCtx.fillRect(mx,my,CELL,CELL);
-    }
-  }catch(e){}
-}function soilDrawMoundTile(m){
-  // igual que el lazo original: si un monticulo esta raro, se omite ese y no se abandona el lote
-  try{
-    const mx=Math.floor(m.x/16)*16, my=Math.floor(m.y/16)*16;
-    if(texSuperficiesReady){
-      const src = m.isPuddle ? TEX_MAP.puddle : TEX_MAP.mound;
-      soilCacheCtx.drawImage(texSuperficies, src.sx, src.sy, src.sw, src.sh, mx-0.5, my-0.5, CELL+1, CELL+1);
-    } else {
-      soilCacheCtx.fillStyle = m.isPuddle ? 'rgba(90,150,220,0.55)' : 'rgba(120,80,40,0.7)';
-      soilCacheCtx.fillRect(mx,my,CELL,CELL);
+      soilCacheCtx.fillStyle='#6b4520'; soilCacheCtx.fillRect(mx+2,my+8,12,7);
+      soilCacheCtx.fillStyle='#a2763c'; soilCacheCtx.fillRect(mx+3,my+8,10,2);
+      soilCacheCtx.fillStyle='#3f2610'; soilCacheCtx.fillRect(mx+13,my+10,1,5);
     }
   }catch(e){}
 }
@@ -4190,7 +4192,9 @@ function rebuildSoilCache(isMini){
 }
 // === TEXTURAS DEFINITIVAS 01 - SUPERFICIES ATLAS ===
 const texSuperficies = new Image();
-texSuperficies.src = 'assets/textures/categoria_01_superficies.png';
+// TILES VOXEL (Topo: «simplifica los gráficos, que sean voxels simples con ligeras diferencias entre
+// cada uno»): el suelo ya NO es un atlas reescalado. Se pinta a mano, cara a cara, asi que no se pide nada.
+// El PNG sigue en disco por si se quiere volver atras, pero no se descarga.
 let texSuperficiesReady = false;
 texSuperficies.onload = ()=>{ texSuperficiesReady=true; markSoilDirty(); setTimeout(()=>{markSoilDirty(); try{rebuildSoilCache();}catch(e){}}, 400); tlog('[TEX] superficies 2048 atlas ready'); };
 texSuperficies.onerror = ()=>console.warn('[TEX] superficies failed');
@@ -4218,12 +4222,10 @@ const TEX_MAP = {
 // cielo de ahora esta codificado (ver drawFarm), asi que ni siquiera se descargan.
 const texCielos = new Image(); let texCielosReady=false;
 const texBrote = new Image(); let texBroteReady=false;
-const texSurfaceFull = new Image(); texSurfaceFull.src = 'assets/textures/categoria_01_surface_fullgrass.png?v=20261012un'; let texSurfaceFullReady=false; texSurfaceFull.onload=()=>{ texSurfaceFullReady=true; markSoilDirty(); tlog('[TEX] surface fullgrass ready'); };
+const texSurfaceFull = new Image(); let texSurfaceFullReady=false;   // no se pide: la capa de pasto va dibujada
 const texPisos = new Image();
-texPisos.src = 'assets/textures/categoria_01_platformer_pisos_SB.png?v=20261012un&t='+Date.now();
 let texPisosReady=false;
-texPisos.onload=()=>{ texPisosReady=true; markSoilDirty(); tlog('[TEX] pisos SB NEON '+texPisos.width+'x'+texPisos.height+' ready', texPisos.src); try{ rebuildSoilCache(); }catch(e){}; try{ markSoilDirty(); }catch(e){}; };
-texPisos.onerror=()=>console.warn('[TEX] pisos estaciones failed');
+
 const PISOS_TW=352, PISOS_TH=192, PISOS_BORDER=6; // platformer side view 1408x768 4x4 grid
 function pisosSrc(col,row){ return {sx: col*PISOS_TW+PISOS_BORDER, sy: row*PISOS_TH+PISOS_BORDER, sw: PISOS_TW-PISOS_BORDER*2, sh: PISOS_TH-PISOS_BORDER*2}; }
 const PISOS_MAP={
@@ -4235,108 +4237,97 @@ const PISOS_MAP={
 
 // Override rebuildSoilCache to use atlas when ready
 const _origRebuildSoilCache = rebuildSoilCache;
+// Tabla de materiales del voxel. Cada uno lleva su color base y una forma distinta de enselear la diferencia:
+// la tierra con piedritas, la arcilla en mantas, la arena con granos, la piedra y la pizarra con una grieta,
+// la roca madre sin nada (es maciza) y los metales con dos o tres puntos del tono del metal, que es como se
+// anuncia una veta a 16 px sin que se confunda con el tunel de al lado.
+const _VOX = {
+  1:{col:'#8a5a2b', pinta:'piedras'},   2:{col:'#b0673f', pinta:'mantas'},
+  3:{col:'#d3b473', pinta:'granos'},    4:{col:'#8d8d8d', pinta:'grieta'},
+  5:{col:'#94887a', pinta:'grieta'},     6:{col:'#6b7a8a', pinta:'grietaLarga'},
+  7:{col:'#3a3a44', pinta:'ninguna'},
+  8:{col:'#8d8d8d', pinta:'veta', punto:'#e0884a'},
+  9:{col:'#847f86', pinta:'veta', punto:'#d7dce8'},
+  10:{col:'#8d8d8d', pinta:'veta', punto:'#f0cf5e'}
+};
+// El pasto cambia con la estacion y con la humedad, como antes, pero son 4 px de color: nada de losas
+// reescaladas que salian con costuras entre celda y celda.
+const _HIERBA = ['#5aa02c','#7ec23a','#b07a2a','#e9f2fb'];
+const _HIERBA_SECA = '#a8a02c';
 function paintCacheCellTextured(c,r){
-    const x=c*CELL, y=r*CELL;
-    if(soil[r][c]===1){
-      const depth=r-SURFACE_ROW;
-      const isDeco = hasDeco(c,r);
-      const t=(soilType[r]&&soilType[r][c])||1;
-      let src;
-      // Platformer side view: estaciones + estados intermedios (humedo/seco/helado) - vista lateral con pasto arriba
-      // Topo: estacion y clima valen para TODO el mapa - antes se leian por celda (getCalendarData
-      // armando cadenas 4608 veces) y por eso reconstruir el cache costaba 2.4 ms en BIG.
-      const _season=_soilSeason, _isWet=_soilWet;
-      // LÓGICA GRASS REALISTA: solo pasto si está en contacto directo con aire libre (cielo o hueco). Si está cubierto, es tierra pelada.
-      const _isExposed = (r===SURFACE_ROW) || (r>0 && soil[r-1] && soil[r-1][c]===0);
-      const _isSurfaceFull = (r===SURFACE_ROW) && _isExposed; // full grass for top surface
-      const _isTopGrass = _isExposed && ((r===SURFACE_ROW) || (t===1)) && !_isSurfaceFull;
-      const _isTopDirt = !_isExposed && (t===1); // topsoil cubierto -> tierra sin pasto
-      const _isDeepClay = (t===2), _isDeepSand=(t===3), _isDeepStone=(t===4||t===6);
-      // Full grass surface uses separate texture
-      if(_isSurfaceFull && texSurfaceFullReady){
-        src = {sx:6, sy:6, sw:340, sh:180, isFull:true};
-      } else if(texPisosReady && (_isTopGrass || _isDeepClay || _isDeepSand || _isDeepStone)){
-        if(_isTopGrass){
-          if(r===SURFACE_ROW && window.DEBUG_GRASS) tlog('[GRASS] surface',r,c, 'exposed',_isExposed,'t',t,'season',_season,'src',src);
-          if(_isWet && _season!==3) src=PISOS_MAP.springWet;
-          else if(_season===0) src=PISOS_MAP.spring;
-          else if(_season===1) src=PISOS_MAP.summer;
-          else if(_season===2) src=PISOS_MAP.autumn;
-          else src=PISOS_MAP.winter;
-          if(_season===1 && !_isWet && Math.random()<0.3) src=PISOS_MAP.summerDry;
-        } else if(_isDeepClay) src = _isWet? PISOS_MAP.clayWet : PISOS_MAP.clay;
-          if(r===SURFACE_ROW+1 && window.DEBUG_GRASS) tlog('[GRASS] below',r,c, 't',t,'src',src);
-        else if(_isDeepSand) src = _isWet? PISOS_MAP.sandWet : PISOS_MAP.sand;
-        else if(_isDeepStone) src = _isWet? PISOS_MAP.stoneWet : PISOS_MAP.stone;
-      }
-      // Si es topsoil pero cubierto, forzar tierra pelada del atlas clásico (no platformer)
-      if(_isTopDirt){
-        src = TEX_MAP.topsoil;
-      }
-      if(!src){
-        if(isDeco) src = TEX_MAP.deco;
-        else if(r===SURFACE_ROW) src = TEX_MAP.grass;
-        else if(t===1) src = TEX_MAP.topsoil;
-        else if(t===2) src = TEX_MAP.clay;
-        else if(t===3) src = TEX_MAP.sand;
-        else if(t===4) src = TEX_MAP.stone;
-        else if(t===6 || t===9) src = TEX_MAP.slate;
-        else if(t===7) src = TEX_MAP.bedrock;
-        else if(t===8 || t===10) src = TEX_MAP.stone;
-        else src = TEX_MAP.topsoil;
-      }
-      try{
-        if(src && src.isFull && texSurfaceFullReady){
-          soilCacheCtx.drawImage(texSurfaceFull, src.sx, src.sy, src.sw, src.sh, x-1, y-1, CELL+2, CELL+2);
-        } else {
-          const _isPisosSrc = texPisosReady && src && (src===PISOS_MAP.spring||src===PISOS_MAP.summer||src===PISOS_MAP.autumn||src===PISOS_MAP.winter||src===PISOS_MAP.springWet||src===PISOS_MAP.summerDry||src===PISOS_MAP.clay||src===PISOS_MAP.sand||src===PISOS_MAP.stone||src===PISOS_MAP.clayWet||src===PISOS_MAP.sandWet||src===PISOS_MAP.stoneWet);
-          if(_isPisosSrc) soilCacheCtx.drawImage(texPisos, src.sx, src.sy, src.sw, src.sh, x-1, y-1, CELL+2, CELL+2);
-          else soilCacheCtx.drawImage(texSuperficies, src.sx, src.sy, src.sw, src.sh, x-1, y-1, CELL+2, CELL+2);
-        }
-      }catch(e){ soilCacheCtx.fillStyle='#ff0000'; soilCacheCtx.fillRect(x-0.5,y-0.5,CELL+1,CELL+1); }
-      // la veta se ve: escamas del color del metal sobre la roca, con su sombra de talla
-      // la veta se anuncia con TRES PUNTITOS del color del metal sobre la roca: a 16 px cualquier otra
-      // silueta se confunde con el tunel de al lado, y el dueno lo dijo - «los materiales se leen mal».
-      if(t===8||t===9||t===10){
-        const _fc = t===8?'#e0884a':t===9?'#d7dce8':'#f0cf5e';
-        soilCacheCtx.fillStyle=_fc;
-        soilCacheCtx.fillRect(x+3,y+4,2,2); soilCacheCtx.fillRect(x+10,y+8,2,2);
-        if(((c*7+r*5)%3)!==0) soilCacheCtx.fillRect(x+6,y+12,2,2);
-      }
-      // overlay vein speckle for stone? atlas already has vein tile but we can occasionally overlay
-      // keep subtle shadow for depth
-      if(depth%6===0){
-        soilCacheCtx.fillStyle='rgba(0,0,0,0.08)';
-        soilCacheCtx.fillRect(x,y+CELL-2,CELL,1);
-      }
-    } else {
-      // túnel aire con textura beige + rim donde colinda
-      const _sol = (rr,cc)=> (rr<0||cc<0||rr>=ROWS||cc>=COLS) ? true : !!(soil[rr] && soil[rr][cc]===1);
-      const up = _sol(r-1,c), down = _sol(r+1,c), left = _sol(r,c-1), right = _sol(r,c+1);
-      // base aire
-      try{
-        soilCacheCtx.drawImage(texSuperficies, TEX_MAP.air.sx, TEX_MAP.air.sy, TEX_MAP.air.sw, TEX_MAP.air.sh, x-1, y-1, CELL+2, CELL+2);
-      }catch(e){ soilCacheCtx.fillStyle='#fff8dc'; soilCacheCtx.fillRect(x-0.5,y-0.5,CELL+1,CELL+1); }
-      // rim overlay if adjacent soil - use rim tile with alpha? For now draw dark border rects as before but could use rim tile
-      if(up||down||left||right){
-        // draw rim frame using atlas rim tile at low opacity overlay
-        // simple dark border
-        soilCacheCtx.fillStyle='rgba(46,15,0,0.45)';
-        if(up) soilCacheCtx.fillRect(x,y,CELL,3);
-        if(down) soilCacheCtx.fillRect(x,y+CELL-3,CELL,3);
-        if(left) soilCacheCtx.fillRect(x,y,3,CELL);
-        if(right) soilCacheCtx.fillRect(x+CELL-3,y,3,CELL);
-      }
+  const g=soilCacheCtx, x=c*CELL, y=r*CELL;
+  const _h=((c*7+r*13)%5), _h2=((c*11+r*5)%4);       // el "ruido" sale de la coordenada: no parpadea al repintar
+  if(soil[r][c]!==1){
+    // tunel: hueco liso y oscuro; el techo se oscurece 2 px si arriba hay material, y si hay suelo debajo se
+    // marca una linea de apoyo. Los marcos de 3 px por los cuatro lados se acabaron: en grupo era una reja.
+    g.fillStyle='#1c1108'; g.fillRect(x,y,CELL,CELL);
+    if(r>0 && soil[r-1] && soil[r-1][c]===1){ g.fillStyle='#0d0704'; g.fillRect(x,y,CELL,2); }
+    if(r+1<ROWS && soil[r+1] && soil[r+1][c]===1){ g.fillStyle='rgba(255,214,150,0.055)'; g.fillRect(x,y+CELL-1,CELL,1); }
+    return;
+  }
+  const t=(soilType[r]&&soilType[r][c])||1;
+  const d=_VOX[t]||_VOX[1];
+  const exp = (r===SURFACE_ROW) || (r>0 && soil[r-1] && soil[r-1][c]===0);   // en contacto con el aire
+  // cada bloque lleva su media tilde de tono (-2..+2) y sus marcas en su sitio: dos casillas seguidas del
+  // mismo material no pueden salir calcadas, que era la queja. Establecido por coordenada, no al azar.
+  // OJO: todo esto se hace sobre el HEX, porque adjust() devuelve 'rgb(...)' y realimentarlo producia un
+  // color invalido que canvas se tragaba en silencio (la franja de luz salia del color del relleno anterior).
+  const _tilde=(h,dd)=>{ const n=parseInt(h.slice(1),16); const r1=Math.max(0,Math.min(255,(n>>16)+dd)), r2=Math.max(0,Math.min(255,((n>>8)&255)+dd)), r3=Math.max(0,Math.min(255,(n&255)+dd)); return '#'+((r1<<16)|(r2<<8)|r3).toString(16).padStart(6,'0'); };
+  let col=_tilde(d.col, _h - 2);
+  const _px=(n)=>((c*13 + r*7 + n*29 + _h*5 + _h2*3) % 11) + 2;
+  if(_soilWet) col=_tilde(col,-16);                                             // mojado: mas oscuro y apagado
+  const luz=adjust(col, 42), sombra=adjust(col,-56), corte=adjust(col,-28);
+  // cara frontal
+  g.fillStyle=col; g.fillRect(x,y,CELL,CELL);
+  // cara de arriba (la luz del sol entra por arriba: eso es lo que hace que lea como bloque y no como mancha)
+  g.fillStyle=luz; g.fillRect(x,y,CELL,3);
+  // arista inferior y corte del lado: la sombra del bloque
+  g.fillStyle=sombra; g.fillRect(x,y+CELL-2,CELL,2);
+  g.fillStyle=corte; g.fillRect(x+CELL-1,y+3,1,CELL-5);
+  // la linea entre celda y celda: 1 px apenas marcado, para que el terreno se lea en bloques
+  g.fillStyle='rgba(0,0,0,0.16)'; g.fillRect(x,y,1,CELL);
+  // y la diferencia ligera de cada material
+  if(d.pinta==='piedras'){
+    g.fillStyle=sombra; g.fillRect(x+_px(1),y+4+_px(2)%8,2,2); g.fillStyle=luz; g.fillRect(x+_px(4),y+_px(5)%9+3,2,1);
+    if(_h>2){ g.fillStyle=sombra; g.fillRect(x+_px(7),y+11,2,1); }
+  } else if(d.pinta==='mantas'){
+    g.fillStyle=luz; g.fillRect(x+1+(_h%3),y+5+_h2,10-(_h%4),1); g.fillStyle=sombra; g.fillRect(x+3,y+10+(_h%3),8-(_h2%3),1);
+  } else if(d.pinta==='granos'){
+    g.fillStyle=luz; g.fillRect(x+_px(1),y+_px(2)%10+3,1,1); g.fillRect(x+_px(3),y+_px(4)%9+4,1,1);
+    g.fillStyle=sombra; g.fillRect(x+_px(5),y+_px(6)%8+6,1,1);
+    if(_h%2===0){ g.fillStyle=luz; g.fillRect(x+_px(8),y+_px(9)%6+8,1,1); }
+  } else if(d.pinta==='grieta'){
+    g.fillStyle=sombra; const _k=_px(2)%4;
+    g.fillRect(x+3+_k,y+4,1,1); g.fillRect(x+4+_k,y+5,1,1); g.fillRect(x+5+_k,y+6,2,1); g.fillRect(x+6+_k,y+7,1,1);
+  } else if(d.pinta==='grietaLarga'){
+    g.fillStyle=sombra; const _k=_h%3;
+    for(let o=0;o<4;o++) g.fillRect(x+2+o*3+_k, y+3+o*3, 2,1);
+    if(_h2%2===0){ g.fillStyle=luz; g.fillRect(x+_px(3),y+12,3,1); }
+  } else if(d.pinta==='veta'){
+    g.fillStyle=d.punto;
+    g.fillRect(x+_px(1),y+4+_px(2)%7,2,2); g.fillRect(x+_px(4),y+_px(5)%8+3,2,2);
+    if(((c*7+r*5)%3)!==0) g.fillRect(x+_px(7),y+11,2,2);
+  }
+  // el pasto: encima del bloque, 4 px de color de estacion y dos o tres pixeles de hoja que asoman
+  if(exp && (r===SURFACE_ROW || t===1)){
+    let hcol=_HIERBA[(_soilSeason|0)%4]||_HIERBA[0];
+    if((_soilSeason|0)===1 && !_soilWet) hcol=_HIERBA_SECA;
+    if(_soilWet && (_soilSeason|0)!==3) hcol=adjust(hcol,-14);
+    g.fillStyle=hcol; g.fillRect(x,y,CELL,4);
+    g.fillStyle=adjust(hcol,34); g.fillRect(x,y,CELL,1);
+    if(!_voxMini){   // en el minimapa la celda es mas pequena que el detalle: los hilos que asoman se emborronarian
+      if(_h<3){ g.fillStyle=hcol; g.fillRect(x+2+_h*4,y-2,1,2); g.fillRect(x+5+_h*4,y-1,1,1); }
+      if(_h2===1){ g.fillStyle=adjust(hcol,-30); g.fillRect(x+11,y-1,1,1); }
     }
-
+  }
+  // la humedad se ve tambien como una mecha clara arriba, no como textura nueva
+  if(_soilWet && !exp){ g.fillStyle='rgba(140,180,220,0.10)'; g.fillRect(x+1,y+1,CELL-3,1); }
 }
 
 rebuildSoilCache = function(isMini){
   if(!soilCacheCtx) return;
-  if(!texSuperficiesReady){
-    return _origRebuildSoilCache(isMini);
-  }
-  paintCellActive = paintCacheCellTextured;
+  paintCellActive = paintCacheCellTextured;   // todo dibujado: no hay textura que esperar
+  _voxMini = isMini===true;                        // la pasada mini pinta el mismo lienzo, sin microdetalle
   _soilSeason=(()=>{ try{ return getCalendarData().seasonIdx|0; }catch(e){ return 0; } })();
   _soilWet=(()=>{ try{ return !!(weather && (weather.type==='rain'||weather.type==='storm')); }catch(e){ return false; } })();
   // atajo: una calada repinta 5 celdas, no las 4608 del mapa
@@ -4358,6 +4349,7 @@ rebuildSoilCache = function(isMini){
   for(const m of mound) soilDrawMoundTile(m);
   soilCacheDirty=false; soilDirtyCells=null;
   _soilRepaints++; _soilFullRepaints++;
+  window.__soilDbg = {canvas:soilCacheCanvas, cell:CELL};   // gancho de medida: test/voxel-graficos.js
 };
 tlog('[TEX] superficies override instalado');
 
@@ -4981,12 +4973,12 @@ function drawFarm(ctx,W,H,isMini=false){
     hiddenRewards.forEach(rw=>{
       const x=rw.c*CELL, y=rw.r*CELL;
       if(!rw.found){
-// (rama de texturas de ocultos quitada: estaba desactivada con if(false) y el cofre ya lleva su '?' pintado)
-const pulse = Math.floor(time*0.08)%2;
-        ctx.fillStyle= pulse? '#ffcc00' : '#ffaa00'; ctx.fillRect(x+2,y+2,12,12);
-        ctx.strokeStyle='#000'; ctx.lineWidth=2; ctx.strokeRect(x+2,y+2,12,12);
-        ctx.fillStyle='#000'; ctx.font='bold 10px "Press Start 2P"'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('?',x+8,y+9);
-        ctx.fillStyle='#fff'; ctx.fillRect(x+4,y+4,2,2);
+        // El oculto ya no se anuncia con un '?' clavado encima de cada casilla: eran noventa letreros fijos
+        // diciendo donde esta el botin, y el dueño lo que pidio fue que lo averiguen las hormigas. La senal
+        // ahora es la propia colonia: cuando alguna pisa cerca, el bloque brilla un momento.
+        let _cerca=false;
+        for(const w of workers){ if(Math.abs(w.x-(rw.c*CELL+8))<CELL*3 && Math.abs(w.y-(rw.r*CELL+8))<CELL*3){ _cerca=true; break; } }
+        if(_cerca){ const pulse=Math.floor(time*0.08)%2; ctx.fillStyle=pulse?'rgba(255,220,120,0.34)':'rgba(255,190,90,0.20)'; ctx.fillRect(x+3,y+3,10,10); }
       } else {
         // Topo - textura simple codificada por premio (sencilla 8x8 pixel)
         const t=rw.type;
@@ -5182,13 +5174,17 @@ const pulse = Math.floor(time*0.08)%2;
   }
   // inks
   if(showInk && !isMini){
-    for(let ink of commInks){
+    // tope SOLO de dibujo: la lista entera sigue viva para que las obreras se lean unas a otras; lo que no
+    // se pinta es lo mas viejo. Borrarlas desde aqui si cambio el comportamiento de la colonia (lo probé).
+    const _tin = commInks.length>90 ? commInks.slice(-90) : commInks;
+    const _dejaLetra = commInks.length<=48;                          // con mucho ajetreo quedan los puntos; la letra se lee en la ficha
+    for(let ink of _tin){
       const a=ink.life;
       // tinta sutil: puntito 6px con símbolo 5px y alpha bajo
       ctx.globalAlpha=a*0.58;
       ctx.fillStyle=ink.color; ctx.beginPath(); ctx.arc(Math.floor(ink.x), Math.floor(ink.y), 3.5, 0, Math.PI*2); ctx.fill();
       ctx.globalAlpha=a*0.88;
-      ctx.fillStyle='#000'; ctx.font='bold 6px "Press Start 2P"'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(ink.sym, Math.floor(ink.x), Math.floor(ink.y)+0.5);
+      if(_dejaLetra){ ctx.fillStyle='#000'; ctx.font='bold 6px "Press Start 2P"'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(ink.sym, Math.floor(ink.x), Math.floor(ink.y)+0.5); }
       ctx.globalAlpha=1;
     }
   }
@@ -5257,6 +5253,12 @@ const pulse = Math.floor(time*0.08)%2;
     const amt=f.amount||1, type=f.ftype||'honey', fresh=f.fresh!=null? f.fresh : 1;
     const def=FOOD_DEFS[type]||FOOD_DEFS.honey;
     const rot=1-fresh;
+    // la cantidad se lee en el bulto, no con un numero escrito: cada tres unidades asoma un cuadrito al lado
+    // del racimo. Los digitos sueltos por toda la despensa eran justo la mudanza de letreros que el dueño no quiere.
+    const _bulto=()=>{ const q=Math.max(1,Math.min(4,Math.floor((amt-1)/3)));
+      for(let i=0;i<q;i++){ const bx=Math.floor(cx+4+i*3), by=Math.floor(cy+4);
+        ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(bx,by+1,3,2);
+        ctx.fillStyle=i%2?'#c9a06a':'#b98f57'; ctx.fillRect(bx,by,3,2); } };
     // atlas definitivo 03 - cada food en su celda transparente
     // miel nueva regenerada: usa PNG individual 66KB para no congelar (atlas 4MB pesado)
     if(type==='honey' && typeof texHoneyNewReady!=='undefined' && texHoneyNewReady){
@@ -5266,7 +5268,7 @@ const pulse = Math.floor(time*0.08)%2;
       const dw2=Math.floor(base*s2), dh2=Math.floor(base*s2*1.18);
       const dx2=Math.floor(cx - dw2/2), dy2=Math.floor(cy - dh2/2 -1);
       try{ ctx.drawImage(texHoneyNew, 0,0, texHoneyNew.width, texHoneyNew.height, dx2, dy2, dw2, dh2); }catch(e){}
-      if(amt>1){ ctx.fillStyle='#000'; ctx.font='6px "Press Start 2P"'; ctx.textAlign='center'; ctx.fillText(''+amt, cx, dy2+dh2+6); }
+      if(amt>2){ _bulto(); }
       return;
     }
     if(texAlimentosReady){
@@ -5293,9 +5295,7 @@ const pulse = Math.floor(time*0.08)%2;
           ctx.fillStyle= rot>0.65? 'rgba(60,20,0,0.32)' : 'rgba(60,40,0,0.18)';
           ctx.fillRect(dx+dw*0.2, dy+dh*0.5, dw*0.6, dh*0.25);
         }
-        if(amt>1){
-          ctx.fillStyle='#000'; ctx.font='6px "Press Start 2P"'; ctx.textAlign='center'; ctx.fillText(''+amt, cx, dy+dh+6);
-        }
+      if(amt>2){ _bulto(); }
         return;
       }
     }
@@ -5317,7 +5317,7 @@ const pulse = Math.floor(time*0.08)%2;
       ctx.fillStyle=col; ctx.fillRect(x,y,6,6); ctx.fillRect(x+4,y+2,4,4);
       ctx.fillStyle=cap; ctx.fillRect(x+1,y+1,2,2); ctx.fillRect(x+5,y+3,1,1);
       if(rot>0.4){ ctx.fillStyle='rgba(0,0,0,0.35)'; ctx.fillRect(x+2,y+2,3,3); }
-      if(amt>1){ ctx.fillStyle='#000'; ctx.font='6px "Press Start 2P"'; ctx.textAlign='center'; ctx.fillText(''+amt, cx, y+12); }
+      if(amt>2){ _bulto(); }
       return;
     }
     if(type==='mushroom'){
@@ -5430,7 +5430,7 @@ const pulse = Math.floor(time*0.08)%2;
     }
     ctx.globalAlpha=1;
     ctx.restore();
-    if(!isMini){
+    if(!isMini && (queen.selected || workers.length<=8)){   // su placa sigue la norma de las obreras: detalle solo si la colonya es pequena o la tienes pinchada
       ctx.fillStyle='#000'; ctx.fillRect(qx-38,qy-32,76,14); ctx.strokeStyle=facCol; ctx.lineWidth=2; ctx.strokeRect(qx-38,qy-32,76,14);
       ctx.fillStyle='#fff'; ctx.font='7px "Press Start 2P"'; ctx.textAlign='center'; 
       const ageD=(queen.age/DAY_LENGTH).toFixed(1);
@@ -5458,8 +5458,15 @@ const pulse = Math.floor(time*0.08)%2;
   _bubbleOccupied=[];
   workers.forEach((ant, idx)=>{
     const _rx=ant._renderX||ant.x, _ry=ant._renderY||ant.y;
+    // UNA HORMIGA ES UNA HORMIGA (Topo: «tienen muchas cosas encima y cuando hay muchas no se ve que estan
+    // haciendo; que solo sean hormigas y al pinchar una muestre el detalle»). La burbuja de accion, la barra
+    // de vida, el punto de faccion, la edad, el animo, la herramienta y las barras de progreso se pintan
+    // SOLO en la que tienes seleccionada - y mientras la colonia no llegue a 9, que son los dias en los que
+    // hay que aprender que significa cada senal. La carga si se ve, pero como bulto en las mandibulas: eso ya
+    // es parte del cuerpo, no un letrero.
+    const _solo = !(ant.selected || ant.isQueen || workers.length <= 8);
     // vision cones
-    if(showEyes && !isMini){
+    if(showEyes && !isMini && !_solo){
       const isSel=ant.selected;
       const alphaBase = isSel ? 0.22 : 0.07;
       const angles=[-Math.PI/4, 0, Math.PI/4];
@@ -5479,7 +5486,7 @@ const pulse = Math.floor(time*0.08)%2;
         if(isSel){const mx=(ant.x+neigh.x)/2, my=(ant.y+neigh.y)/2; ctx.fillStyle='#000'; ctx.fillRect(mx-12,my-10,24,10); ctx.strokeStyle='#00e5ff'; ctx.strokeRect(mx-12,my-10,24,10); ctx.fillStyle='#00e5ff'; ctx.font='7px "Press Start 2P"'; ctx.textAlign='center'; ctx.fillText(symbolForComms(ant.commOut[0],ant.commOut[1]), mx, my-3);}
       }
     }
-    if(!isMini){ctx.fillStyle='rgba(0,0,0,0.20)'; ctx.fillRect(_rx-18, _ry+13,36,6); ctx.fillStyle='rgba(0,0,0,0.12)'; ctx.fillRect(_rx-16, _ry+14,32,4);}
+    if(!isMini){ctx.fillStyle='rgba(0,0,0,0.18)'; ctx.fillRect(Math.floor(_rx)-5, Math.floor(_ry)+8,11,2);}
     ctx.save(); ctx.translate(_rx,_ry); if(ant._climbing){ ctx.rotate(ant.angle); } else { const flip=Math.cos(ant.angle)<0?-1:1; ctx.scale(flip,1); }
     // patas realistas ahora en sprite sheet 6f (si está cargado, no dibujar procedural para no duplicar y ahorrar)
     if(!isMini && !antWalk6Ready){
@@ -5726,16 +5733,14 @@ const pulse = Math.floor(time*0.08)%2;
         ctx.fillStyle=col; ctx.fillRect(9+wobX,-13+wobY,4,6);
         ctx.fillStyle='#fff'; ctx.fillRect(9+wobX,-12+wobY,1,2);
         ctx.fillStyle='#ff8c00'; ctx.fillRect(9+wobX,-8+wobY,4,1);
-        if(ant.food.amount>1){ ctx.fillStyle='#000'; ctx.font='6px "Press Start 2P"'; ctx.fillText(''+ant.food.amount,11+wobX,-15+wobY); }
+        // la cantidad NO se escribe: en grupo eran veinte numeritos flotando
       }
     }
-    if(ant.fatigue>72){ctx.fillStyle='#00e5ff'; ctx.font='10px "Press Start 2P"'; ctx.textAlign='center'; ctx.fillText('Z', -2,-14);}
-    if(ant.state==='CAVANDO'){
-      const prog=Math.floor(ant.digProgress/ant.digNeeded*10);
-      ctx.fillStyle='#000'; ctx.fillRect(-18,-20,36,6); ctx.strokeStyle='#ff7a00'; ctx.lineWidth=2; ctx.strokeRect(-18,-20,36,6);
-      ctx.fillStyle='#ff7a00'; ctx.fillRect(-17,-19, Math.floor(prog*3.4),4);
-    }
+    // la Z de cansancio: fuera. El bostezo y el paso lento ya lo dicen en la ficha
+    // la barra de progreso de la calada NO va sobre la cabeza de todas: el bloque que esta rompiendo ya se
+    // ve agrietarse y temblar debajo, y eso cuenta lo mismo sin tapar a la de al lado
     ctx.restore();
+    if(_solo) return;                     // y hasta aqui llega la hormiga: lo demas es ficha de la elegida
     // herramienta equipada - realista: mandíbula si no es anthro, mano si ya evolucionó
     if(ant.tool && !isMini){
       if(!useAnthro){
