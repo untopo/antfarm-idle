@@ -10,10 +10,15 @@
  *   node test/vida-larga.js [dias] [small|medium|big]
  */
 const { sb, ctx, vm } = require('/home/user/test/world-perf-proflib.js');
+// SEMILLA: el azar (donde cae la miel, quien nace con que) no estaba sembrado, y dos corridas del MISMO
+// app.js daban veredictos contrarios - medido: 15, 12 y 13 raciones en tres corridas de un dia. Con
+// semilla fija la corrida es repetible, y «antes/despues» quiere decir algo.
+const SEMILLA = Number(process.env.SEED || process.argv[4] || 1);
 const DIAS = Number(process.argv[2] || 20);
 const TAM = process.argv[3] || 'small';
 const [C, R] = TAM === 'big' ? [96, 48] : TAM === 'medium' ? [64, 36] : [48, 28];
 
+vm.runInContext(`(function(s){ let a = s>>>0; Math.random = function(){ a = (a + 0x6D2B79F5)>>>0; let t = a; t = Math.imul(t ^ (t>>>15), t|1); t ^= t + Math.imul(t ^ (t>>>7), t|61); return ((t ^ (t>>>14))>>>0) / 4294967296; }; })(${SEMILLA});`, ctx);
 vm.runInContext(`topoCreateFreshWorld(${C}, ${R}); paused=false; gameSpeed=64;
 window._nac = 0; window._dcs = {};
 const _pe = pushEvent;
@@ -39,7 +44,7 @@ const paso = sb._paso, foto = sb._foto;
 let t = 1;
 const MEDIODIA = 230;
 const TOTAL = 2 * MEDIODIA * DIAS;
-console.log(`mundo ${C}x${R} (${process.argv[3] || 'small'}) · ${DIAS} dias a x64`);
+console.log(`mundo ${C}x${R} (${process.argv[3] || 'small'}) · ${DIAS} dias a x64 · semilla ${SEMILLA}`);
 const lineas = [];
 let marcador = 0, minimo = 1e9, diaMinimo = 0;
 for (let f = 0; f < TOTAL; f++) {

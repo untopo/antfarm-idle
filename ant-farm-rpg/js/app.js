@@ -3500,13 +3500,21 @@ function updateAnt(ant, dt){
   // sensores (90px). Las fundadoras no tienen rol RECOLECTORA hasta que la colonia evoluciona, asi
   // que sin este impulso se quedaban en el tunel y la colonia nunca juntaba los 3 de la despensa
   // que pide la puesta. Es hambre, no especializacion: lo dispara solo con la despensa baja.
-  if(!ant.targetFood && !ant.food && colonyFood < 5 && (time - (ant._frustrada||-1e9)) >= 900 && (ant.id ? ant.id.charCodeAt(1) % 2 === 0 : true)) {
+  // HAMBRUNA: con la despensa por debajo de lo que la cria necesita, la media colonia «que cava» ya
+  // no vale. Medido en 3 semillas de 20 dias: dos se apagaron al dia 11-12 con 5-10 gotas de miel a la
+  // vista y la otra llego a 55 obreras - la diferencia era si la colonia juntaba comida a tiempo. Si
+  // aprieta el hambre, TODAS salen y el enfriamiento no existe; mientras haya colchon se mantiene la
+  // regla de media colonia para que el hormiguero siga creciendo.
+  const _aprieto = colonyFood < 1.5;
+  if(!ant.targetFood && !ant.food && (_aprieto || colonyFood < 5) &&
+     (time - (ant._frustrada||-1e9)) >= (_aprieto ? 0 : 900) &&
+     (_aprieto || (ant.id ? ant.id.charCodeAt(1) % 2 === 0 : true))) {
     // Media colonia, no toda: el id da una paridad estable por hormiga, sin recorrer el array en
     // cada paso. Si todas salen a por miel, nadie cava y el hormiguero no crece (y sin camaras
     // nuevas el tope de poblacion se queda clavado) - eso paso al medirlo: 0 bloques cavados en
     // 75 s de reloj con la regla vieja de umbral alto.
     let _f=null,_d=Infinity; for(const _x of foods){ const _dd=dist(ant,_x); if(_dd<_d){_d=_dd;_f=_x;} }
-    if(_f && _d<640) ant.targetFood=_f;
+    if(_f && (_aprieto || _d<640)) ant.targetFood=_f;   // con hambre no hay distancia larga
   }
   if(!ant.targetFood){
     let nf=null, bd=Infinity;
@@ -3515,7 +3523,8 @@ function updateAnt(ant, dt){
     else{
       const wallAvg=(ant.sensors.wallLeft+ant.sensors.wallCenter+ant.sensors.wallRight)/3;
       const _frustrada = (time - (ant._frustrada||-1e9)) < 900; // viene de estrellarse: que abra paso
-      if(_frustrada || (digIntent>0.48 && wallAvg>0.18 && Math.random()<0.11 && (ant.role==='EXCAVADORA' || Math.random()<0.38))){
+      // y con la despensa a cero no se abre galeria nueva: primero se come, despues se excava
+      if(!_aprieto && (_frustrada || (digIntent>0.48 && wallAvg>0.18 && Math.random()<0.11 && (ant.role==='EXCAVADORA' || Math.random()<0.38)))){
         const frontier=findFrontier();
         if(frontier.length){
           // Topo: muestrear en vez de filtrar las miles de celdas del frontier (coste fijo por hormiga
