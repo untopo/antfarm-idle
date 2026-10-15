@@ -245,8 +245,8 @@ function initSoil(){
     if(depth<38) return 6; // 6 pizarra - 5 hits, requiere piedra+arcilla tools
     return 7; // 7 bedrock - casi irrompible (solo GEN10+IQ150+masonry)
   }));
-  const cc=CENTER_COL;
-  // pozo inicial
+  const cc=CENTER_COL; entradaCol=cc;
+  // pozo inicial - la UNICA boca del nido: tres columnas de cesped, el resto queda blindado
   carveRect(cc-1,SURFACE_ROW,3,7);
   carveRect(cc-1,SURFACE_ROW+7,3,2);
   // fertilidad por columna
@@ -346,7 +346,29 @@ function initSoil(){
   window._treasures=()=>hiddenRewards.map(t=>({c:t.c,r:t.r,type:t.type,found:t.found}));
   markSoilDirty();
 }
-function carveRect(c,r,w,h){for(let y=r;y<r+h;y++)for(let x=c;x<c+w;x++)if(y>=0&&y<ROWS&&x>=0&&x<COLS){soil[y][x]=0; if(soilType[y]) soilType[y][x]=0; markSoilDirty();}}
+// === LA ENTRADA ===
+// Topo (pedido del dueño): la boca del nido es UNA y es estrecha. Antes cualquier calada en la
+// fila del cesped abria hueco, y el desprendimiento de vecinos abria otro al azar: al segundo dia
+// tenian un crater de media superficie que las dejaba expuestas y hacia crecer musgo y hongos en el
+// aire, junto a la entrada. La fila de cesped solo se rompe en la columna de la entrada y sus dos
+// vecinas (3 columnas: lo que ya abre initSoil), y el sitio elegido se respeta al recargar.
+let entradaCol = -1;
+function detectarEntrada(){
+  let best=CENTER_COL, bd=Infinity;
+  for(let c=0;c<COLS;c++){ if(soil[SURFACE_ROW] && soil[SURFACE_ROW][c]===0){ const d=Math.abs(c-CENTER_COL); if(d<bd){bd=d;best=c;} } }
+  entradaCol=best; return best;
+}
+function _bocaAncho(){ let n=0; for(let c=0;c<COLS;c++) if(soil[SURFACE_ROW] && soil[SURFACE_ROW][c]===0) n++; return n; }
+// puede abrirse esta celda? fuera de la entrada, el cesped no se toca
+function puedeAbrirSuperficie(c, r){
+  if(r>SURFACE_ROW) return true;
+  if(r<0 || r<SURFACE_ROW) return false;
+  if(soil[r][c]===0) return true;
+  const ec = entradaCol>=0? entradaCol : detectarEntrada();
+  if(Math.abs(c-ec)>1) return false;
+  return _bocaAncho()<=3;
+}
+function carveRect(c,r,w,h){for(let y=r;y<r+h;y++)for(let x=c;x<c+w;x++)if(y>=0&&y<ROWS&&x>=0&&x<COLS){if(y<=SURFACE_ROW && !puedeAbrirSuperficie(x,y)) continue; soil[y][x]=0; if(soilType[y]) soilType[y][x]=0; markSoilDirty();}}
 
 // === ARQUITECTURA REAL DE HORMIGAS - cámaras modulares como Pogonomyrmex/Solenopsis/Odontomachus ===
 function excavateChamber(centerC, centerR, w, h, ant){
@@ -440,6 +462,11 @@ function updateFallingSand(dt){
       if(soil[r][c]!==1) continue;
       const t=soilType[r][c];
       if(t===6 || t===7) continue; // pizarra/bedrock nunca
+      // Topo: la fila del cesped tampoco se desploma. Medido en Chrome real al dia 5: la colonia
+      // habia cavado bajo la capa de raices y la gravedad habia abierto un boquete del columna 23
+      // a 47 - el "abren una abertura enorme arriba que las deja expuestas" no venia de cavar el
+      // cesped (eso ya esta blindado) sino del cesped cayendo dentro del tunel de al lado.
+      if(r===SURFACE_ROW && !puedeAbrirSuperficie(c, r)) continue;
       if(soil[r+1][c]===0 && !isSoilSupported(r,c)){
         let chance=0;
         if(t===3) chance=0.99; // arena siempre cae (arena inestable)
@@ -713,6 +740,12 @@ function updateEcosystem(dt){
   // crecimiento de plantas
   for(let i=plants.length-1;i>=0;i--){
     const pl=plants[i];
+    // Topo: si debajo del trébol queda un hueco, el trébol se cae - no crecen en el aire
+    if(!pl.cave){
+      if(!soil[SURFACE_ROW] || soil[SURFACE_ROW][pl.c]!==1){ plants.splice(i,1); continue; }
+    } else if(pl.rr!==undefined && (!soil[pl.rr] || soil[pl.rr][pl.cr]!==0)){
+      plants.splice(i,1); continue; // el tunel se rellenó: el hongo se queda sin cámara
+    }
     const f=fertility[pl.c];
     const growthRate = (0.00055 + f*0.00062)*dt*rainBoost*seasonBoost*sunBoost;
     // trébol crece rápido, árbol lento
@@ -820,7 +853,7 @@ function updateEcosystem(dt){
   if(Math.random()<0.00022*dt && worldAge>0.7){
     for(let c=2;c<COLS-2;c++){
       for(let r=SURFACE_ROW+6;r<ROWS-6;r++){
-        if(soil[r][c]===0 && soilType[r+1] && soilType[r+1][c]!==0 && Math.random()<0.0006){
+        if(soil[r][c]===0 && soilType[r+1] && soilType[r+1][c]!==0 && soil[r-1] && soil[r-1][c]!==0 && Math.random()<0.0006){ // techo y suelo: nada de crecer en el aire
           // hay techo y suelo, posibilidad de hongo de cueva
           if(Math.random()<0.12 && mound.some(m=>Math.abs(m.x - c*CELL)<28 && m.isPuddle)){
             plants.push({c, x:c*CELL+8, y:r*CELL+14, type:'caveMush', growth:0.12, maxGrowth:1, age:0, fruitCooldown:DAY_LENGTH*0.5, variant:0, cave:true, cr:c, rr:r});
@@ -972,6 +1005,57 @@ function isSolidPixel(x,y){
   // cielo muy arriba fuera del shaft es muro - pero la superficie (y ~ SURFACE_Y-6) es libre para caminar
   if(y < SURFACE_Y - 12 && Math.abs(x - (CENTER_COL*CELL+8)) > 28) return true;
   return soil[r][c]===1;
+}
+// === ENRUTADO POR GALERIAS ===
+// Topo: cuando una hormiga se atasca, girar no la saca: en un nido de galerias de 1-2 celdas hay
+// que mandarla por donde se puede. Y no es un capricho visual - medido: una forrajera clavada en
+// la esquina del mapa con su miel y otra con 574 pasos bloqueados seguidos => las entregas se
+// paraban, la despensa no llegaba a 3, la reina no ponia y NACIA nadie. BFS sobre celdas abiertas
+// (tope de nodos, recalcular espaciado por hormiga y solo cuando hay atasco: en el paseo normal no
+// se paga nada).
+function routeStep(ant, gx, gy){
+  const sc=Math.floor(ant.x/CELL), sr=Math.floor(ant.y/CELL), tc=Math.floor(gx/CELL), tr=Math.floor(gy/CELL);
+  if(!isFinite(sc)||!isFinite(sr)||!isFinite(tc)||!isFinite(tr)) return null;
+  if(sc<0||sr<0||tc<0||tr<0||sc>=COLS||sr>=ROWS||tc>=COLS||tr>=ROWS) return null;
+  if(sc===tc && sr===tr){ ant._routeNext=null; return null; }
+  const clave = sr+','+sc+'>'+tr+','+tc;
+  if(ant._routeGoal===clave && ant._routeUntil>time) return ant._routeNext;
+  const prev=new Map(); const q=[[sr,sc]]; prev.set(sr+','+sc, null);
+  let head=0, vistos=0, found=null;
+  while(head<q.length && vistos<1400){
+    const cur=q[head++]; vistos++;
+    if(cur[0]===tr && cur[1]===tc){ found=cur; break; }
+    const vks=[[cur[0]+1,cur[1]],[cur[0]-1,cur[1]],[cur[0],cur[1]+1],[cur[0],cur[1]-1]];
+    for(const n of vks){
+      const k=n[0]+','+n[1];
+      if(prev.has(k)) continue;
+      if(!soil[n[0]] || soil[n[0]][n[1]]!==0) continue;
+      prev.set(k, cur); q.push(n);
+    }
+  }
+  ant._routeGoal=clave; ant._routeUntil=time+240;
+  if(!found){ ant._routeNext=null; return null; }
+  let cur=found, paso=null;
+  while(cur && !(cur[0]===sr && cur[1]===sc)){ paso=cur; cur=prev.get(cur[0]+','+cur[1]); }
+  ant._routeNext = paso? {x:paso[1]*CELL+8, y:paso[0]*CELL+8} : null;
+  return ant._routeNext;
+}
+// Topo: la basura va a la camara de residuo, no repartida por todo el nido. Antes cada calada
+// plantaba su monticulo y habia tres sitios que empujaban sin acordarse del tope: en un mundo
+// pequeno se veian 24-27 monticulos, la higiene castigaba el tope de poblacion (x0.72) y la cria
+// se enfermaba por todas partes. Uno solo: se absorbe en el monticulo mas cercano si esta a tiro,
+// y el numero depende del tamano del mundo.
+const _wasteTopes = () => Math.max(4, Math.min(12, Math.round(9*worldAreaRatio()) + (inventions&&inventions.waste?2:0)));
+function addWaste(x, y, type){
+  if(!isFinite(x) || !isFinite(y)) return null;
+  const tope = _wasteTopes();
+  let best=null, bd=56;
+  for(const w of wastePiles){ const d=Math.hypot(w.x-x, w.y-y); if(d<bd){ bd=d; best=w; } }
+  if(best){ best.amount=(best.amount||1)+1; best.x=(best.x*3+x)/4; best.y=(best.y*3+y)/4; best.age=0; return best; }
+  const p={x, y, age:0, amount:1, type};
+  wastePiles.push(p);
+  while(wastePiles.length>tope) wastePiles.shift();
+  return p;
 }
 function canMove(x,y){const r=7;return !isSolidPixel(x,y)&&!isSolidPixel(x+r,y)&&!isSolidPixel(x-r,y)&&!isSolidPixel(x,y+r*0.7)&&!isSolidPixel(x,y-r*0.7);}
 function canMoveIgnoreTarget(x,y,target){const r=7;function ok(px,py){const c=Math.floor(px/CELL), rr=Math.floor(py/CELL); if(target && c===target.c && rr===target.r) return true; return !isSolidPixel(px,py);} return ok(x,y)&&ok(x+r,y)&&ok(x-r,y)&&ok(x,y+r*0.7)&&ok(x,y-r*0.7);}
@@ -1718,6 +1802,12 @@ function topoCreateFreshWorld(cols, rows){
   _topoHasWorld=true;
   // limpiar previos por si había restos
   try{ workers.length=0; queens.length=0; foods.length=0; brood.length=0; mound.length=0; hiddenRewards.length=0; particles.length=0; pheromones.length=0; commInks.length=0; }catch(e){}
+  // Topo: al sobre-escribir un mundo habia que limpiar TAMBIEN lo que se hereda del suelo (jardines
+  // de hongo, monticulos de residuo, estructuras, charcos): quedaban residuos del mapa anterior en
+  // el nuevo - el "residuo al sobre escribir un mundo" que señalo el dueño.
+  try{ wastePiles.length=0; fungusGardens.length=0; structures.length=0; }catch(e){ console.warn('limpieza herencia', e.message); }
+  try{ if(typeof water!=='undefined' && water) water.forEach(r=>r.fill(0)); }catch(e){}
+  try{ window._foodlessTimer=0; }catch(e){}
   day=1; time=DAY_LENGTH*0.28; deliveries=0; digs=0; gen=0; worldAge=0; colonyFood=Math.max(2,Math.round(startReserveFood()/2)); colonyFitness=0;
   try{ initSoil(); }catch(e){ console.error('initSoil fresh',e); }
   // Topo: la despensa y la lengua son de ESTE mundo. Antes la despensa se quedaba en las coordenadas
@@ -1749,6 +1839,7 @@ function topoCreateFreshWorld(cols, rows){
     workers.forEach((w,i)=> w.angle=(i*2.1)+Math.random()*0.6);
     if(workers[0]) workers[0].selected=true;
   }catch(e){ console.error('queen/workers fresh',e); }
+  try{ detectarEntrada(); }catch(e){}
   markSoilDirty(); try{ markSoilDirty(); }catch(e){}
   // ajuste anti-extinción aplicado al nacer el mundo (antes corría en load y crasheaba)
   try{
@@ -2039,7 +2130,11 @@ function updateQueen(dt){
         } else if(workers.length>0){
           // si no hay larva, una nodriza SE transforma sí o sí si era la última reina (anti-extinción Minecraft)
           if(true){
-            const cand=workers.filter(w=>w.role==='NODRIZA').sort((a,b)=>b.mood.loyalty-a.mood.loyalty)[0];
+            // Topo: el rescate contra la extincion EXIGIA una obrera con rol NODRIZA, y ese rol no
+            // existe hasta GEN2 con IQ112 - en una colonia joven la candidata nunca aparecia, la
+            // corona se quedaba vacia y «no quedaba nadie vivo». Cualquier obrera puede coronarse
+            // (lo hacen las hormigas reales); el rol y la lealtad solo puntuan para elegir cual.
+            const cand=[...workers].sort((a,b)=>{ const _p=(x)=>((x.affinity==='NODRIZA'||x.role==='NODRIZA')?1:0)+((x.mood&&x.mood.loyalty)||0)*0.9+((x.health||0)/140); return _p(b)-_p(a); })[0];
             if(cand){
               let _qn1=genPersonalName({faction:cand.faction, role:'REINA', affinity:'NODRIZA', caste:'media', parents:[], genome:cand.genome, isQueen:true, rank:'LÍDER', ageDays:0, idCode:'Q'+(queens.length+1)+'-'+Math.random().toString(36).slice(2,4).toUpperCase()});
               queens.push(ensureQueenMeta({x:cand.x,y:cand.y, genome:cand.genome, progress:0, state:'GRÁVIDA', age:0, maxAge: getQueenMaxAge(), generation:gen+1, faction:cand.faction, health:100, name:_qn1.name, personalName:_qn1.name, nameMeaning:_qn1.meaning, nameStage:_qn1.stage, id:'Q'+Math.random().toString(36).slice(2,5).toUpperCase(), eggsLaid:0, children:[], history:[]}));
@@ -2245,32 +2340,42 @@ function updateFungus(dt){
     const depthFactor = Math.max(0, Math.min(1, (f.y - SURFACE_Y)/ (ROWS*CELL*0.55) ));
     const humidity = 0.72 + depthFactor*0.22 - Math.max(0, (SURFACE_Y - f.y)/200);
     const tempOk = depthFactor>0.28 && depthFactor<0.78;
-    // decae si nadie lo cuida
-    const tenders = workers.filter(w=> (w.role==='NODRIZA'||w.caste==='minim') && dist(w,f)<38).length;
+    // decae si nadie lo cuida. Topo: antes "cuidar" exigia un ROL (NODRIZA o caste minim) que en
+    // una colonia fundacional no existe - los roles llegan con GEN>=2 e IQ>=112 - y encima habia
+    // que gastar fibra. Resultado medido en la partida real: el jardin, que es la despensa de
+    // verdad de una hormiga cortahojas, nunca produce, los jardines mueren y la colonia depende al
+    // 100% de subir a la superficie por miel; en cuanto el nido se muda hondo, las entregas caen a
+    // media al dia, la despensa se clava en 1-2 y la reina no pone (pide 3) -> no nace nadie.
+    // Cualquier obrera que este alli alimenta y limpia; la fibra pasa a ser un extra.
+    const tenders = workers.filter(w=> !w.food && w.state!=='DESCANSAR' && dist(w,f)<38).length;
     if(tenders===0){
-      f.health -= dt*0.00018;
+      f.health -= dt*0.00010;
       if(f.health<0.22 && Math.random()<0.006) f.size=Math.max(0.6, f.size-0.04);
     } else {
-      // mimims limpian y alimentan con fibra/hojas
-      if(worldMaterials.fiber>0 && Math.random()<0.018*tenders){
-        worldMaterials.fiber--; f.health=Math.min(1, f.health+0.035); f.size=Math.min(4.2, f.size+0.018); f.fed++;
-        // producir gongylidia -> miel
-        if(f.health>0.62 && Math.random()<0.42){
-          colonyFood+=0.12;
-          // trofalaxia indirecta: nodrizas recargan buche del hongo
-          tenders && workers.filter(w=>dist(w,f)<24).forEach(w=> w.crop=Math.min(w.cropMax, w.crop+0.07));
-          if(Math.random()<0.06) particles.push({x:f.x,y:f.y-8,vx:(Math.random()-0.5)*0.6,vy:-0.7,life:0.9,decay:0.022,color:'#e8d5a3'});
-        }
+      // mimims limpian y alimentan; con fibra rinden mas
+      if(Math.random()<0.018*tenders){
+        if(worldMaterials.fiber>0 && Math.random()<0.5){ worldMaterials.fiber--; f.size=Math.min(4.2, f.size+0.018); }
+        f.health=Math.min(1, f.health+0.035); f.fed++;
+        // trofalaxia indirecta: las que estan comiendo hongo recargan buche
+        workers.filter(w=>dist(w,f)<24).forEach(w=> w.crop=Math.min(w.cropMax, (w.crop||0)+0.07));
+        if(Math.random()<0.06) particles.push({x:f.x,y:f.y-8,vx:(Math.random()-0.5)*0.6,vy:-0.7,life:0.9,decay:0.022,color:'#e8d5a3'});
       }
       if(tempOk) f.health=Math.min(1, f.health+ dt*0.00008);
       else f.health-= dt*0.00009;
+    }
+    // COSECHA: el jardin echa gongylidia y una obrera la lleva al granero con el mismo camino que
+    // la miel de la superficie (que ya funciona). Sin esto la produccion quedaba en el hongo y la
+    // despensa de la colonia no se enteraba.
+    if(f.health>0.5 && f.size>0.8 && foods.length < Math.max(4, workers.length+2) && Math.random()<dt*0.0022*f.size*f.health){
+      spawnFoodAt(f.x, f.y, 1, 'mushroom');
+      if(Math.random()<0.25) pushToast(f.x, f.y-14, '🍄', '#e8d5a3', 1.1);
     }
     // patógeno si basurero cerca
     for(let w of wastePiles){ if(Math.hypot(w.x-f.x,w.y-f.y)<48) f.health-= dt*0.00012; }
     if(f.health<=0){ fungusGardens.splice(i,1); pushEvent('death','🍄 Jardín fúngico muere - falta cuidado/humedad'); }
   }
   // crear nuevo jardín cuando colonia crece y aprende hongo
-  if(inventions.fungus && fungusGardens.length<3 && workers.length>=8 && colonyFood>6 && Math.random()<0.0009*workers.filter(w=>w.role==='NODRIZA').length){
+  if(inventions.fungus && fungusGardens.length<3 && workers.length>=8 && colonyFood>6 && Math.random()<0.0016*Math.max(1, workers.length*0.5)){
     const q=broodAnchor();
     fungusGardens.push({x:q.x+(Math.random()-0.5)*44, y:q.y+ 18+Math.random()*34, c:0,r:0, health:0.78, size:0.9, age:0, fed:0});
     pushEvent('evo','🍄 Nuevo jardín fúngico excavado',`Jardines: ${fungusGardens.length}`);
@@ -3010,7 +3115,7 @@ function updateAnt(ant, dt){
     if(canMove(nx,ny)){ant.x=nx; ant.y=ny;}
     if(dist(ant,tgt)<10){
       // deja basura en cámara de desecho
-      wastePiles.push({x:tgt.x+(Math.random()-0.5)*12, y:tgt.y+(Math.random()-0.5)*10, age:0});
+      addWaste(tgt.x+(Math.random()-0.5)*12, tgt.y+(Math.random()-0.5)*10);
       if(wastePiles.length>22) wastePiles.shift();
       ant.state='EXPLORAR'; ant.wasteTarget=null; ant.fitness+=0.12;
     }
@@ -3037,10 +3142,18 @@ function updateAnt(ant, dt){
       if(Math.random()<0.65) particles.push({x:tx+(Math.random()-0.5)*10,y:ty+(Math.random()-0.5)*10,vx:(Math.random()-0.5)*1.4,vy:-Math.random()*1.4,life:1,decay:0.04,color:'#8b5a2b'});
       if(Math.random()<0.18) particles.push({x:tx,y:ty-8,vx:(Math.random()-0.5)*0.6,vy:-0.9,life:1,decay:0.03,color:'#ffcc00'});
       if(ant.digProgress>=ant.digNeeded){
+        // el cesped solo cede en la boca: si el frente apuntaba a otra parte, se rinde y cava abajo
+        if(!puedeAbrirSuperficie(ant.digTarget.c, ant.digTarget.r)){
+          // se rinde y vuelve a elegir: dejarla en CAVANDO sin objetivo la congelaba (otro paro,
+          // que es justo lo que no vale), y EXPLORAR es el estado desde el que se asigna frente
+          ant.digTarget=null; ant.digProgress=0; ant.state='EXPLORAR'; ant.blocked=0;
+          if(Math.random()<0.25) pushToast(ant.x, ant.y-12, '🚫', '#8a8a8a', 0.9);
+          return;
+        }
         const _mt = (soilType[ant.digTarget.r]&&soilType[ant.digTarget.r][ant.digTarget.c])||1; if(_mt===7 && (gen<8 || !inventions.masonry)){ ant.digTarget=null; ant.digProgress=0; ant.state='EXPLORAR'; pushToast(ant.x,ant.y-10,'⛔ BEDROCK','#555'); return; }
         soil[ant.digTarget.r][ant.digTarget.c]=0; if(soilType[ant.digTarget.r]) soilType[ant.digTarget.r][ant.digTarget.c]=0; markSoilDirty(ant.digTarget.c,ant.digTarget.r); ant.digsDone++; digs++; colonyFitness+=0.35; if(digs%6===0) pushImportant('invention', `⛏ ${digs} bloques cavados`, `GEN${typeof gen!=='undefined'?gen:0} - ${workers.filter(w=>w.state==='CAVANDO').length} activas en [${ant.digTarget?ant.digTarget.c:''},${ant.digTarget?ant.digTarget.r:''}]`);
         // residuo real: la tierra excavada va a basurero, no desaparece
-        if(Math.random()<0.52){ wastePiles.push({x:tx, y:ty, age:0, type:_mt}); if(wastePiles.length>24) wastePiles.shift(); }
+        if(Math.random()<0.52){ addWaste(tx, ty, _mt); }
         // cosecha de material según estrato
         if(_mt===2 && Math.random()<0.72){ worldMaterials.clay+=1; if(inventions.clay) colonyFitness+=0.06; }
         else if(_mt===3 && Math.random()<0.62){ worldMaterials.sand+=1; }
@@ -3055,7 +3168,7 @@ function updateAnt(ant, dt){
           const neigh=[[ -1,0],[1,0],[0,-1],[0,1]];
           for(let [dx,dy] of neigh) if(Math.random()<0.45){
             const nc=ant.digTarget.c+dx, nr=ant.digTarget.r+dy;
-            if(nr>=SURFACE_ROW&&nr<ROWS&&nc>=0&&nc<COLS&&soil[nr][nc]===1&&Math.random()<0.5){ soil[nr][nc]=0; if(soilType[nr]) soilType[nr][nc]=0; markSoilDirty(nc,nr); }
+            if(nr>=SURFACE_ROW&&nr<ROWS&&nc>=0&&nc<COLS&&soil[nr][nc]===1&&puedeAbrirSuperficie(nc,nr)&&Math.random()<0.5){ soil[nr][nc]=0; if(soilType[nr]) soilType[nr][nc]=0; markSoilDirty(nc,nr); }
           }
         }
         if(Math.random()<0.015 && countChambers()>4){
@@ -3189,6 +3302,8 @@ function updateAnt(ant, dt){
     if(ant.y < SURFACE_Y+12 && Math.abs(ant.x - shaftX) > 24){
       tgt={x: shaftX, y: SURFACE_Y-6};
     }
+    // si lleva demasiado bloqueada, el objetivo directo no vale: que siga la galeria
+    if(ant.blocked>10){ const _rs = routeStep(ant, tgt.x, tgt.y); if(_rs) tgt=_rs; }
     const ang=Math.atan2(tgt.y-ant.y, tgt.x-ant.x);
     const steerBias=steer*0.55;
     let diff=((ang-ant.angle+Math.PI*3)%(Math.PI*2)-Math.PI);
@@ -3222,7 +3337,7 @@ function updateAnt(ant, dt){
   // sensores (90px). Las fundadoras no tienen rol RECOLECTORA hasta que la colonia evoluciona, asi
   // que sin este impulso se quedaban en el tunel y la colonia nunca juntaba los 3 de la despensa
   // que pide la puesta. Es hambre, no especializacion: lo dispara solo con la despensa baja.
-  if(!ant.targetFood && !ant.food && colonyFood < 5 && (ant.id ? ant.id.charCodeAt(1) % 2 === 0 : true)) {
+  if(!ant.targetFood && !ant.food && colonyFood < 5 && (time - (ant._frustrada||-1e9)) >= 900 && (ant.id ? ant.id.charCodeAt(1) % 2 === 0 : true)) {
     // Media colonia, no toda: el id da una paridad estable por hormiga, sin recorrer el array en
     // cada paso. Si todas salen a por miel, nadie cava y el hormiguero no crece (y sin camaras
     // nuevas el tope de poblacion se queda clavado) - eso paso al medirlo: 0 bloques cavados en
@@ -3236,7 +3351,8 @@ function updateAnt(ant, dt){
     if(nf) ant.targetFood=nf;
     else{
       const wallAvg=(ant.sensors.wallLeft+ant.sensors.wallCenter+ant.sensors.wallRight)/3;
-      if(digIntent>0.48 && wallAvg>0.18 && Math.random()<0.11 && (ant.role==='EXCAVADORA' || Math.random()<0.38)){
+      const _frustrada = (time - (ant._frustrada||-1e9)) < 900; // viene de estrellarse: que abra paso
+      if(_frustrada || (digIntent>0.48 && wallAvg>0.18 && Math.random()<0.11 && (ant.role==='EXCAVADORA' || Math.random()<0.38))){
         const frontier=findFrontier();
         if(frontier.length){
           // Topo: muestrear en vez de filtrar las miles de celdas del frontier (coste fijo por hormiga
@@ -3249,6 +3365,7 @@ function updateAnt(ant, dt){
             if(_cands && _cands.length>=4) break;
             const _f=frontier[(Math.random()*_fn)|0];
             const _row=soil[_f.r]; if(!_row || _row[_f.c]!==1) continue;
+            if(!puedeAbrirSuperficie(_f.c, _f.r)) continue; // cesped blindado: no es un frente valido
             const _d=Math.hypot((_f.c+0.5)*CELL-ant.x,(_f.r+0.5)*CELL-ant.y);
             if(_d<90){ if(!_cands) _cands=[]; _cands.push(_f); }
             else if(_d<_bestD){ _bestD=_d; _far=_f; }
@@ -3286,13 +3403,20 @@ function updateAnt(ant, dt){
   }
   if(ant.targetFood){
     const targ=ant.targetFood;
+    // Topo: una forrajera que lleva cien pasos golpeandose contra la galeria no va a llegar
+    // andando. Suelta el bocado y se pone a cavar. Medido en la partida real: 6 hormigas paradas
+    // con 830-2536 pasos bloqueados, cero bloques cavados, cero entregas, despensa clavada en 2.2
+    // y la reina sin poner - o sea, que no nacia nadie. Una obrera atascada que cava destruye el
+    // atasco; una que se queda quieta hunde la colonia.
+    if(ant.blocked>70){ ant.targetFood=null; ant.blocked=0; ant._frustrada=time; }
     // Topo: el regreso a la despensa ya tenia punto de paso por la boca del tunel; la SALIDA a por
     // miel no. En un tunel de 3 celdas, apuntar en linea recta al bocado se clava contra la pared y
     // a los 36 pasos bloqueados la hormiga abandonaba el objetivo: las entregas se paraban en cuanto
     // la colonia bajaba al nido, la despensa no se reponia y la reina dejaba de poner. Mismo truco
     // en los dos sentidos: primero la boca, luego la miel.
     const _boca = {x: CENTER_COL*CELL+8, y: SURFACE_Y-6};
-    const _meta = (targ.y < SURFACE_Y+12 && ant.y > SURFACE_Y+18) ? _boca : targ;
+    let _meta = (targ.y < SURFACE_Y+12 && ant.y > SURFACE_Y+18) ? _boca : targ;
+    if(ant.blocked>10){ const _rs = routeStep(ant, _meta.x, _meta.y); if(_rs) _meta=_rs; }
     const ang=Math.atan2(_meta.y-ant.y, _meta.x-ant.x);
     let diff=((ang-ant.angle+Math.PI*3)%(Math.PI*2)-Math.PI);
     ant.angle+= diff*0.06 + steer*0.13;
@@ -5595,7 +5719,7 @@ function tickStep(dt){
       if(f.rot>=1){
         // podrido: miasma DF + partícula + abono desperdicio
         for(let k=0;k<7;k++) particles.push({x:f.x, y:f.y, vx:(Math.random()-0.5)*1.6, vy:-Math.random()*1.4-0.3, life:1, decay:0.045, color: f.ftype==='berry'? '#7a3a8a' : f.ftype==='mushroom'? '#8b5a2b' : '#6b4a1a'});
-        wastePiles.push({x:f.x, y:f.y, age:0});
+        addWaste(f.x, f.y);
         // estrés a hormigas cercanas (miasma DF)
         for(let w of workers){ if(Math.hypot(w.x-f.x,w.y-f.y)<36) w.mood.stress=Math.min(1,w.mood.stress+0.07); }
         if(Math.random()<0.28) pushEvent('death','☠️ '+def.name+' podrida en ['+Math.floor(f.x/CELL)+','+Math.floor(f.y/CELL)+']','No estaba en granero/despensa - Dwarf Fortress stockpile');
@@ -7386,6 +7510,7 @@ function topoResumeGame(opts){
     const meta=topoHasSave();
     if(meta && meta.savedAt){ const add=Math.min(DAY_LENGTH*2.2, (Date.now()-meta.savedAt)*0.06); if(add>DAY_LENGTH*0.02){ time+=add; day=Math.floor(time/DAY_LENGTH)+1; } }
   }catch(e){}
+  try{ detectarEntrada(); }catch(e){ console.warn('entrada', e.message); } // el sitio elegido se respeta
   try{ checkWorldExpansion(); }catch(e){}
   try{ clampView(); updateColonyUI(); _updateBothAntCounts(); }catch(e){}
   if(!silent){ try{ pushToast(W/2, SURFACE_Y-40, '🐜 Granja reanudada · Día '+day, '#2de67a'); }catch(e){} pushEvent('evo','💾 Partida reanudada', workers.length+' obreras · Día '+day); }
