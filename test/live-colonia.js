@@ -39,7 +39,9 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ok   ' + m); } else { fai
   page.on('pageerror', e => errs.push('pageerror: ' + e.message));
   page.on('console', m => { if (m.type() === 'error' && !/favicon|autoplay|AudioContext/.test(m.text())) errs.push('console: ' + m.text().slice(0, 140)); });
 
-  await page.goto(`http://127.0.0.1:${PORT}/ant-farm-rpg/index.html`, { waitUntil: 'load', timeout: 30000 });
+  const DEST = process.env.URL || `http://127.0.0.1:${PORT}/ant-farm-rpg/index.html`;
+  console.log('  destino: ' + DEST);
+  await page.goto(DEST, { waitUntil: 'load', timeout: 40000 });
   await page.waitForFunction('typeof window.topoShowMainMenu==="function" || window._topoFlowReady===true', { timeout: 20000 }).catch(() => { });
   await page.waitForFunction("!document.getElementById('splashScreen') || document.getElementById('splashScreen').style.display==='none'", { timeout: 15000 }).catch(() => { });
   await page.click('#btnMainCreate');
