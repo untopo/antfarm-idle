@@ -124,5 +124,64 @@ caso('la puesta de emergencia deja los huevos dentro del nido', () => {
   return { pasa: huevos.length > 0 && conPos === huevos.length, detalle: 'huevos ' + huevos.length + ', con posicion ' + conPos };
 });
 
+
+// 7 · FUNDACION: en GEN0 nadie es NODRIZA (los roles llegan con la jerarquia, gen>=2 e IQ>=112).
+// Con la regla vieja la primera camada entera moria de hambre y la colonia no podia nacerse.
+caso('sin ninguna nodriza, la reina alimenta a sus larvas y la cria avanza', () => {
+  while (workers.length > 0) workers.pop();
+  colonyFood = 40; queens[0].health = 100;
+  brood.length = 0;
+  brood.push({ type: 'larva', progress: 0, time: 0, genome: makeGenome(), isQueen: false, faction: 0, hunger: 0, x: queens[0].x, y: queens[0].y, parents: ['-','-'], parentGenomes: ['-','-'] });
+  const err = _zumbido(60);
+  const b = brood[0];
+  return { pasa: !err && !!b && b.progress > 6 && b.hunger < 6, detalle: 'progreso ' + Math.round(b.progress * 10) / 10 + ', hambre ' + Math.round(b.hunger) + ' (cria sola)' + (err ? ', error: ' + err : '') };
+});
+
+// 8 · Cualquier obrera con buche regurgita: no hace falta que se llame NODRIZA.
+caso('una obrera cualquiera con el buche lleno alimenta la larva', () => {
+  brood.length = 0;
+  const w = workers[0] || makeAnt(makeGenome(), { x: queens[0].x, y: queens[0].y }, {});
+  if (!workers.includes(w)) workers.push(w);
+  w.role = 'EXPLORADORA'; w.crop = 0.9; w.x = queens[0].x; w.y = queens[0].y;
+  brood.push({ type: 'larva', progress: 0, time: 0, genome: makeGenome(), isQueen: false, faction: 0, hunger: 40, x: queens[0].x + 6, y: queens[0].y + 4, parents: ['-','-'], parentGenomes: ['-','-'] });
+  const err = _zumbido(40);
+  const b = brood[0];
+  // Ojo: si va rapida pasa de larva a pupa y el progreso se reinicia -> se comprueba la etapa.
+  const crece = !!b && (b.type !== 'larva' || b.progress > 4);
+  const out = { pasa: !err && crece && b.hunger < 10, detalle: (b ? b.type + ' al ' + Math.round(b.progress) + '%' : 'perdida') + ', hambre ' + (b ? Math.round(b.hunger) : '-') + ' sin roles especiales' };
+  w.crop = 0.9;
+  return out;
+});
+
+// 9 · El coste de criar NO puede ser por intento aleatorio: el bucle llama a esto decenas de
+// veces por frame y vaciaba la despensa en un dia (la colonia se mataba por alimentarse).
+caso(' alimentar a una larva entera desde la despensa cuesta piezas, no el granero', () => {
+  const reinas = queens.splice(0, queens.length);
+  const obreras = workers.splice(0, workers.length);
+  colonyFood = 50;
+  brood.length = 0;
+  const b = { type: 'larva', progress: 0, time: 0, genome: makeGenome(), isQueen: false, faction: 0, hunger: 0, parents: ['-','-'], parentGenomes: ['-','-'] };
+  brood.push(b);
+  let llamadas = 0;
+  while (b.type === 'larva' && b.progress < 100 && llamadas < 40000) { updateBrood(2); llamadas++; }
+  const gastado = Math.round((50 - colonyFood) * 100) / 100;
+  const out = { pasa: b.progress >= 100 || b.type !== 'larva', detalle: 'larva criada y pasada a ' + b.type + ' gastando ' + gastado + ' de despensa en ' + llamadas + ' pasos' };
+  Array.prototype.push.apply(queens, reinas); Array.prototype.push.apply(workers, obreras);
+  return out;
+});
+
+// 10 · El contador de OBRERAS no puede inventarse una: con la colonia a cero y reina viva tiene
+// que marcar 0 en la barra, en el panel del reloj y en la taskbar (antes titilaba 0/1).
+caso('el contador de obreras marca 0 en los tres sitios si no queda ninguna, y vuelve al valor real', () => {
+  const perdidas = workers.splice(0, workers.length);
+  _updateBothAntCounts();
+  const leido = ['velAntCount', 'calAntCount', 'tbPop'].map((i) => String(document.getElementById(i).textContent)).join('/');
+  const okCero = leido === '0/0/0';
+  Array.prototype.push.apply(workers, perdidas);
+  _updateBothAntCounts();
+  const deVuelta = String(document.getElementById('calAntCount').textContent);
+  return { pasa: okCero && deVuelta === String(workers.length), detalle: 'con 0 obreras: ' + leido + ' · de vuelta ' + deVuelta + '/' + workers.length };
+});
+
 console.log('\n' + pass + ' ok' + (fail ? ' · ' + fail + ' FALLOS' : ' · cria a punto'));
 process.exit(fail ? 1 : 0);

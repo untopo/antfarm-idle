@@ -350,12 +350,18 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       console.log('   salto: ' + JSON.stringify(antes) + ' -> ' + JSON.stringify(ahora));
       // El boton vive DENTRO del panel del reloj, cuyo cristal abre el calendario al hacer click.
       // Si el click burbujeaba, al pasar de dia se quedaba un velo negro encima de la granja.
+      // Y luego se espera a que el salto SE APAGUE, con su propia paciencia: en esta maquina el dia
+      // simulado puede tardar mas de lo que cabe en la espera de arriba, y ahi el FAIL era del reloj
+      // del test, no del boton. Si nunca terminara, esto tambien revienta (y hay que leerlo).
+      const tFin = Date.now();
+      while (Date.now() - tFin < 180000) { ahora = await estado(); if (!ahora.ocupado) break; await sleep(1000); }
       const modalAbierto = await page3.evaluate(() => { const m = document.getElementById('calendarModal'); return !!m && m.classList.contains('open'); });
       ok(!modalAbierto, 'y pulsarlo no deja el calendario desplegado tapando la granja');
       ok(ahora.dia > antes.dia, 'el boton +1 DIA pasa de dia: dia ' + antes.dia + ' -> ' + ahora.dia + ' (' + seg + ' s de simulacion)');
       ok(cavado > 0 && tierra > 0, 'y ese dia trabaja de verdad: ' + cavado + ' bloques cavados y ' + tierra + ' celdas abiertas, comida ' + antes.comida + '->' + ahora.comida);
       ok(!ahora.ocupado && ahora.vel === antes.vel && /\+1/.test(ahora.boton) && ahora.boton.indexOf('\u23f3') < 0,
-        'y al terminar lo deja todo como estaba: velocidad x' + antes.vel + ' -> x' + ahora.vel + ', boton ' + JSON.stringify(ahora.boton) + (ahora.ocupado ? ' SIGUE OCUPADO' : ''));
+        'y al terminar lo deja todo como estaba: velocidad x' + antes.vel + ' -> x' + ahora.vel + ', boton ' + JSON.stringify(ahora.boton) + (ahora.ocupado ? ' SIGUE OCUPADO' : '') +
+        ' (el dia entero ha costado ' + Math.round((Date.now() - t0) / 1000) + ' s de reloj en esta maquina)');
       await page3.screenshot({ path: 'screenshots/08-tiras-hud.png' });
       await page3.close();
       await page.screenshot({ path: 'screenshots/08-tiras-hud.png' });

@@ -1752,9 +1752,20 @@ function topoCreateFreshWorld(cols, rows){
   markSoilDirty(); try{ markSoilDirty(); }catch(e){}
   // ajuste anti-extinción aplicado al nacer el mundo (antes corría en load y crasheaba)
   try{
-    colonyFood=startReserveFood(); if(queen) queen.progress=0; digs=0;
+    // Topo: la reserva de fundacion tiene que dar para las primeras puestas mientras las
+    // forrajeras arrancan (una entrega = 1-2, un huevo = 3). Con 7 la colonia se quedaba sin
+    // despensa el dia 2 y nunca volvia a poner: 0 nacimientos para siempre.
+    colonyFood=Math.max(12, startReserveFood()+startSurfaceFood()); if(queen) queen.progress=0; digs=0;
     const _sf2=startSurfaceFood(); const _spread=Math.max(24, Math.round(38*worldAreaRatio()*0.9));
     for(let i=0;i<_sf2;i++) spawnFoodSurface(CENTER_COL*CELL+8 + (Math.random()-0.5)*(_spread*3) + (i-Math.floor(_sf2/2))*_spread, 1+Math.floor(Math.random()*1.6));
+    // Topo: la colonia fundacional tambien nace con provisiones DENTRO del nido, al lado de la
+    // despensa. Sin esto, la unica miel del mapa estaba arriba y las 4-5 obreras iniciales se
+    // pasaban los primeros dias escarbando el tunel sin entregar nada: la despensa se iba a 0,
+    // la reina no pone huevos con menos de 3, y nadie llegaba a nacer. Fundacion claustral real.
+    try{
+      const _dentro = Math.max(2, Math.min(4, Math.round(3*worldAreaRatio())));
+      for(let i=0;i<_dentro;i++) spawnFoodAt(pantryPos.x + (Math.random()-0.5)*46, pantryPos.y + (Math.random()-0.5)*30, 1, 'honey');
+    }catch(e){ console.warn('provision fundacional', e.message); }
     lastSpawn=time;
   }catch(e){}
   try{ view.x=(W - W/(view.zoom||1.38))/2; view.y=12; clampView(); }catch(e){}
@@ -2045,7 +2056,13 @@ function updateQueen(dt){
     }
     // puesta de huevos - cada reina pone según alimento y fertilidad
     const need=3;
-    if(colonyFood>=need){
+    // Topo: la puesta se raciona por lo que la colonia PUEDE MANTENER, no por un umbral plano.
+    // Cada cria ya puesta reclama su parte y la camara de cria tiene sitio limitado (broodSlots del
+    // tamano del mundo): con el fijo de 3 la reina se comia la despensa en huevos, las larvas se
+    // quedaban sin nada y el ciclo se paraba justo cuando empezaba a andar.
+    const _sostiene = need + 0.6*brood.length;
+    const _sitio = brood.length < Math.max(3, sizeProfile().broodSlots);
+    if(colonyFood>=_sostiene && _sitio){
       // FERTILIDAD EVOLUTIVA REALISTA - Lasius 4-7k (100/d pico), Atta 5M (30k/d), argentina billones
       // En juego: base 2.19/d, con evolución GEN30 puede llegar a 18/d por reina (como Atta joven), 4 reinas = 72/d → N=72*18=1296
       const _evoFert = 1 + gen*0.13 + Math.max(0, colonyIQ-108)*0.009 + (q.personality?.fertilidad? (q.personality.fertilidad-50)*0.006:0) + (fungusGardens.filter(f=>f.health>0.62).length*0.12) + (typeof inventions!=='undefined' && inventions.fungus?0.22:0);
@@ -2109,30 +2126,48 @@ function updateBrood(dt){
     const bxp = (b.x!==undefined && b.x!==null) ? b.x : an.x;
     const byp = (b.y!==undefined && b.y!==null) ? b.y : an.y;
     if(b.type==='larva'){
-      // hambre real: sin nodriza con buche, se estanca y puede morir
+      // Topo: la camada fundacional NO puede exigir una especialista. Los roles salen de
+      // updateHierarchy, que no arranca hasta gen>=2 e IQ>=112 - o sea, en GEN0 nadie es NODRIZA,
+      // y con la regla vieja (solo NODRIZA/minim con buche alimentan) TODAS las larvas de la
+      // primera generacion morian de hambre antes de la primera eclosion: la colonia no podia
+      // nacer a si misma. Regla real y en tres niveles:
+      //   1) cualquier obrera con buche regurgita (la nodriza lo hace mas lejos y mas rapido)
+      //   2) si no queda nadie, la reina cria sola a costa de sus reservas (fundacion claustral)
+      //   3) si tampoco, la larva picotea la despensa, a ritmo reducido
+      // Y sin comida en ninguna de las tres, se estanca y puede morir - pero con margen, no a la
+      // primera noche.
       if(!b.hunger) b.hunger=0;
-      const nurses = workers.filter(w=>w.role==='NODRIZA' && w.crop>0.14 && dist(w,{x:bxp,y:byp})<64).length;
-      const fed = nurses>0 || workers.some(w=>w.caste==='minim' && w.crop>0.1 && dist(w,{x:bxp,y:byp})<48);
-      if(fed){
-        // alimentar: consume buche de nodriza o miel
-        if(Math.random()<0.14){
-          const donor = workers.find(w=> (w.role==='NODRIZA'||w.caste==='minim') && w.crop>0.12);
-          if(donor) donor.crop=Math.max(0, donor.crop-0.09);
-          else if(colonyFood>0) colonyFood=Math.max(0, colonyFood-0.022); // 0.03→0.022 (balance suave)
+      const nido = {x:bxp, y:byp};
+      const nodriza = workers.filter(w=> dist(w,nido)<64 && (w.crop||0)>0.14 && w.role==='NODRIZA').length;
+      const cualquiera = workers.some(w=> dist(w,nido)<44 && (w.crop||0)>0.12);
+      const real = queens.length>0 && dist(queens[0],nido)<96 && (colonyFood>=0.5 || (queens[0].crop||0)>0.1);
+      const nivel = nodriza>0 ? 1 : (cualquiera || workers.some(w=>w.caste==='minim' && (w.crop||0)>0.1 && dist(w,nido)<48)) ? 2 : real ? 3 : colonyFood>0.6 ? 4 : 0;
+      if(nivel>0){
+        // El coste se paga EN PROPORCION al crecimiento de este paso, no por intentos al azar: el
+        // bucle llama a esto decenas de veces por frame y un "-0.02 por sorteo" vaciaba la
+        // despensa entera en un dia (la colonia moria de hambre justo por alimentarse).
+        const _rate = nivel===1?0.00335:nivel===2?0.00285:nivel===3?0.00225:0.00175;
+        const _g = dt*_rate;
+        b.progress += _g;
+        if(nivel<=2){
+          const donor = workers.find(w=> (w.role==='NODRIZA'||w.caste==='minim'||(w.crop||0)>0.16) && (w.crop||0)>0.12);
+          if(donor) donor.crop = Math.max(0, (donor.crop||0) - _g*0.020);
         }
-        b.hunger=Math.max(0, b.hunger- dt*0.08);
-        b.progress+= dt*0.00335;
-        // calor óptimo 25°C: si nido frío/caliente, larva crece más lento (simulado por profundidad)
+        if(nivel>=3){
+          colonyFood = Math.max(0, colonyFood - _g*(nivel===3?0.030:0.018));
+          if(nivel===3 && queens.length>0) queens[0].health = Math.max(4, (queens[0].health||100) - _g*0.02); // criar sola le cuesta
+        }
+        b.hunger=Math.max(0, b.hunger- dt*(nivel<=2?0.08:0.045));
         if(byp > (SURFACE_ROW+10)*CELL) b.progress+= dt*0.00042; // más cálido abajo
+        b.tended=(b.tended||0)+1;
       } else {
         b.hunger+= dt*0.028;
-        b.progress+= dt*0.00052; // casi estancada sin nodriza
-        if(b.hunger> 96 && Math.random()<0.012){
+        b.progress+= dt*0.00052; // casi estancada sin nadie que la atienda
+        if(b.hunger> 150 && Math.random()<0.006){
           brood.splice(i,1);
-          pushEvent('death','💀 Larva muere de hambre - falta nodriza con buche',`Brood ${b.genome?.id||'-'} - hambre ${b.hunger|0}`);
+          pushEvent('death','💀 Larva muere de hambre - sin nodriza ni despensa',`Brood ${b.genome?.id||'-'} - hambre ${b.hunger|0}`);
           continue;
         }
-        // aún hambrienta, pide trofalaxia con partícula
         if(Math.random()<0.04) particles.push({x:bxp, y:byp-6, vx:(Math.random()-0.5)*0.4, vy:-0.4, life:0.7, decay:0.02, color:'#ffaa88'});
       }
     } else {
@@ -3173,13 +3208,24 @@ function updateAnt(ant, dt){
       setNarration(`<b>${ant.id} entregó ${amt} 🍯</b> - despensa <b>${colonyFood}</b>.`);
       colonyFitness+=1.0; ant.fitness+=1.0;
       ant.fatigue=Math.max(0,ant.fatigue-14);
-      if(foods.length<3 && Math.random()<0.7) spawnFoodSurface(CENTER_COL*CELL+8 + (Math.random()-0.5)*220,1+Math.floor(Math.random()*2));
+      // Topo: la superficie se reabastece segun el tamano de la colonia, no con un fijo de 3: con
+      // 6-8 obreras y 3 gotas en el mapa, las entregas no daban para mantener la despensa sobre el
+      // umbral de puesta (3) y la cria se cortaba justo cuando empezaba a andar.
+      if(foods.length < Math.max(3, Math.round(workers.length*0.8)) && Math.random()<0.9) spawnFoodSurface(CENTER_COL*CELL+8 + (Math.random()-0.5)*220,1+Math.floor(Math.random()*2));
       for(let i=0;i<9;i++) particles.push({x:tgt.x,y:tgt.y,vx:(Math.random()-0.5)*3,vy:-Math.random()*2,life:1,decay:0.025,color:'#ffcc00'});
       ant.blocked=0; checkLevelUp();
     }
     return;
   }
   if(ant.targetFood && !foods.includes(ant.targetFood)) ant.targetFood=null;
+  // Topo: despensa vacia = hay que salir a por miel, aunque el manjar este fuera del radio de los
+  // sensores (90px). Las fundadoras no tienen rol RECOLECTORA hasta que la colonia evoluciona, asi
+  // que sin este impulso se quedaban en el tunel y la colonia nunca juntaba los 3 de la despensa
+  // que pide la puesta. Es hambre, no especializacion: lo dispara solo con la despensa baja.
+  if(!ant.targetFood && !ant.food && colonyFood < Math.max(6, 2 + workers.length)) {
+    let _f=null,_d=Infinity; for(const _x of foods){ const _dd=dist(ant,_x); if(_dd<_d){_d=_dd;_f=_x;} }
+    if(_f && _d<640) ant.targetFood=_f;
+  }
   if(!ant.targetFood){
     let nf=null, bd=Infinity;
     for(let f of foods){const d=dist(ant,f); if(d<90 && d<bd){bd=d;nf=f;}}
@@ -3236,7 +3282,14 @@ function updateAnt(ant, dt){
   }
   if(ant.targetFood){
     const targ=ant.targetFood;
-    const ang=Math.atan2(targ.y-ant.y, targ.x-ant.x);
+    // Topo: el regreso a la despensa ya tenia punto de paso por la boca del tunel; la SALIDA a por
+    // miel no. En un tunel de 3 celdas, apuntar en linea recta al bocado se clava contra la pared y
+    // a los 36 pasos bloqueados la hormiga abandonaba el objetivo: las entregas se paraban en cuanto
+    // la colonia bajaba al nido, la despensa no se reponia y la reina dejaba de poner. Mismo truco
+    // en los dos sentidos: primero la boca, luego la miel.
+    const _boca = {x: CENTER_COL*CELL+8, y: SURFACE_Y-6};
+    const _meta = (targ.y < SURFACE_Y+12 && ant.y > SURFACE_Y+18) ? _boca : targ;
+    const ang=Math.atan2(_meta.y-ant.y, _meta.x-ant.x);
     let diff=((ang-ant.angle+Math.PI*3)%(Math.PI*2)-Math.PI);
     ant.angle+= diff*0.06 + steer*0.13;
     if(ant.sensors.wallLeft>0.7) ant.angle+=0.18;
@@ -3245,7 +3298,7 @@ function updateAnt(ant, dt){
     if(canMove(nx,ny)){ant.x=nx;ant.y=ny;ant.blocked=0;}else{
       if(canMove(ant.x+Math.cos(ant.angle)*speed, ant.y)) ant.x+=Math.cos(ant.angle)*speed*0.45;
       else if(canMove(ant.x, ant.y+Math.sin(ant.angle)*speed)) ant.y+=Math.sin(ant.angle)*speed*0.45;
-      else {ant.blocked++; ant.angle+=(Math.random()-0.5)*1.0; if(ant.blocked>36) ant.targetFood=null;}
+      else {ant.blocked++; ant.angle+=(Math.random()-0.5)*1.0; if(ant.blocked>36 && ant.y<SURFACE_Y+10) ant.targetFood=null;}
     }
     if(dist(ant,targ)< (targ.r? targ.r+14:16)){
       const idx=foods.indexOf(targ);
@@ -7406,8 +7459,9 @@ try{ renderEvents(); updateColonyUI(); updateZoomLabel(); }catch(e){ console.err
 function _updateBothAntCounts(){ try{
       let n=0;
       if(typeof workers!=='undefined' && Array.isArray(workers)) n = workers.length;
-      // Fallback si workers aún no existe pero hay reina
-      if(n===0 && typeof queen!=='undefined' && queen) n=1;
+      // Topo: antes, con cero obreras y reina viva, el numero saltaba a 1 y el lote de UI ponia 0
+      // en el turno siguiente: el contador titilaba entre 0 y 1. El letrero dice OBRERAS ACTIVAS,
+      // asi que aqui solo se cuentan obreras; la reina tiene su propio sitio.
       const v=document.getElementById('velAntCount'); if(v) v.textContent=n;
       const c=document.getElementById('calAntCount'); if(c) c.textContent=n;
       const tb=document.getElementById('tbPop'); if(tb) tb.textContent=n;
