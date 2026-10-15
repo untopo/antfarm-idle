@@ -1857,6 +1857,9 @@ let nextAntFaction=0;
 // tiempo y clima - día de 20 min reales (72000 time units) EXACTO Minecraft: 20 min = 1 día, 10 min día + 7 noche + 1.5 amanecer/atard
 let day = 1;
 let weather={type:'clear', intensity:0, timer:0, nextChange: 800+Math.random()*1200, rainParticles:[]};
+// el glifo del tiempo que ve el dueño en la barra: una sola tabla, para que el reloj de arriba y el
+// titulo del lienzo no se contradigan (y para que la nieve no salga con solecito)
+function glifoClima(t){ return t==='rain'? '🌧' : t==='storm'? '⛈' : t==='snow'? '🌨' : t==='cloudy'? '☁️' : '☀️'; }
 let lightningTimer=0, isNight=false;
 let brood=[];
 let workers=[];
@@ -4107,7 +4110,7 @@ function paintCacheCell(c,r,isMini){
 // paintCellActive cambia cuando el override del atlas entra en juego; asi el atajo no depende de
 // que version de rebuildSoilCache sea la ultima definida (antes pasaba que el override se comia
 // el repintado por celdas y cada calada volvia a costar un mapa entero).
-let paintCellActive=null, _soilSeason=0, _soilWet=false, _soilIncWarned=0, _voxMini=false;
+let paintCellActive=null, _soilSeason=0, _soilWet=false, _soilNieve=false, _soilIncWarned=0, _voxMini=false;
 function soilIncrementalReady(isMini){
   return !isMini && !!paintCellActive && !!soilDirtyCells && soilDirtyCells!==false
     && soilDirtyCells.size>0 && soilDirtyCells.size*6 < COLS*(ROWS-SURFACE_ROW);
@@ -4353,6 +4356,9 @@ function paintCacheCellTextured(c,r){
   }
   // la humedad se ve tambien como una mecha clara arriba, no como textura nueva
   if(_soilWet && !exp){ g.fillStyle='rgba(140,180,220,0.10)'; g.fillRect(x+1,y+1,CELL-3,1); }
+  // y si esta nevando, la capa: dos pixeles palidos encima del bloque, con su borde de arriba mas claro.
+  // Se pinta en el cache (y se marca el repintado al cambiar el clima), no encima en cada cuadro.
+  if(_soilNieve && exp){ g.fillStyle='rgba(232,242,252,0.72)'; g.fillRect(x,y-3,CELL,4); g.fillStyle='rgba(255,255,255,0.85)'; g.fillRect(x,y-3,CELL,1); }
 }
 
 rebuildSoilCache = function(isMini){
@@ -4361,6 +4367,7 @@ rebuildSoilCache = function(isMini){
   _voxMini = isMini===true;                        // la pasada mini pinta el mismo lienzo, sin microdetalle
   _soilSeason=(()=>{ try{ return getCalendarData().seasonIdx|0; }catch(e){ return 0; } })();
   _soilWet=(()=>{ try{ return !!(weather && (weather.type==='rain'||weather.type==='storm')); }catch(e){ return false; } })();
+  _soilNieve=(()=>{ try{ return !!(weather && weather.type==='snow'); }catch(e){ return false; } })();
   // atajo: una calada repinta 5 celdas, no las 4608 del mapa
   if(soilIncrementalReady(isMini)){
     try{
@@ -4507,11 +4514,11 @@ const SIG_MAP = {
   recruit: sigSrc(0,0), explore: sigSrc(1,0), inkCyan: sigSrc(2,0), inkYellow: sigSrc(0,1), inkMagenta: sigSrc(1,1), inkWhite: sigSrc(2,1)
 };
 // === TEXTURAS DEFINITIVAS 10 - CLIMA ATLAS 2048 ===
+// EL CLIMA Y EL CIELO YA NO TIENEN PLIEGO: lluvia, nieve, nubes, sol, luna y luceros se pintan aqui mismo,
+// en bloques (ver _bloque). El PNG de categoria_10_clima_efectos.png sigue en disco por si se quiere volver
+// atras, pero no se descarga: es el ultimo que quedaba del mundo (las hormigas conservan sus sprites, que
+// es lo que el dueño dijo de dejar igual).
 const texClima = new Image();
-texClima.src = 'assets/textures/categoria_10_clima_efectos.png';
-let texClimaReady = false;
-texClima.onload = ()=>{ texClimaReady=true; tlog('[TEX] clima 2048 atlas ready'); };
-texClima.onerror = ()=>console.warn('[TEX] clima failed');
 const CLIMA_TW = 682, CLIMA_TH = 1024, CLIMA_BORDER = 18;
 function climaSrc(col,row){ return {sx: col*CLIMA_TW+CLIMA_BORDER, sy: row*CLIMA_TH+CLIMA_BORDER, sw: CLIMA_TW-CLIMA_BORDER*2, sh: CLIMA_TH-CLIMA_BORDER*2}; }
 const CLIMA_MAP = {
@@ -4549,6 +4556,7 @@ function _cieloMezcla(hora, h0,c0, h1,c1, h2,c2, h3,c3, h4,c4, h5,c5, h6,c6){
   }
   return nod[nod.length-1][1];
 }
+let _cieloEst = 0, _cieloEstDia = -1;
 function drawFarm(ctx,W,H,isMini=false){
   const useZoom=!isMini && view.zoom!==1;
   if(useZoom){ctx.save(); ctx.scale(view.zoom,view.zoom); ctx.translate(Math.floor(-view.x),Math.floor(-view.y)); ctx.imageSmoothingEnabled=false;}
@@ -4558,26 +4566,35 @@ function drawFarm(ctx,W,H,isMini=false){
   const gameHour = (time % DAY_LENGTH) / DAY_LENGTH * 24;
   const isDay = gameHour>=4.5 && gameHour<=19.5; // Terraria 15h día (4:30-19:30) 9h noche
   const dusk = (gameHour>19.5 && gameHour<20.5) || (gameHour>5 && gameHour<5.8);
-  let skyTop='#0a0f2a', skyBot='#1a2a5a';
-  if(isDay){
-    if(weather.type==='rain' || weather.type==='storm'){ skyTop='#5a6a7a'; skyBot='#7a8a9a'; }
-    else if(dusk){ skyTop='#ff7a3d'; skyBot='#ffcc66'; }
-    else { skyTop='#7ec8e3'; skyBot='#a8e0f0'; }
-  } else {
-    skyTop='#05091a'; skyBot='#0f1a3a';
-  }
   // CIELO CODIFICADO, SIN TEXTURA PNG. El cielo es una franja de color que cambia con la hora y con el
   // clima y cubre TODO el fondo de la pantalla, tambien lo que asoma cuando la camara sube por encima del
   // prado. Se quito el PNG de cielos: dos capas desplazadas por el viento, a alpha 0,28 y 0,36, cortaban
   // costuras y dejaban bandas - eso era la «textura rara» del cielo.
   const _horas = gameHour;
-  const _top  = _cieloMezcla(_horas, 0, '#04081c', 5.0, '#3a4a7a', 7.5, '#7ec8e3', 17.0, '#8fc4e8', 19.2, '#ff7a3d', 20.6, '#101a3a', 24, '#04081c');
-  const _bot  = _cieloMezcla(_horas, 0, '#0b1230', 5.0, '#c88a6a', 7.5, '#a8e0f0', 17.0, '#bfe8f5', 19.2, '#ffcc66', 20.6, '#16203f', 24, '#0b1230');
+  const _cielo  = _cieloMezcla(_horas, 0, '#04081c', 5.0, '#3a4a7a', 7.5, '#7ec8e3', 17.0, '#8fc4e8', 19.2, '#ff7a3d', 20.6, '#101a3a', 24, '#04081c');
+  const _sueloCielo  = _cieloMezcla(_horas, 0, '#0b1230', 5.0, '#c88a6a', 7.5, '#a8e0f0', 17.0, '#bfe8f5', 19.2, '#ffcc66', 20.6, '#16203f', 24, '#0b1230');
   const _wt = (typeof weather!=='undefined' && weather.type) ? weather.type : 'clear';
-  const _nublado = _wt==='cloudy'? 0.35 : _wt==='rain'? 0.62 : _wt==='storm'? 0.80 : 0;
-  const _tinte = _nublado>0 ? _mezcla16(_top, '#4a5560', _nublado*0.75) : _top;
-  const _tinte2 = _nublado>0 ? _mezcla16(_bot, '#6a7684', _nublado*0.60) : _bot;
-  const skyGrad=ctx.createLinearGradient(0,-H*1.8,0,SURFACE_Y);
+  const _nievando = _wt==='snow';
+  const _nublado = _wt==='cloudy'? 0.35 : _wt==='rain'? 0.62 : _wt==='storm'? 0.80 : _nievando? 0.55 : 0;
+  // CUATRO CIELOS, NO UNO CON FILTRO (Topo: «el de los cielos y climas distintos»). La estacion lava las
+  // anclas de hora: la primavera clarea el azul, el verano calienta el horizonte, el otono lo ensucia de
+  // oro y el invierno lo vuelve palido y corto. Y encima pasan las nubes, que siguen el mismo tinte.
+  let _est = _cieloEst;
+  if(_cieloEstDia !== (day|0)){
+    _cieloEstDia = day|0;
+    try{ const _cal = getCalendarData(); if(_cal && typeof _cal.seasonIdx==='number') _est = _cieloEst = _cal.seasonIdx|0; }catch(e){}
+  }
+  const _LAVIDA = [['#7fd8e8',0.10],['#ffe9a8',0.13],['#e0a45c',0.16],['#cfe4f5',0.24]];
+  const _lv = _LAVIDA[_est%4]||_LAVIDA[0];
+  let _top = _mezcla16(_cielo, _lv[0], _lv[1]);
+  let _bot = _mezcla16(_sueloCielo, _lv[0], _lv[1]*0.55);
+  if(_nievando){ _top=_mezcla16(_top,'#e8f2ff',0.30); _bot=_mezcla16(_bot,'#dceaf8',0.26); }
+  const _tinte = _nublado>0 ? _mezcla16(_top, _nievando?'#9fb4c8':'#4a5560', _nublado*0.75) : _top;
+  const _tinte2 = _nublado>0 ? _mezcla16(_bot, _nievando?'#c8d8e8':'#6a7684', _nublado*0.60) : _bot;
+  // el degradado va de arriba del mapa a la raya del cesped, que es la franja de cielo que de verdad se
+  // ve: con -H*1.8 de recorrido todo lo visible caia en el ultimo diez por ciento y el cielo salia un
+  // color plano (el alba no se enteraba). El relleno sigue cubriendo el hueco de la camara, por eso.
+  const skyGrad=ctx.createLinearGradient(0,0,0,SURFACE_Y);
   skyGrad.addColorStop(0,_tinte); skyGrad.addColorStop(0.62,_tinte2); skyGrad.addColorStop(1,_tinte2);
   ctx.fillStyle=skyGrad; ctx.fillRect(-W*1.5, -H*1.8, W*4, (SURFACE_Y + H*1.8));
   if(!isMini){
@@ -4600,7 +4617,8 @@ function drawFarm(ctx,W,H,isMini=false){
     // nubes dibujadas, no de textura: tres franjas redondeadas que se cruzan segun el viento
     if(_nublado>0.1){
       const _vel = _wt==='storm'? 26 : _wt==='rain'? 14 : 7;
-      ctx.fillStyle='rgba(20,26,34,'+(0.16+0.34*_nublado).toFixed(2)+')';
+      ctx.globalAlpha=(0.16+0.34*_nublado);
+      ctx.fillStyle= _nievando? '#8ea3b8' : '#141a22';
       for(let cb=0; cb<7; cb++){
         const cx2 = ((time*0.001*_vel + cb*260) % (W*1.9)) - W*0.45;
         const cy2 = SURFACE_Y - H*1.05 + ((cb*53)%9)*15;
@@ -4608,23 +4626,28 @@ function drawFarm(ctx,W,H,isMini=false){
         ctx.fillRect(cx2, cy2, aw, ah);
         ctx.fillRect(cx2+14, cy2-ah*0.6, aw*0.6, ah*0.7);
       }
+      ctx.globalAlpha=1;
     }
   }
   // sol / luna pixel que se mueve con la hora - Topo fix: más arriba y cielo sincronizado
   if(!isMini){
     const sunX = (gameHour/24)*W;
-    const sunY = isDay? 10 + Math.sin((gameHour-6)/13*Math.PI)*18 : 14 + Math.sin((gameHour-20)/8*Math.PI)*14;
+    const sunY = isDay? 10 + (1 - Math.sin((gameHour-6)/13*Math.PI))*22 : 14 + Math.sin((gameHour-20)/8*Math.PI)*14;   // mediodia arriba (10), alba y ocaso bajos (32)
     if(isDay){
       // sol más alto, inicia el día visible
-      ctx.fillStyle= weather.type==='storm'? '#ffaa44' : '#ffdd57';
-      ctx.fillRect(Math.floor(sunX)-14, Math.floor(sunY),28,28); ctx.fillStyle='#fff8dc'; ctx.fillRect(Math.floor(sunX)-10,Math.floor(sunY)+4,8,8); ctx.fillStyle='#ffaa00'; ctx.fillRect(Math.floor(sunX)+6,Math.floor(sunY),4,4);
+      // el sol es un bloque de 28 con su cara clara arriba y su canto oscuro abajo, como todo lo demas;
+      // y en invierno describe un arco mas bajo, que es como se ve el dia corto de verdad
+      const _bajo = _est===3 ? 10 : _est===1 ? -6 : 0;
+      ctx.fillStyle='#fff8dc'; ctx.fillRect(Math.floor(sunX)-10,Math.floor(sunY)+_bajo+4,8,8);
+      _bloque(ctx,Math.floor(sunX)-14, Math.floor(sunY)+_bajo, 28,28, weather.type==='storm'? '#ffaa44' : '#ffdd57');
+      ctx.fillStyle='#ffaa00'; ctx.fillRect(Math.floor(sunX)+6,Math.floor(sunY)+_bajo,4,4);
       // rayos si no llueve
       if(weather.type==='clear' && !dusk){
         ctx.fillStyle='rgba(255,255,255,0.18)'; ctx.fillRect(Math.floor(sunX)-18,Math.floor(sunY)+6,4,16); ctx.fillRect(Math.floor(sunX)+18,Math.floor(sunY)+6,4,16);
       }
     } else {
       // luna
-      ctx.fillStyle='#e8e8d8'; ctx.fillRect(Math.floor(sunX)-12, Math.floor(sunY),22,22); ctx.fillStyle='#c8c8b8'; ctx.fillRect(Math.floor(sunX)-6,Math.floor(sunY)+6,4,4); ctx.fillStyle='#05091a'; ctx.fillRect(Math.floor(sunX)+4,Math.floor(sunY)+2,6,6);
+      _bloque(ctx,Math.floor(sunX)-12, Math.floor(sunY),22,22,'#e8e8d8'); ctx.fillStyle='#c8c8b8'; ctx.fillRect(Math.floor(sunX)-6,Math.floor(sunY)+6,4,4); ctx.fillStyle='#05091a'; ctx.fillRect(Math.floor(sunX)+4,Math.floor(sunY)+2,6,6);
       // estrellas fijas (no random cada frame para no parpadear)
       ctx.fillStyle='rgba(255,255,255,0.9)'; for(let i=0;i<18;i++){ const sx=(i*67 + 11)%W, sy=8+(i*13)%22; ctx.fillRect(sx,sy,1,1); }
     }
@@ -4643,9 +4666,9 @@ function drawFarm(ctx,W,H,isMini=false){
       if(weather.type==='rain' || weather.type==='storm'){ w+=6; h+=2; y+=1; }
       let cx = Math.floor(baseX);
       // dibujo pixel nube con bordes suaves
-      ctx.fillRect(cx,y,w,h);
-      ctx.fillRect(cx-6,y+4,6,6);
-      ctx.fillRect(cx+w,y+4,6,6);
+      _bloque(ctx,cx,y,w,h,'#ffffff');
+      _bloque(ctx,cx-6,y+4,6,6,'#f2f7ff');
+      _bloque(ctx,cx+w,y+4,6,6,'#eaf1fb');
       if(i%2===0){ ctx.fillRect(cx+8,y-2,12,3); }
     }
     ctx.globalAlpha=1;
@@ -4678,6 +4701,7 @@ function drawFarm(ctx,W,H,isMini=false){
     ctx.fillStyle=g3; ctx.fillRect(x,SURFACE_Y-14,CELL,3);
     ctx.globalAlpha=1;
     ctx.fillStyle='#1e4a0f'; ctx.fillRect(x,SURFACE_Y-2,CELL,2);
+    if(_nievando){ ctx.fillStyle='rgba(238,246,255,0.74)'; ctx.fillRect(x,SURFACE_Y-16,CELL,4); ctx.fillStyle='rgba(255,255,255,0.55)'; ctx.fillRect(x,SURFACE_Y-17,CELL,1); }
     if(f>0.78 && (c*7)%5===0){
       ctx.fillStyle='rgba(46,154,32,0.22)'; ctx.fillRect(x+2,SURFACE_Y-10,12,6);
     }
@@ -5851,25 +5875,43 @@ function drawFarm(ctx,W,H,isMini=false){
       ctx.globalAlpha=1;
     }
   }
-  for(let p of particles){ctx.globalAlpha=p.life; ctx.fillStyle=p.color; ctx.fillRect(Math.floor(p.x)-2,Math.floor(p.y)-2,4,4); ctx.strokeStyle='#000'; ctx.lineWidth=1; ctx.strokeRect(Math.floor(p.x)-2,Math.floor(p.y)-2,4,4);}
+  for(let p of particles){ctx.globalAlpha=p.life;
+    if(p.bloque){ _bloque(ctx,Math.floor(p.x)-1,Math.floor(p.y)-1,3,3,p.color); }
+    else { ctx.fillStyle=p.color; ctx.fillRect(Math.floor(p.x)-2,Math.floor(p.y)-2,4,4); }
+  }
   ctx.globalAlpha=1;
   // clima lluvia/relámpago
-  if(!isMini && (weather.type==='rain' || weather.type==='storm')){
-    ctx.fillStyle= weather.type==='storm'? 'rgba(30,40,60,0.22)' : 'rgba(40,50,70,0.12)';
+  if(!isMini && (weather.type==='rain' || weather.type==='storm' || weather.type==='snow')){
+    const _nev = weather.type==='snow';
+    // el velo del aguacero, del temporal y de la nevada: una capa, no una textura
+    ctx.fillStyle= weather.type==='storm'? 'rgba(30,40,60,0.22)' : _nev? 'rgba(214,230,244,0.15)' : 'rgba(40,50,70,0.12)';
     ctx.fillRect(0,0,W,H);
-    ctx.strokeStyle= weather.type==='storm'? 'rgba(160,190,255,0.9)' : 'rgba(160,190,255,0.65)'; ctx.lineWidth=1;
     for(let rp of weather.rainParticles){
       const rx=Math.floor(rp.x), ry=Math.floor(rp.y);
-      ctx.beginPath(); ctx.moveTo(rx, ry); ctx.lineTo(rx-1, ry+7); ctx.stroke();
-      ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.fillRect(rx, ry+3,1,1);
+      if(_nev){
+        _bloque(ctx, rx-1, ry-1, 3, 3, '#eef6ff');          // copo de tres pixeles con su luz y su sombra
+      } else {
+        // la gota es un rectangulo de 1 px de ancho con la punta de arriba mas clara y el pie mas oscuro:
+        // el mismo sello del terreno, estirado. Antes era un trazo con lineWidth, que a x1 salia borroso.
+        const _largo = weather.type==='storm'? 9 : 7;
+        ctx.fillStyle='rgba(150,190,230,0.62)'; ctx.fillRect(rx, ry, 1, _largo);
+        ctx.fillStyle='rgba(224,242,255,0.95)'; ctx.fillRect(rx, ry, 1, 1);
+        ctx.fillStyle='rgba(80,110,160,0.60)'; ctx.fillRect(rx, ry+_largo-1, 1, 1);
+      }
     }
     if(lightningTimer>0){
       const flashAlpha = lightningTimer>7? 0.45 : lightningTimer>3? 0.22 : 0.08;
       ctx.fillStyle=`rgba(255,255,220,${flashAlpha})`; ctx.fillRect(0,0,W,H);
       if(lightningTimer>8){
-        ctx.strokeStyle='rgba(255,255,200,0.9)'; ctx.lineWidth=2;
-        const lx=W*0.3 + Math.random()*W*0.4;
-        ctx.beginPath(); ctx.moveTo(lx,0); ctx.lineTo(lx+8, 40); ctx.lineTo(lx-4, 80); ctx.lineTo(lx+6, SURFACE_Y); ctx.stroke();
+        // el relampago, en cuadritos de tres: y sobre todo CON POSICION FIJA mientras dura el destello.
+        // Antes se echaba a suerte cada cuadro y el rayo saltaba de un lado a otro del cielo (parpadeo).
+        const _sem = Math.floor(lightningTimer)*97;
+        const lx=W*0.28 + ((_sem%53)/53)*W*0.44;
+        ctx.fillStyle='rgba(255,255,214,0.92)';
+        for(let t=0;t<8;t++){
+          const _dx = ((_sem + t*13)%5) - 2 + (t%2?3:-3);
+          ctx.fillRect(Math.floor(lx + _dx*(t/2)), Math.floor(t*(SURFACE_Y/8)), 3, Math.ceil(SURFACE_Y/8));
+        }
       }
     }
   }
@@ -5926,17 +5968,23 @@ function tickStep(dt){
       if(weather.type==='storm') lightningTimer= 40+Math.random()*120;
       // en invierno más lluvia
       if(season===3 && Math.random()<0.3) { weather.type='rain'; weather.intensity=0.6; }
+      // y en pleno invierno esa lluvia se cuaja: NIEVE. Es el unico modo de que el cielo invierno se vea
+      // distinto y no solo mas gris. Es un clima de pintar: la nieve no moja (el suelo mira solo rain/storm
+      // en _soilWet) ni ablanda la tierra, asi que no mueve la economia - que es lo que se queria probar.
+      if(season===3 && weather.type==='rain' && Math.random()<0.6){ weather.type='snow'; weather.intensity=0.5+Math.random()*0.4; }
+      try{ markSoilDirty(); }catch(e){}   // y el suelo se entera: la capa de nieve y el brillo mojado se repintan
     }
     // partículas de lluvia con gravedad real - Topo fix: cubre TODO el cielo sincronizado, no solo -12
-    if(weather.type==='rain' || weather.type==='storm'){
-      const count = weather.type==='storm'? 6:3;
-      for(let i=0;i<count;i++) weather.rainParticles.push({x:Math.random()*W, y: -H*1.8 + Math.random()* (H*1.8 + SURFACE_Y + 24), vx:-0.8+Math.random()*0.6, vy:2+Math.random()*2, life:1, vy0:2+Math.random()*2});
+    if(weather.type==='rain' || weather.type==='storm' || weather.type==='snow'){
+      const _nev = weather.type==='snow';
+      const count = weather.type==='storm'? 6 : _nev? 4 : 3;
+      for(let i=0;i<count;i++) weather.rainParticles.push({x:Math.random()*W, y: -H*1.8 + Math.random()* (H*1.8 + SURFACE_Y + 24), vx:_nev? -0.35+Math.random()*0.7 : -0.8+Math.random()*0.6, vy:_nev? 0.4+Math.random()*0.5 : 2+Math.random()*2, life:1, vy0:2+Math.random()*2, snow:_nev});
     }
     if(weather.rainParticles.length>280) weather.rainParticles.splice(0, weather.rainParticles.length-280);
     for(let i=weather.rainParticles.length-1;i>=0;i--){
       const rp=weather.rainParticles[i];
       // gravedad real
-      rp.vy += 0.52;
+      rp.vy += rp.snow? 0.055 : 0.52;   // el copo cae despacio; la gota, con gravedad de verdad
       rp.x += rp.vx;
       rp.y += rp.vy;
       // colisión con pasto/suelo: si toca superficie sólida, rebota/salpicadura y muere
@@ -5950,9 +5998,14 @@ function tickStep(dt){
         const isSolidBelow = !isHole && rp.y >= SURFACE_Y - 2;
         if(isSolidBelow){
           // salpicadura en pasto firme
-          particles.push({x:rp.x, y:SURFACE_Y-2, vx:(Math.random()-0.5)*1.2, vy:-1.2-Math.random()*1.0, life:1, decay:0.08, color:'#7ec8e3'});
+          if(rp.snow){
+            // la nieve no salpica: se queda un momento y se va, en cuadritos de 3 px
+            particles.push({x:rp.x, y:SURFACE_Y-3, vx:(Math.random()-0.5)*0.25, vy:-0.15, life:1, decay:0.02, color:'#eef6ff', bloque:true});
+          } else {
+            particles.push({x:rp.x, y:SURFACE_Y-2, vx:(Math.random()-0.5)*1.2, vy:-1.2-Math.random()*1.0, life:1, decay:0.08, color:'#7ec8e3'});
+          }
           // charco temporal que ayuda a ablandar tierra (bonus de excavación)
-          if(Math.random()<0.12) mound.push({x:rp.x, y:SURFACE_Y-1, h:1, isPuddle:true, life:  DAY_LENGTH*0.08});
+          if(!rp.snow && Math.random()<0.12) mound.push({x:rp.x, y:SURFACE_Y-1, h:1, isPuddle:true, life:  DAY_LENGTH*0.08});   // charcos: los hace el agua, no la nieve
           weather.rainParticles.splice(i,1);
           continue;
         }
@@ -5973,10 +6026,11 @@ function tickStep(dt){
         }
       }
       // viento leve y gravedad lateral
-      rp.vx += (Math.sin(time*0.02 + rp.x*0.01)*0.02);
+      rp.vx += (Math.sin(time*0.02 + rp.x*0.01)*(rp.snow?0.10:0.02));
+      if(rp.snow) rp.x += Math.sin(time*0.028 + rp.y*0.05)*0.55;   // y se mece, que la nieve no cae a plomo
       if(rp.y>H+20 || rp.x< -W*0.6 || rp.x> W*1.6) weather.rainParticles.splice(i,1);
       // limitar velocidad terminal
-      if(rp.vy> 14) rp.vy=14;
+      if(rp.vy > (rp.snow? 2.1 : 14)) rp.vy = rp.snow? 2.1 : 14;
     }
     // charcos se evaporan y ablandan: si hay puddle, reduce digNeeded cercano
     for(let i=mound.length-1;i>=0;i--){
@@ -6335,12 +6389,7 @@ function updateColonyUIInner(){
   hudText('hudBrood', brood.length);
   hudText('hudComms', commInks.length);
   hudText('camLabel', countChambers()+' CÁMARAS');
-  const gameHour = (time % DAY_LENGTH) / DAY_LENGTH * 24;
-  const hh=Math.floor(gameHour), mm=Math.floor((gameHour%1)*60);
-  const wIcon= weather.type==='rain'?'🌧':weather.type==='storm'?'⛈':weather.type==='cloudy'?'☁️':'☀️';
-  const isDay = gameHour>=6 && gameHour<=19;
-  hudText('timeLabel', `D${day} ${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')} ${wIcon}${isDay?'☀️':'🌙'}`);
-  document.getElementById('timeLabel').title=`Día ${day} - ${weather.type} - ${isDay?'día':'noche'}`;
+  // (el #timeLabel lo escribe updateCalendarWidget: un solo dueno, y ahi lleva tambien el glifo del clima)
   try{ hudText('cPop', workers.length+'/'+getMaxPopulation()+' +'+queens.length+'♛'); }catch(e){ document.getElementById('cPop').textContent=workers.length + ' +1♛'; }
   try{ hudText('cPopDetail', workers.length+'/'+getMaxPopulation()+' obreras + '+queens.length+' reina(s) - ' + brood.length + ' crías - tope '+getMaxPopulation()); }catch(e){ document.getElementById('cPopDetail').textContent=workers.length+' obreras + 1 reina - ' + brood.length + ' crías'; }
   hudText('cFood', colonyFood);
@@ -6455,8 +6504,8 @@ function updateColonyUIInner(){
     const seas=['primavera','verano','otoño','invierno'][Math.floor((day/12)%4)]||'primavera';
     const sEl=document.getElementById('ecoSeason'); if(sEl) sEl.textContent=seas+' - día '+(worldAge.toFixed(1));
     const ageEl=document.getElementById('ecoAge'); if(ageEl) ageEl.textContent='día '+day+' - '+seas;
-    const wMap={clear:'☀️ claro', cloudy:'☁️ nublado', rain:'🌧 lluvia', storm:'⛈ tormenta'};
-    const wEl=document.getElementById('ecoWeather'); if(wEl) wEl.textContent=wMap[weather.type]||weather.type;
+    const wNom={clear:'claro', cloudy:'nublado', rain:'lluvia', storm:'tormenta', snow:'nieve'};
+    const wEl=document.getElementById('ecoWeather'); if(wEl) wEl.textContent=glifoClima(weather.type)+' '+(wNom[weather.type]||weather.type);
     const rEl=document.getElementById('ecoRain'); if(rEl) rEl.textContent=(weather.type==='rain'||weather.type==='storm')? 'húmedo +fert':'seco';
     const plEl=document.getElementById('ecoPlants'); if(plEl) plEl.textContent=plants.length+' 🌿';
     const types={}; plants.forEach(p=> types[p.type]=(types[p.type]||0)+1);
@@ -7384,7 +7433,6 @@ function updateCalendarWidget(){
     const dayBar=document.getElementById('calDayBar');
     const seasonBar=document.getElementById('calSeasonBar');
     const timeEl=document.getElementById('calTimeText');
-    const weaEl=document.getElementById('calWea');
     const dayNightEl=document.getElementById('calDayNightLabel');
     if(iconEl) iconEl.textContent=cal.season.icon;
     if(nameEl) { nameEl.textContent=cal.season.name; nameEl.style.color='#000'; }
@@ -7435,12 +7483,6 @@ function updateCalendarWidget(){
       dayNightEl.style.color= cal.isDay? '#ffcc00' : '#7ec8e3';
     }
     if(weaEl){
-      try{
-        const wMap={clear:'☀️', cloudy:'☁️', rain:'🌧', storm:'⛈'};
-        const wtype=(typeof weather!=='undefined' && weather && weather.type) ? weather.type : 'clear';
-        weaEl.textContent=wMap[wtype]||'☀️';
-        weaEl.title= wtype+' - '+cal.season.long;
-      }catch(_){ weaEl.textContent='☀️'; }
     }
     drawCalClock(cal.gameHour, cal.isDay, cal.seasonIdx);
     // debug visible
@@ -7448,7 +7490,9 @@ function updateCalendarWidget(){
     const tl=document.getElementById('timeLabel');
     if(tl){
       const hh=String(cal.hour).padStart(2,'0'), mm=String(cal.minute).padStart(2,'0');
+      // un solo dueno escribe #timeLabel: la hora, sin huecos. El tiempo que hace vive en MUNDO VIVO.
       tl.textContent=hh+':'+mm;
+      tl.title= 'Día ' + cal.d + ' - ' + cal.season.long + ' - ' + (cal.isDay? 'día' : 'noche');
       tl.style.color= cal.isDay? '#ffcc00' : '#7ec8e3';
     }
     const ecoAge=document.getElementById('ecoAge');
