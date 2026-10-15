@@ -81,7 +81,22 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ok   ' + m); } else { fai
       barraAncho: (() => { const r = document.getElementById('velAntBar').getBoundingClientRect(); return Math.round(r.width); })()
     };
   });
-  ok(Math.abs(Number(hud.vel) - hud.estado) <= 1, `la tira muestra las raciones reales: HUD ${hud.vel} · estado ${hud.estado} (el latido es de 350 ms)`);
+  // no se compara UN instante: la tira va a su latido (350 ms) y el estado se mueve cuadro a cuadro, asi
+  // que lo que se comprueba es que la tira ALCANCE el estado (dentro de 1 racion) en unos pocos latidos.
+  // Con el rescate del atasco arreglado las entregas entran mucho mas rapido y un solo disparo podia
+  // pillarla dos raciones detras sin que eso fuera un defecto de pintura.
+  let sigue = true, muestras = [], desvioMin = 99;
+  for (let i = 0; i < 10 && sigue; i++) {
+    const m = await page.evaluate(() => ({
+      vel: Number((document.getElementById('velFoodCount') || {}).textContent || '-1'),
+      estado: Math.floor(colonyFood)
+    }));
+    muestras.push(`${m.vel}/${m.estado}`);
+    const d = Math.abs(m.vel - m.estado); if (d < desvioMin) desvioMin = d;
+    if (d <= 1) sigue = false;
+    if (sigue) await sleep(160);
+  }
+  ok(!sigue, `la tira muestra las raciones reales: se pone al dia en ${muestras.length} lectura(s) (desvio minimo ${desvioMin})`, muestras.slice(0, 4).join(' · '));
   ok(hud.fiber === String(hud.mats.fiber) && hud.stone === String(hud.mats.stone), `y los materiales: fibra ${hud.fiber}/${hud.mats.fiber} · piedra ${hud.stone}/${hud.mats.stone}`);
   ok(hud.barraAncho > 340, `la tira tiene hueco para el almacen sin tapar el mapa: ${hud.barraAncho} px`);
   ok(hud.barOculta, 'la barra ECONOMÍA de arriba ya no duplica el mismo dato');

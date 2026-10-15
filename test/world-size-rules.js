@@ -89,6 +89,9 @@ run('markSoilDirty(20,30)');
 const oneMs = med(() => run('markSoilDirty(20,30); soilCacheDirty=true; rebuildSoilCache(false)'), 15);
 console.log(`     BIG: mapa entero ${fullMs.toFixed(2)} ms · una calada ${oneMs.toFixed(3)} ms (5 celdas)`);
 check(oneMs < fullMs / 8, `repintar una calada cuesta ${Math.round(fullMs / Math.max(oneMs, 0.0001))}x menos que repintar el nido entero`);
+// el clima tambien repinta el nido (la capa de nieve y el brillo mojado viven en el cache): congelado
+// aqui, si no un cambio de tiempo a mitad de medida se come el lote que se esta contando
+run('weather.timer=0; weather.nextChange=DAY_LENGTH*60; weather.type="clear";');
 const antes = run('_soilFullRepaints');
 run('for(let r=20;r<24;r++) for(let c=20;c<24;c++) markSoilDirty(c,r)');
 run('rebuildSoilCache(false)');
@@ -103,13 +106,18 @@ check(run('soilCacheDirty') === false && run('soilDirtyCells') === null, 'y tras
 // un cambio estructural sigue forzando el mapa entero
 const f2 = run('_soilFullRepaints'); run('markSoilDirty(); rebuildSoilCache(false)');
 check(run('_soilFullRepaints') === f2 + 1, 'markSoilDirty() sin celda = cambio estructural = mapa entero');
-// una pasada mini no puede comerse el lote pendiente del principal
-run('markSoilDirty(); rebuildSoilCache(false)');
-run('markSoilDirty(40,25)');
-const lote = run('soilDirtyCells ? soilDirtyCells.size : 0');
-run('rebuildSoilCache(true)');
-check(run('soilDirtyCells') !== null && run('soilDirtyCells.size') === lote,
-  `la pasada mini no se come el lote pendiente del principal (siguen ${run('soilDirtyCells.size')} celdas en cola)`);
+// una pasada mini no puede comerse el lote pendiente del principal. Toda la secuencia va DENTRO de un
+// solo salto al contexto: repartida en cuatro, un tick del reloj falso pinta el cuadro principal entre
+// medias y se come el lote por su cuenta (que es licito), y la medida ya no contaba lo que decia contar.
+const mini = run(`(function(){
+  markSoilDirty(); rebuildSoilCache(false);          // estructural: deja el cache limpio
+  markSoilDirty(40,25);
+  const n = soilDirtyCells ? soilDirtyCells.size : 0;
+  rebuildSoilCache(true);                            // la pasada mini, sobre el mismo lienzo
+  return {n, despues: soilDirtyCells ? soilDirtyCells.size : -1};
+})()`);
+check(mini.n > 0 && mini.despues === mini.n,
+  `la pasada mini no se come el lote pendiente del principal (siguen ${mini.despues} de ${mini.n} celdas en cola)`);
 
 console.log('\n== 3) miel en tierra sin cavar NO esta almacenada ==');
 run('topoCreateFreshWorld(48,28)');
@@ -135,9 +143,10 @@ const honey = run(`(function(){
 check(honey.enterrada === false, `miel dentro de tierra intacta [${honey.solid.c},${honey.solid.r}] no cuenta como almacenada (era el bug: aparecía guardada sin cavar)`);
 check(honey.cavada === true, `la MISMA celda, ya cavada, sí cuenta como almacenada`);
 check(honey.enTunelAbierto === true, `miel en una celda de tunel de la despensa SÍ cuenta como almacenada`);
-check(src.includes('soil[_rr][_cc]===0'), `el dibujo de tarros comprueba que la celda este cavada (guarda en el codigo)`);
+check(/function dibujarAlmacen\(\)\{[\s\S]{0,260}const celdas=storageCells\(\);/.test(src) && /_boteAlmacen\(bx, by, _CUADRO, _CUADRO/.test(src),
+  `los tarros solo salen de celdas abiertas de la camara de reserva (guarda en el codigo: fuera de una celda no se dibuja bote)`);
 check(!src.includes("ctx.fillRect(x-6,y-10,28,8); ctx.fillStyle='#ffcc00'"), `no queda el letrero "?" flotante sobre las cajas de tesoro`);
-check(src.includes("ctx.fillText('?',x+8,y+9)"), `la caja de tesoro conserva su propia "?"`);
+check(!/fillText\(['"]\?['"]/.test(src), `la caja de tesoro ya no lleva su "?" fija (letrero prefijado, prohibido: solo brilla cuando una obrera pisa cerca)`);
 
 console.log('\n== 4) reserva y miel inicial proporcionales al tamano ==');
 const startRes = SIZES.map(([, c, r]) => {

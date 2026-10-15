@@ -3962,7 +3962,9 @@ function updateAnt(ant, dt){
     // entraba en la franja de 30 px de la boca cambiaba de rumbo hacia una gota que estaba a 180 px a la
     // derecha, se daba de narices contra la pared del tunel y caia de nuevo al nido. Medido: rebotando
     // 208-260-225-241-189-251 px de la miel, sin sumar NUNCA un golpe contra la pared (blk 0).
-    const _meta = ((targ.y < SURFACE_Y) !== (ant.y < SURFACE_Y - 2)) ? _boca : targ;
+    // (let, no const: la linea de abajo le cambia el destino cuando la obrera esta atascada, y con const
+    // aquello reventaba el cuadro entero - el bucle lo cazaba y el rescate no llegaba nunca a ejecutarse)
+    let _meta = ((targ.y < SURFACE_Y) !== (ant.y < SURFACE_Y - 2)) ? _boca : targ;
     // para la fisica del pozo: mi destino esta por encima de mi? (sin esto no sabe trepar hacia arriba en la ida)
     ant._quiereSubir = (targ.y < ant.y - 4);
     if(ant.blocked>10){ const _rs = routeStep(ant, _meta.x, _meta.y); if(_rs) _meta=_rs; }
@@ -4358,7 +4360,7 @@ function paintCacheCellTextured(c,r){
   if(_soilWet && !exp){ g.fillStyle='rgba(140,180,220,0.10)'; g.fillRect(x+1,y+1,CELL-3,1); }
   // y si esta nevando, la capa: dos pixeles palidos encima del bloque, con su borde de arriba mas claro.
   // Se pinta en el cache (y se marca el repintado al cambiar el clima), no encima en cada cuadro.
-  if(_soilNieve && exp){ g.fillStyle='rgba(232,242,252,0.72)'; g.fillRect(x,y-3,CELL,4); g.fillStyle='rgba(255,255,255,0.85)'; g.fillRect(x,y-3,CELL,1); }
+  if(_soilNieve && exp){ g.fillStyle='rgba(232,242,252,0.76)'; g.fillRect(x,y-4,CELL,5); g.fillStyle='rgba(255,255,255,0.88)'; g.fillRect(x,y-4,CELL,1); }
 }
 
 rebuildSoilCache = function(isMini){
@@ -4372,7 +4374,7 @@ rebuildSoilCache = function(isMini){
   if(soilIncrementalReady(isMini)){
     try{
       const cells=soilRepaintDirtyCells();
-      soilRepaintMoundsOver(cells);
+      if(!isMini) soilRepaintMoundsOver(cells);
       return;
     }catch(e){
       if(_soilIncWarned<3){ _soilIncWarned++; console.warn('[SOIL] repintado por lotes fallido, pintando el mapa entero:', e.message); }
@@ -4385,7 +4387,10 @@ rebuildSoilCache = function(isMini){
   for(let r=SURFACE_ROW;r<ROWS;r++) for(let c=0;c<COLS;c++) paintCacheCellTextured(c,r);
   // draw puddles/mounds atlas on top
   for(const m of mound) soilDrawMoundTile(m);
-  soilCacheDirty=false; soilDirtyCells=null;
+  // el lote pendiente del cache principal no se lo come una pasada mini (asi lo hace la definicion que
+  // esto reemplaza; aqui se habia perdido el guardado y la pasada del minimapa dejaba el cuadro principal
+  // con su repintado pendiente en el aire)
+  if(!isMini){ soilCacheDirty=false; soilDirtyCells=null; }
   _soilRepaints++; _soilFullRepaints++;
   window.__soilDbg = {canvas:soilCacheCanvas, cell:CELL};   // gancho de medida: test/voxel-graficos.js
 };
@@ -4701,7 +4706,7 @@ function drawFarm(ctx,W,H,isMini=false){
     ctx.fillStyle=g3; ctx.fillRect(x,SURFACE_Y-14,CELL,3);
     ctx.globalAlpha=1;
     ctx.fillStyle='#1e4a0f'; ctx.fillRect(x,SURFACE_Y-2,CELL,2);
-    if(_nievando){ ctx.fillStyle='rgba(238,246,255,0.74)'; ctx.fillRect(x,SURFACE_Y-16,CELL,4); ctx.fillStyle='rgba(255,255,255,0.55)'; ctx.fillRect(x,SURFACE_Y-17,CELL,1); }
+    if(_nievando){ ctx.fillStyle='rgba(238,246,255,0.80)'; ctx.fillRect(x,SURFACE_Y-18,CELL,6); ctx.fillStyle='rgba(255,255,255,0.62)'; ctx.fillRect(x,SURFACE_Y-19,CELL,1); }
     if(f>0.78 && (c*7)%5===0){
       ctx.fillStyle='rgba(46,154,32,0.22)'; ctx.fillRect(x+2,SURFACE_Y-10,12,6);
     }
@@ -5978,7 +5983,11 @@ function tickStep(dt){
     if(weather.type==='rain' || weather.type==='storm' || weather.type==='snow'){
       const _nev = weather.type==='snow';
       const count = weather.type==='storm'? 6 : _nev? 4 : 3;
-      for(let i=0;i<count;i++) weather.rainParticles.push({x:Math.random()*W, y: -H*1.8 + Math.random()* (H*1.8 + SURFACE_Y + 24), vx:_nev? -0.35+Math.random()*0.7 : -0.8+Math.random()*0.6, vy:_nev? 0.4+Math.random()*0.5 : 2+Math.random()*2, life:1, vy0:2+Math.random()*2, snow:_nev});
+      // y se siembran DENTRO de la franja de cielo que de verdad se ve (hasta 150 px por encima del mapa),
+      // no repartidas por el vacio de arriba del todo: con el reparto viejo el aguacero tenia sus gotas
+      // fuera del alcance de la camara, y nevando se enteraba uno por el velo pero no veia un solo copo.
+      const _techo = -Math.round(H*0.34), _sueloGotas = SURFACE_Y + 26;
+      for(let i=0;i<count;i++) weather.rainParticles.push({x:Math.random()*(COLS*CELL), y: _techo + Math.random()*(_sueloGotas - _techo), vx:_nev? -0.35+Math.random()*0.7 : -0.8+Math.random()*0.6, vy:_nev? 0.4+Math.random()*0.5 : 2+Math.random()*2, life:1, vy0:2+Math.random()*2, snow:_nev});
     }
     if(weather.rainParticles.length>280) weather.rainParticles.splice(0, weather.rainParticles.length-280);
     for(let i=weather.rainParticles.length-1;i>=0;i--){
@@ -7481,8 +7490,6 @@ function updateCalendarWidget(){
       else if(cal.gameHour>=12 && cal.gameHour<14) label='MEDIODÍA';
       dayNightEl.textContent=label;
       dayNightEl.style.color= cal.isDay? '#ffcc00' : '#7ec8e3';
-    }
-    if(weaEl){
     }
     drawCalClock(cal.gameHour, cal.isDay, cal.seasonIdx);
     // debug visible

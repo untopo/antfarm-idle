@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# en este taller Chrome trae sus .so fuera del sistema (el paquete base no las tiene): si existen, se las
+# presenta antes de arrancar, que si no cada prueba de navegador muere con «Code: 127» y parece que falla el juego.
+if [ -d /tmp/libs ]; then export LD_LIBRARY_PATH="/tmp/libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; fi
 # Test suite de Ant Farm RPG - node puro, sin dependencias instaladas.
 # Uso: bash test/run-all.sh
 cd "$(dirname "$0")/.." || exit 1
