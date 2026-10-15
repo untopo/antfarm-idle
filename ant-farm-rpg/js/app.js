@@ -2134,7 +2134,7 @@ function capacidadCria(){
 }
 window.capacidadCria=capacidadCria;
 // Umbral de despensa por debajo del cual la reina paga criar sola (las bocas de la cria).
-function _sostieneCriar(){ try{ return 3 + 0.6*brood.length; }catch(e){ return 3; } }
+function _sostieneCriar(){ try{ return 4 + 1.9*brood.length; }catch(e){ return 4; } }   // lo mismo que exige la puesta (vease updateQueen)
 const _MAT_DEFS = [
   {k:'stone', n:'PIEDRA',  col:'#9a9a9a', col2:'#6e6e6e', icon:'\u{1FAA8}', sirve:'muros y herramientas de pico'},
   {k:'clay',  n:'ARCILLA', col:'#c47a52', col2:'#8f5433', icon:'\u{1F9F1}', sirve:'paredes, granero y tinajas'},
@@ -2328,7 +2328,12 @@ function updateQueen(dt){
     // Cada cria ya puesta reclama su parte y la camara de cria tiene sitio limitado (broodSlots del
     // tamano del mundo): con el fijo de 3 la reina se comia la despensa en huevos, las larvas se
     // quedaban sin nada y el ciclo se paraba justo cuando empezaba a andar.
-    const _sostiene = need + 0.6*brood.length;
+    // El coeficiente es lo que de verdad cuesta criar a una de esas, no un capricho: una larva entera
+    // se cria con 1,8 de despensa (lo mide test/brood-hatch.js) y el huevo y la pupa tambien comen. Con
+    // 0,6 la reina de la semilla 2 se comio 17 raciones en 6 puestas en dos dias, la despensa cayo a 2,
+    // las larvas se quedaron sin nada y la colonia entero se apago al dia 9 - mientras 8 gotas de miel
+    // esperaban en el prado. Racionarse por lo que puede MANTENER es la unica salida.
+    const _sostiene = need + 1.9*brood.length;
     const _sitio = brood.length < capacidadCria();
     if(colonyFood>=_sostiene && _sitio){
       // FERTILIDAD EVOLUTIVA REALISTA - Lasius 4-7k (100/d pico), Atta 5M (30k/d), argentina billones

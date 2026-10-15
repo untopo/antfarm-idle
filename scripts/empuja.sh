@@ -42,13 +42,22 @@ REPO="$(printf '%s' "$REM" | sed -E 's#.*[:/]([^/]+)\.git$#\1#')"
 LOGIN="$(printf '%s' "$REM" | sed -E 's#.*[:/]([^/]+)/[^/]+(\.git)?$#\1#')"
 LH="$(git rev-parse HEAD)"
 RH="$(GIT_SSH_COMMAND="$(git config core.sshCommand)" git ls-remote "$REM" "refs/heads/$RAMA" | cut -f1)"
-API="$(timeout 40 curl -s "https://api.github.com/repos/$LOGIN/$REPO/commits/$RAMA" | grep -m1 '"sha"' | tr -d ' ",' | cut -d: -f2)"
+# La API tarda unos segundos en enterarse del empuje: si se lee a la primera sale el commit ANTERIOR y
+# el guion diria «no coincide» teniendo el push hecho. Se consulta hasta 6 veces y manda ls-remote,
+# que es el propio git del remoto.
+API=""
+for _i in 1 2 3 4 5 6; do
+  API="$(timeout 40 curl -s "https://api.github.com/repos/$LOGIN/$REPO/commits/$RAMA" | grep -m1 '"sha"' | tr -d ' ",' | cut -d: -f2 || true)"
+  [ "$API" = "$LH" ] && break
+  sleep 5
+done
 echo "== comprobado contra el remoto y contra la API =="
 echo "  local  $LH"
 echo "  ls-remote $RH"
 echo "  api       $API"
-if [ "$LH" = "$RH" ] && [ "$LH" = "$API" ]; then
+if [ "$LH" != "$RH" ]; then echo "  MAL: el remoto no tiene este commit (ls-remote: $RH)"; exit 1; fi
+if [ "$LH" = "$API" ]; then
   echo "  OK: GitHub tiene exactamente este commit"
 else
-  echo "  MAL: no coincide, no fiarse"; exit 1
+  echo "  OJO: el remoto (git) ya lo tiene; la API sigue mostrando $API - vuelve a mirar en un minuto"
 fi
