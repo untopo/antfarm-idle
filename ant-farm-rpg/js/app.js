@@ -210,6 +210,9 @@ let soilType=[]; // 0 vacío, 1 topsoil, 2 arcilla, 3 arena, 4 piedra
 let fertility=[]; // por columna 0-1
 let plants=[]; // vegetación exterior
 let worldMaterials={stone:0, clay:0, sand:0, fiber:0, wood:0};
+// Lo que la colonia ha HECHO con cada material (minarlo, cargarlo, llevarlo). De aqui saldra el invento:
+// sin arbol de tecnologia escrito, solo costumbre y observacion.
+let materialUso={};
 // inventos desbloqueables cuando son inteligentes
 let inventions={stone:false, clay:false, fiber:false, wood:false, fungus:false, masonry:false};
 
@@ -248,6 +251,26 @@ function initSoil(){
     if(depth<38) return 6; // 6 pizarra - 5 hits, requiere piedra+arcilla tools
     return 7; // 7 bedrock - casi irrompible (solo GEN10+IQ150+masonry)
   }));
+  // YACIMIENTOS. El subsuelo no puede ser solo tierra, arcilla y piedra: en su banda de profundidad
+  // aparecen cobre, hierro y oro, en nidos de 2-4 celdas (una celda suelta no se ve y no se recuerda).
+  // Cuestan mas de cavar que la piedra y hay que llegar: el pequeno empieza a ver cobre a 10 pisos, el
+  // hierro a 16 y el oro asoma cuando el nido ya bajo hondo o el mapa se expandio.
+  for(let r=SURFACE_ROW+10; r<ROWS-1; r++){
+    for(let c=1;c<COLS-1;c++){
+      const _t0=soilType[r][c], _d=r-SURFACE_ROW;
+      if(_t0!==4 && _t0!==6) continue;
+      const tipo = _d>=26 && _t0===6 ? 10 : _d>=16 ? 9 : 8;
+      const p = tipo===10? 0.030 : tipo===9? 0.038 : 0.052;
+      if(Math.random()>p) continue;
+      soilType[r][c]=tipo;
+      for(let k=0;k<1+Math.floor(Math.random()*3);k++){
+        const rr=r+Math.floor(Math.random()*2), cc2=c+Math.floor(Math.random()*3)-1;
+        if(rr>ROWS-2||cc2<1||cc2>=COLS-1) continue;
+        const _t=soilType[rr][cc2];
+        if(_t===4||_t===6) soilType[rr][cc2]=tipo;
+      }
+    }
+  }
   const cc=CENTER_COL; entradaCol=cc;
   // pozo inicial - la UNICA boca del nido: tres columnas de cesped, el resto queda blindado
   carveRect(cc-1,SURFACE_ROW,3,7);
@@ -425,12 +448,25 @@ function expandWorld(addRows){
     soilType.push(Array.from({length:COLS},()=>type));
     // vetas aleatorias de arcilla/piedra dura
     for(let c=0;c<COLS;c++) if(Math.random()<0.04) soilType[r][c]= (Math.random()<0.5?2:6);
+    // y vetas nuevas: cuanto mas hondo, mas duro y mas interesante (oro por debajo del hierro)
+    if(depth>=16) for(let c=1;c<COLS-1;c++){
+      if(soilType[r][c]!==4 && soilType[r][c]!==6) continue;
+      const _t = depth>=40 ? 10 : depth>=26 ? 9 : 8;
+      if(Math.random()< (_t===10?0.030:_t===9?0.036:0.02)) soilType[r][c]=_t;
+    }
   }
   ROWS=newRows;
   // expandir canvas cache
   try{
     soilCacheCanvas.height=ROWS*CELL; soilCacheCanvas.width=COLS*CELL;
-    markSoilDirty(); markSoilDirty();
+    // Cambiar el tamano del lienzo REINICIA su contexto: sin volver a apagar el suavizado, las filas
+    // recien liberadas salen borrosas (el dueno lo llamo «texturas raras»). Y el aviso de repintado
+    // tenia que ser UNO solo - marcar dos veces convertia «mapa entero» en «lote vacio», asi que las
+    // filas nuevas no se dibujaban hasta recargar la pagina, que es justo lo que se le veia.
+    const _cc = soilCacheCtx || soilCacheCanvas.getContext('2d');
+    if(_cc) _cc.imageSmoothingEnabled=false;
+    soilCacheCtx=_cc;
+    soilDirtyCells=null; soilCacheDirty=true; _soilRev++;
   }catch(e){}
   // worldH es ROWS*CELL implícito, no tocar H (canvas) - la cámara usa ROWS*CELL directamente
   pushEvent('evo',`🌍 Mundo expandido +`+addRows+` filas → `+ROWS+` profundidad`, `progresivo: más profundo = más duro y más recompensas`);
@@ -1112,8 +1148,23 @@ function countChambers(){ return worldStats().chambers; }
 // TOPO deferred: no mundo hasta elegir tamaño (no solo ocultar)
 let _topoHasWorld = false; // Topo: nada existe hasta elegir tamaño, no autocrear al recargar (solo al crear/cargar)
 if(_topoHasWorld){ try{ initSoil(); }catch(e){ console.warn('initSoil deferred fail',e); } } else { soil=[]; water=[]; soilType=[]; fertility=[]; plants=[]; hiddenRewards=[]; tlog('[TOPO] initSoil diferido - mundo no existe hasta elegir tamaño'); }
-function spawnFoodAt(x,y,amt=1, ftype='honey'){let sy=clamp(y, 8, H-8); const sx=clamp(x,16,W-16); const def=FOOD_DEFS[ftype]||FOOD_DEFS.honey; foods.push({x:sx,y:sy,amount:amt,max:amt,r:5+amt*2,pulse:Math.random()*Math.PI*2, ftype, rot:0, fresh:1, spawnDay:1, vy:0, grounded:false});}
-function spawnFoodSurface(x,amt=1, ftype='honey'){const sx=clamp(x+(Math.random()*20-10),20,W-20), sy=SURFACE_Y-8; const def=FOOD_DEFS[ftype]||FOOD_DEFS.honey; foods.push({x:sx,y:sy,amount:amt,max:amt,r:5+amt*2,pulse:Math.random()*Math.PI*2, ftype, rot:0, fresh:1, spawnDay:1, vy:0, grounded:true});}
+// Las gotas se SUMAN: si cae miel junto a otra gota, se echa encima en vez de plantar una migaja nueva.
+// Medido al dia 21 con la colonia reducida a 3 hormigas: `miel 33` en el mapa y `despensa 0,6`. No es que
+// falte comida - es que un viaje de media jornada para cargar UNA racion no paga, y como la miel no se
+// pudre el prado se llena de gotitas que nadie recoge. Junta la misma miel en 4 gotas gordas y el viaje
+// rinde, las reclutadas van al mismo sitio y la colonia puede comer mientras sigue cavando.
+const _GOTA_MERGE_PX2 = 26*26, _GOTA_TOPE = 5;
+function _juntaGota(sx, sy, amt, ftype, alAire){
+  for(const g of foods){
+    if(g.ftype!==ftype || g.amount>=_GOTA_TOPE) continue;
+    if((g.x-sx)*(g.x-sx)+(g.y-sy)*(g.y-sy) > _GOTA_MERGE_PX2) continue;
+    g.amount=Math.min(_GOTA_TOPE, (g.amount||1)+amt); g.max=Math.max(g.max||1, g.amount); g.r=5+g.amount*2;
+    return;
+  }
+  foods.push({x:sx,y:sy,amount:amt,max:amt,r:5+amt*2,pulse:Math.random()*Math.PI*2, ftype, rot:0, fresh:1, spawnDay:1, vy:0, grounded:!!alAire});
+}
+function spawnFoodAt(x,y,amt=1, ftype='honey'){ _juntaGota(clamp(x,16,W-16), clamp(y, 8, H-8), amt, ftype, false); }
+function spawnFoodSurface(x,amt=1, ftype='honey'){ _juntaGota(clamp(x+(Math.random()*20-10),20,W-20), SURFACE_Y-8, amt, ftype, true); }
 if(_topoHasWorld){ for(let i=0;i<4;i++){ const typ=['honey','berry','seed','mushroom'][i%4]; spawnFoodSurface(Math.random()*(W-160)+80,1+Math.floor(Math.random()*2), typ); } } else { tlog('[TOPO] foods diferidos'); }
 function pushToast(x,y,txt,color='#ffcc00',dur=2.2){toasts.push({x,y,txt,color,life:1,decay:1/dur/60,vy:-0.5}); if(toasts.length>10) toasts.shift();}
 // === DIÁLOGOS DEL JUEGO ===
@@ -2089,7 +2140,10 @@ const _MAT_DEFS = [
   {k:'clay',  n:'ARCILLA', col:'#c47a52', col2:'#8f5433', icon:'\u{1F9F1}', sirve:'paredes, granero y tinajas'},
   {k:'sand',  n:'ARENA',   col:'#e8cf8a', col2:'#b99f5f', icon:'\u231B', sirve:'cimenta y drena el tunel'},
   {k:'fiber', n:'FIBRA',   col:'#8fbf5f', col2:'#5d8438', icon:'\u{1F33F}', sirve:'cestas, cuerdas y acolchado'},
-  {k:'wood',  n:'MADERA',  col:'#a97a44', col2:'#7a5528', icon:'\u{1FAB5}', sirve:'andamios, puentes y techos'}
+  {k:'wood',  n:'MADERA',  col:'#a97a44', col2:'#7a5528', icon:'\u{1FAB5}', sirve:'andamios, puentes y techos'},
+  {k:'cobre', n:'COBRE',   col:'#c8703a', col2:'#7c3f1c', icon:'\u{1F7E0}', sirve:'punta, lamina y algo que brillar'},
+  {k:'hierro',n:'HIERRO',  col:'#b9bcc6', col2:'#5f6470', icon:'\u2699\u{FE0E}', sirve:'armazon duro: picos, marcos, coraza'},
+  {k:'oro',   n:'ORO',     col:'#e8c14b', col2:'#8a6a12', icon:'\u{1F7E1}', sirve:'no se oxida: ofrenda, adorno, contacto'}
 ];
 function storagePos(){
   // Topo: el almacen es el GRANERO que ellas construyen; si todavia no hay ninguno, la camara que
@@ -2512,7 +2566,7 @@ function updateFungus(dt){
     const _sp=storagePos(); let _aMano=0;
     for(const _f of foods){ if(Math.hypot(_f.x-f.x, _f.y-f.y) < CELL*16) _aMano++; }
     if(f.health>0.5 && f.size>0.8 && _aMano < Math.max(3, Math.round(workers.length*0.6)) && Math.random()<dt*0.0022*f.size*f.health){
-      spawnFoodAt(f.x, f.y, 1, 'mushroom');
+      spawnFoodAt(f.x, f.y, 1 + Math.round(f.size||1), 'mushroom');   // hongo grande, bocado grande
       if(Math.random()<0.25) pushToast(f.x, f.y-14, '🍄', '#e8d5a3', 1.1);
     }
     // patógeno si basurero cerca
@@ -3304,7 +3358,21 @@ function updateAnt(ant, dt){
           if(Math.random()<0.25) pushToast(ant.x, ant.y-12, '🚫', '#8a8a8a', 0.9);
           return;
         }
-        const _mt = (soilType[ant.digTarget.r]&&soilType[ant.digTarget.r][ant.digTarget.c])||1; if(_mt===7 && (gen<8 || !inventions.masonry)){ ant.digTarget=null; ant.digProgress=0; ant.state='EXPLORAR'; pushToast(ant.x,ant.y-10,'⛔ BEDROCK','#555'); return; }
+        const _mt = (soilType[ant.digTarget.r]&&soilType[ant.digTarget.r][ant.digTarget.c])||1;
+        // LA VETA PAGA: el material va al almacen de la colonia y se apunta cuanto se ha sacado, porque
+        // el USO de estos metales no lo va a decidir una receta escrita por nosotros: lo van averiguando
+        // ellas a fuerza de cargarlo, intentarlo y ver que aguanta (herramienta, lamina, adorno).
+        if(_mt===8 || _mt===9 || _mt===10){
+          const _mat = _mt===8?'cobre':_mt===9?'hierro':'oro';
+          const _amt = 1 + (ant.tool==='pick'?1:0) + (colonyIQ>132?1:0);
+          worldMaterials[_mat]=(worldMaterials[_mat]||0)+_amt;
+          if(!materialUso[_mat]) materialUso[_mat]={mina:0, carga:0, tocado:0};
+          materialUso[_mat].mina += _amt;
+          pushToast(ant.digTarget.c*CELL+8, ant.digTarget.r*CELL+8, _mat==='cobre'?'\u{1F7E0}':(_mat==='hierro'?'\u2699\u{FE0E}':'\u{1F7E1}'), '#ffd76a', 1.4);
+          pushEvent('discover', `\u26CF ${ant.id} saca ${_mat} x${_amt} de la roca`, `veta en [${ant.digTarget.c},${ant.digTarget.r}] - la colonia atesora ${worldMaterials[_mat]}`);
+          logAntHistory(ant, `extrajo ${_mat} x${_amt}`);
+          colonyFitness += _mat==='oro'?0.9:0.55;
+        } if(_mt===7 && (gen<8 || !inventions.masonry)){ ant.digTarget=null; ant.digProgress=0; ant.state='EXPLORAR'; pushToast(ant.x,ant.y-10,'⛔ BEDROCK','#555'); return; }
         soil[ant.digTarget.r][ant.digTarget.c]=0; if(soilType[ant.digTarget.r]) soilType[ant.digTarget.r][ant.digTarget.c]=0; markSoilDirty(ant.digTarget.c,ant.digTarget.r); ant.digsDone++; digs++; colonyFitness+=0.35; if(digs%6===0) pushImportant('invention', `⛏ ${digs} bloques cavados`, `GEN${typeof gen!=='undefined'?gen:0} - ${workers.filter(w=>w.state==='CAVANDO').length} activas en [${ant.digTarget?ant.digTarget.c:''},${ant.digTarget?ant.digTarget.r:''}]`);
         // residuo real: la tierra excavada va a basurero, no desaparece
         if(Math.random()<0.52){ addWaste(tx, ty, _mt); }
@@ -3506,13 +3574,17 @@ function updateAnt(ant, dt){
   // aprieta el hambre, TODAS salen y el enfriamiento no existe; mientras haya colchon se mantiene la
   // regla de media colonia para que el hormiguero siga creciendo.
   const _aprieto = colonyFood < 1.5;
+  // Quien va a por miel con la despensa floja NO se decide por sorteo de nombre: la regla de la paridad
+  // del id dejaba a media colonia mirando la miel para siempre, y las que nacian heredaban el «no» de su
+  // estirpe (el dueno lo vio como hormigas que pasan el rato sin hacer nada). Ahora: va todo el que no
+  // tiene una calada asignada, y las recolectoras aunque la tengan. La obra no se para - solo la manda
+  // la comida, no la rifa.
+  const _conTunel = (ant.state==='CAVANDO' && !!ant.digTarget);
   if(!ant.targetFood && !ant.food && (_aprieto || colonyFood < 5) &&
      (time - (ant._frustrada||-1e9)) >= (_aprieto ? 0 : 900) &&
-     (_aprieto || (ant.id ? ant.id.charCodeAt(1) % 2 === 0 : true))) {
-    // Media colonia, no toda: el id da una paridad estable por hormiga, sin recorrer el array en
-    // cada paso. Si todas salen a por miel, nadie cava y el hormiguero no crece (y sin camaras
-    // nuevas el tope de poblacion se queda clavado) - eso paso al medirlo: 0 bloques cavados en
-    // 75 s de reloj con la regla vieja de umbral alto.
+     (_aprieto || !_conTunel || ant.role==='RECOLECTORA' || ant.affinity==='RECOLECTORA')) {
+    // Si todas salen a por miel, nadie cava y el hormiguero no crece (y sin camaras nuevas el tope de
+    // poblacion se queda clavado) - eso paso al medirlo: 0 bloques cavados en 75 s de reloj.
     let _f=null,_d=Infinity; for(const _x of foods){ const _dd=dist(ant,_x); if(_dd<_d){_d=_dd;_f=_x;} }
     if(_f && (_aprieto || _d<640)) ant.targetFood=_f;   // con hambre no hay distancia larga
   }
@@ -3524,7 +3596,10 @@ function updateAnt(ant, dt){
       const wallAvg=(ant.sensors.wallLeft+ant.sensors.wallCenter+ant.sensors.wallRight)/3;
       const _frustrada = (time - (ant._frustrada||-1e9)) < 900; // viene de estrellarse: que abra paso
       // y con la despensa a cero no se abre galeria nueva: primero se come, despues se excava
-      if(!_aprieto && (_frustrada || (digIntent>0.48 && wallAvg>0.18 && Math.random()<0.11 && (ant.role==='EXCAVADORA' || Math.random()<0.38)))){
+      // y con la despensa floja no se abre calada NUEVA por gusto: solo para salir de un atasco, o si
+      // la colonia ya tiene de qué comer (primero se come, despues se excava)
+      const _pocaComida = colonyFood < 5;
+      if(!_aprieto && (_frustrada || (!_pocaComida && digIntent>0.48 && wallAvg>0.18 && Math.random()<0.11 && (ant.role==='EXCAVADORA' || Math.random()<0.38)))){
         const frontier=findFrontier();
         if(frontier.length){
           // Topo: muestrear en vez de filtrar las miles de celdas del frontier (coste fijo por hormiga
@@ -3547,9 +3622,9 @@ function updateAnt(ant, dt){
           // cavado más rápido si es excavadora, tiene rasgo alto o colonia evolucionada
           const bonus = (ant.role==='EXCAVADORA'? 8:0) + Math.floor(ant.traits.construccion/18) + Math.floor(colonyIQ/45) + Math.min(6, gen);
           ant.digTarget=pick; ant.digProgress=0;
-          const _type=soilType[pick.r]&&soilType[pick.r][pick.c]; const _hard = _type===7? 38 : _type===6? 14 : _type===4? 9 : _type===2? 4 : _type===3? -4 : 0; // Terraria: bedrock 38, pizarra 14, piedra 9, arcilla 4, arena -4 (blanda pero cae)
+          const _type=soilType[pick.r]&&soilType[pick.r][pick.c]; const _hard = _type===7? 38 : _type===10? 26 : _type===9? 20 : _type===8? 15 : _type===6? 14 : _type===4? 9 : _type===2? 4 : _type===3? -4 : 0; // Terraria: bedrock 38, pizarra 14, piedra 9, arcilla 4, arena -4 (blanda pero cae)
           // LEY REAL: piedra necesita herramienta/poder. Sin pico, 3x más lento y con chance de fallar
-          const needPower = (_type===4? 1.2 : _type===6? 2.2 : _type===7? 3.5 : 0);
+          const needPower = (_type===4? 1.2 : _type===8? 1.9 : _type===9? 2.6 : _type===10? 3.0 : _type===6? 2.2 : _type===7? 3.5 : 0);
           const hasPower = (ant.tool==='pick' || (colonyIQ>124 && gen>=3) || inventions.stone) ? 1.0 : 0.55;
           const hardMult = needPower>0 && hasPower<0.9 ? (1.6 + needPower*0.8) : 1;
           ant.digNeeded= (_type===7 && (gen<8 || colonyIQ<148 || !inventions.masonry))? 999 : Math.max(9, Math.floor((26 - bonus + _hard)*hardMult)); ant.state='CAVANDO'; 
@@ -3733,7 +3808,8 @@ function paintCacheCell(c,r,isMini){
       if(tseed===2){ soilCacheCtx.fillStyle='#e0c080'; soilCacheCtx.fillRect(x+4,y+11,2,1); }
       if(tseed===5){ soilCacheCtx.fillStyle='rgba(0,0,0,0.08)'; soilCacheCtx.fillRect(x+9,y+8,1,1); }
       // pared con ladrillo pixel donde colinda con tierra - más realista con mortero
-      const up = r>0 && soil[r-1][c]===1, down = r<ROWS-1 && soil[r+1][c]===1, left=c>0&&soil[r][c-1]===1, right=c<COLS-1&&soil[r][c+1]===1;
+      const _sol = (rr,cc)=> (rr<0||cc<0||rr>=ROWS||cc>=COLS) ? true : !!(soil[rr] && soil[rr][cc]===1);
+      const up = _sol(r-1,c), down = _sol(r+1,c), left = _sol(r,c-1), right = _sol(r,c+1);
       if(up){
         soilCacheCtx.fillStyle='#2e0f00'; soilCacheCtx.fillRect(x,y,CELL,4); 
         soilCacheCtx.fillStyle='#8b5a2b'; soilCacheCtx.fillRect(x,y, CELL,1);
@@ -3937,8 +4013,9 @@ function paintCacheCellTextured(c,r){
         else if(t===2) src = TEX_MAP.clay;
         else if(t===3) src = TEX_MAP.sand;
         else if(t===4) src = TEX_MAP.stone;
-        else if(t===6) src = TEX_MAP.slate;
+        else if(t===6 || t===9) src = TEX_MAP.slate;
         else if(t===7) src = TEX_MAP.bedrock;
+        else if(t===8 || t===10) src = TEX_MAP.stone;
         else src = TEX_MAP.topsoil;
       }
       try{
@@ -3950,6 +4027,15 @@ function paintCacheCellTextured(c,r){
           else soilCacheCtx.drawImage(texSuperficies, src.sx, src.sy, src.sw, src.sh, x-1, y-1, CELL+2, CELL+2);
         }
       }catch(e){ soilCacheCtx.fillStyle='#ff0000'; soilCacheCtx.fillRect(x-0.5,y-0.5,CELL+1,CELL+1); }
+      // la veta se ve: escamas del color del metal sobre la roca, con su sombra de talla
+      if(t===8||t===9||t===10){
+        const _fc = t===8?'#c8703a':t===9?'#c3c8d4':'#e8c14b';
+        soilCacheCtx.fillStyle='rgba(0,0,0,0.45)';
+        soilCacheCtx.fillRect(x+2,y+3,4,3); soilCacheCtx.fillRect(x+9,y+9,4,3);
+        soilCacheCtx.fillStyle=_fc;
+        soilCacheCtx.fillRect(x+3,y+4,2,1); soilCacheCtx.fillRect(x+10,y+10,2,1);
+        if(((c*7+r*5)%3)===0){ soilCacheCtx.fillRect(x+6,y+12,2,1); soilCacheCtx.fillStyle='rgba(255,255,255,0.35)'; soilCacheCtx.fillRect(x+6,y+12,1,1); }
+      }
       // overlay vein speckle for stone? atlas already has vein tile but we can occasionally overlay
       // keep subtle shadow for depth
       if(depth%6===0){
@@ -3958,7 +4044,8 @@ function paintCacheCellTextured(c,r){
       }
     } else {
       // túnel aire con textura beige + rim donde colinda
-      const up = r>0 && soil[r-1][c]===1, down = r<ROWS-1 && soil[r+1][c]===1, left=c>0&&soil[r][c-1]===1, right=c<COLS-1&&soil[r][c+1]===1;
+      const _sol = (rr,cc)=> (rr<0||cc<0||rr>=ROWS||cc>=COLS) ? true : !!(soil[rr] && soil[rr][cc]===1);
+      const up = _sol(r-1,c), down = _sol(r+1,c), left = _sol(r,c-1), right = _sol(r,c+1);
       // base aire
       try{
         soilCacheCtx.drawImage(texSuperficies, TEX_MAP.air.sx, TEX_MAP.air.sy, TEX_MAP.air.sw, TEX_MAP.air.sh, x-1, y-1, CELL+2, CELL+2);
@@ -4551,7 +4638,8 @@ function drawFarm(ctx,W,H,isMini=false){
       if(tseed===2){ ctx.fillStyle='#e0c080'; ctx.fillRect(x+4,y+11,2,1); }
       if(tseed===5){ ctx.fillStyle='rgba(0,0,0,0.08)'; ctx.fillRect(x+9,y+8,1,1); }
       // pared con ladrillo pixel donde colinda con tierra - más realista con mortero
-      const up = r>0 && soil[r-1][c]===1, down = r<ROWS-1 && soil[r+1][c]===1, left=c>0&&soil[r][c-1]===1, right=c<COLS-1&&soil[r][c+1]===1;
+      const _sol = (rr,cc)=> (rr<0||cc<0||rr>=ROWS||cc>=COLS) ? true : !!(soil[rr] && soil[rr][cc]===1);
+      const up = _sol(r-1,c), down = _sol(r+1,c), left = _sol(r,c-1), right = _sol(r,c+1);
       if(up){
         ctx.fillStyle='#2e0f00'; ctx.fillRect(x,y,CELL,4); 
         ctx.fillStyle='#8b5a2b'; ctx.fillRect(x,y, CELL,1);
