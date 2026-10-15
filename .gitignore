@@ -27,3 +27,8 @@ tools/
 .secrets/
 .ssh/
 CODIGO-GITHUB.txt
+
+# copias descargables del juego (se generan en el workspace, no van al repo)
+*.zip
+# capturas del lote de navegador
+screenshots/
