@@ -13,7 +13,10 @@ function makeEl(id, isCanvas) {
   const el = {
     id, style: fakeStyle(), classList: fakeClassList(), dataset: {}, children: [], innerHTML: '', textContent: '',
     width: 960, height: 576, offsetWidth: 960, offsetHeight: 576, clientWidth: 960, clientHeight: 576,
-    appendChild(c) { this.children.push(c); return c; }, insertBefore(c) { this.children.unshift(c); return c; }, append(...c) { }, prepend() { }, removeChild() { }, remove() { }, insertAdjacentHTML() { },
+    // El DOM de juguete no guarda el árbol: el juego reconstruye listas cada frame (filas de
+    // cria, perfil, taskbar) y sin tope aqui el lote se comia ~800 KB por frame y reventaba la
+    // memoria del contenedor antes de terminar.
+    appendChild(c) { if (this.children.length < 48) this.children.push(c); return c; }, insertBefore(c) { if (this.children.length < 48) this.children.unshift(c); return c; }, append(...c) { }, prepend() { }, removeChild() { }, remove() { }, insertAdjacentHTML() { },
     setAttribute(k, v) { this.dataset[k] = v; }, getAttribute(k) { return this.dataset[k] ?? null; }, hasAttribute: () => false, removeAttribute() { },
     querySelector: () => makeEl('s', false), querySelectorAll: () => [], getElementsByClassName: () => [],
     addEventListener() { }, removeEventListener() { }, dispatchEvent() { }, getBoundingClientRect: () => ({ left: 0, top: 0, width: 960, height: 576, right: 960, bottom: 576 }),

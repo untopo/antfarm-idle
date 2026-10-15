@@ -3222,7 +3222,11 @@ function updateAnt(ant, dt){
   // sensores (90px). Las fundadoras no tienen rol RECOLECTORA hasta que la colonia evoluciona, asi
   // que sin este impulso se quedaban en el tunel y la colonia nunca juntaba los 3 de la despensa
   // que pide la puesta. Es hambre, no especializacion: lo dispara solo con la despensa baja.
-  if(!ant.targetFood && !ant.food && colonyFood < Math.max(6, 2 + workers.length)) {
+  if(!ant.targetFood && !ant.food && colonyFood < 5 && (ant.id ? ant.id.charCodeAt(1) % 2 === 0 : true)) {
+    // Media colonia, no toda: el id da una paridad estable por hormiga, sin recorrer el array en
+    // cada paso. Si todas salen a por miel, nadie cava y el hormiguero no crece (y sin camaras
+    // nuevas el tope de poblacion se queda clavado) - eso paso al medirlo: 0 bloques cavados en
+    // 75 s de reloj con la regla vieja de umbral alto.
     let _f=null,_d=Infinity; for(const _x of foods){ const _dd=dist(ant,_x); if(_dd<_d){_d=_dd;_f=_x;} }
     if(_f && _d<640) ant.targetFood=_f;
   }
