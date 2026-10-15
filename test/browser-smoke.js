@@ -11,6 +11,7 @@
  */
 const http = require('http');
 const fs = require('fs');
+fs.mkdirSync('/tmp/antfarm-capturas',{recursive:true});
 const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const PORT = 8123;
@@ -51,7 +52,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok(await page.evaluate(() => document.querySelectorAll('#createSizeScreen [data-size]').length === 3), 'hay 3 tamanos elegibles (48x28, 64x36, 96x48)');
     // el splash se retira solo (~1.9 s) y muestra el menu: esperar como usuario, sin forzar
     await page.waitForFunction("!document.getElementById('splashScreen') || document.getElementById('splashScreen').style.display==='none'", { timeout: 15000 }).catch(() => { });
-    await page.screenshot({ path: 'screenshots/01-menu.png' });
+    await page.screenshot({ path: '/tmp/antfarm-capturas/01-menu.png' });
 
     const visible = sel => page.evaluate(s => { const e = document.querySelector(s); if (!e) return 'no-existe'; const r = e.getBoundingClientRect(); const st = getComputedStyle(e); return (st.display !== 'none' && st.visibility !== 'hidden' && r.width > 4) ? 'visible' : 'oculto'; }, sel);
     ok((await visible('#mainMenu')) === 'visible', 'el menu principal se muestra (splash no se queda pegado)');
@@ -59,7 +60,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await page.click('#btnMainCreate');
     await sleep(320);
     ok((await visible('#createSizeScreen')) === 'visible', 'click en CREAR NUEVA GRANJA abre la pantalla de tamanos');
-    await page.screenshot({ path: 'screenshots/02-tamanos.png' });
+    await page.screenshot({ path: '/tmp/antfarm-capturas/02-tamanos.png' });
 
     const before = await page.evaluate(() => ({ cols: window.COLS, rows: window.ROWS }));
     await page.click('#createSizeScreen [data-size="big"]');
@@ -67,10 +68,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     // si ya habia granja guardada, el juego pregunta antes de sobrescribir: responder SÍ
     const pregunta = await page.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (!h) return null; const b = [...h.querySelectorAll('button')].find(x => x.textContent.trim() === 'SÍ'); const txt = h.textContent.slice(0, 90); if (b) b.click(); return txt; });
     if (pregunta) console.log('   dialogo de sobrescritura detectado y confirmado: ' + pregunta.replace(/\s+/g, ' '));
-    await page.screenshot({ path: 'screenshots/03b-post-confirmar.png' });
+    await page.screenshot({ path: '/tmp/antfarm-capturas/03b-post-confirmar.png' });
     const genState = await visible('#worldGenScreen');
     ok(genState === 'visible', 'la barra de siembra aparece al elegir BIG (' + genState + ')');
-    await page.screenshot({ path: 'screenshots/03-sembrando.png' });
+    await page.screenshot({ path: '/tmp/antfarm-capturas/03-sembrando.png' });
 
     let done = true;
     try { await page.waitForFunction('window.COLS===96 && window.ROWS===48', { timeout: 30000 }); } catch (e) { done = false; }
@@ -211,7 +212,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         'y de verdad: una calada repintada en ' + fmt(cacheCheck.tInc) + ' contra ' + fmt(cacheCheck.tFull) + ' del mapa entero' + (factor ? ' (x' + factor + ' mas barato)' : ' (la calada ni se puede medir con este reloj)') + ' [condiciones ' + JSON.stringify(cacheCheck.condiciones[0]) + ']');
     }
 
-    await page.screenshot({ path: 'screenshots/04-mundo-big.png' });
+    await page.screenshot({ path: '/tmp/antfarm-capturas/04-mundo-big.png' });
     ok(errs.length === 0, 'cero errores de JS en pestana normal' + (errs[0] ? ' :: ' + errs.slice(0, 2).join(' | ') : ''));
     const f404 = [...new Set(net)];
     console.log('   recursos 404 (' + f404.length + '): ' + (f404.slice(0, 6).join(' | ') || 'ninguno'));
@@ -228,7 +229,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await sleep(1500);
     const reloaded = await page.evaluate(() => (window._topoDbg ? window._topoDbg() : {}));
     ok(reloaded.cols === 96 && reloaded.ants > 0, 'y CONTINUAR devuelve la granja 96x48 con ' + reloaded.ants + ' hormigas (dia ' + reloaded.day + ')');
-    await page.screenshot({ path: 'screenshots/05-recarga.png' });
+    await page.screenshot({ path: '/tmp/antfarm-capturas/05-recarga.png' });
 
     /* ---------- B) iframe sandbox sin allow-modals: el caso que estaba roto ---------- */
     const page2 = await browser.newPage();
@@ -247,7 +248,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       await frame.waitForFunction("!document.getElementById('splashScreen') || document.getElementById('splashScreen').style.display==='none'", { timeout: 20000 }).catch(() => { });
       await frame.evaluate(() => { document.getElementById('btnMainCreate').click(); });
       await sleep(400);
-      await page2.screenshot({ path: 'screenshots/06-iframe-tamanos.png' });
+      await page2.screenshot({ path: '/tmp/antfarm-capturas/06-iframe-tamanos.png' });
       await frame.evaluate(() => { document.querySelector('#createSizeScreen [data-size="small"]').click(); });
       await sleep(400);
       await frame.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (h) { const b = [...h.querySelectorAll('button')].find(x => x.textContent.trim() === 'SÍ'); if (b) b.click(); } });
@@ -259,7 +260,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       const fr = await frame.evaluate(() => { const d = window._topoDbg ? window._topoDbg() : {}; return { cols: window.COLS, rows: window.ROWS, ants: d.ants, started: document.body.classList.contains('game-started') }; });
       ok(fr.cols === 48 && fr.rows === 28, 'SMALL 48x28 sembrado en iframe sandbox (' + fr.cols + 'x' + fr.rows + ', ' + fr.ants + ' hormigas)');
       ok(errs2.length === 0, 'sin errores de JS dentro del iframe' + (errs2[0] ? ' :: ' + errs2.slice(0, 2).join(' | ') : ''));
-      await page2.screenshot({ path: 'screenshots/07-iframe-mundo.png' });
+      await page2.screenshot({ path: '/tmp/antfarm-capturas/07-iframe-mundo.png' });
     }
     if (blocked2.length) console.log('   avisos del navegador sobre dialogos: ' + blocked2.slice(0, 2).join(' | '));
 
@@ -362,9 +363,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       ok(!ahora.ocupado && ahora.vel === antes.vel && /\+1/.test(ahora.boton) && ahora.boton.indexOf('\u23f3') < 0,
         'y al terminar lo deja todo como estaba: velocidad x' + antes.vel + ' -> x' + ahora.vel + ', boton ' + JSON.stringify(ahora.boton) + (ahora.ocupado ? ' SIGUE OCUPADO' : '') +
         ' (el dia entero ha costado ' + Math.round((Date.now() - t0) / 1000) + ' s de reloj en esta maquina)');
-      await page3.screenshot({ path: 'screenshots/08-tiras-hud.png' });
+      await page3.screenshot({ path: '/tmp/antfarm-capturas/08-tiras-hud.png' });
       await page3.close();
-      await page.screenshot({ path: 'screenshots/08-tiras-hud.png' });
+      await page.screenshot({ path: '/tmp/antfarm-capturas/08-tiras-hud.png' });
     }
   } finally {
     if (!process.env.KEEP) await browser.close();

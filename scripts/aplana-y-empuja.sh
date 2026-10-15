@@ -15,6 +15,20 @@ RAMA="$(git branch --show-current)"
 REM="$(cat .secrets/remote.txt 2>/dev/null || true)"
 [ -n "$REM" ] || { echo "MAL: falta .secrets/remote.txt (git@ssh.github.com:usuario/repo.git)"; exit 1; }
 
+# El sandbox no conserva la config de git (`.git/config` esta fuera del snapshot a proposito), asi que el
+# remoto y la clave se reponeen SIEMPRE, igual que en empuja.sh - si no, el fetch de abajo dice
+# «'origin' does not appear to be a git repository» y el guion se cae antes de empezar.
+LLAVE="$(pwd)/.secrets/deploy_key"
+[ -f "$LLAVE" ] || LLAVE=".secrets/deploy_key"
+# el snapshot del sandbox vuelve con los permisos en 0644 y ssh entonces IGNORA la clave («bad
+# permissions»), que parece un problema de acceso y no lo es. Se arregla aqui mismo.
+chmod 600 "$LLAVE" 2>/dev/null || true
+git config user.name     "$(git log -1 --format=%an 2>/dev/null || echo untopo)"
+git config user.email    "$(git log -1 --format=%ae 2>/dev/null || echo untopo@users.noreply.github.com)"
+git remote remove origin 2>/dev/null || true
+git remote add origin "$REM"
+git config core.sshCommand "ssh -i $LLAVE -p 443 -o HostKeyAlias=github.com -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+
 git add -A
 git commit -q -m "$MSG" || echo "  (no habia nada que commitear aqui)"
 git branch -f _contenido HEAD

@@ -10,6 +10,7 @@
  */
 const http = require('http');
 const fs = require('fs');
+fs.mkdirSync('/tmp/antfarm-capturas',{recursive:true});
 const path = require('path');
 const puppeteer = require('puppeteer');
 const ROOT = path.resolve(__dirname, '..');
@@ -79,7 +80,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ok   ' + m); } else { fai
     ultimo = j; diaMax = Math.max(diaMax, j.dia);
     if (diaMax >= DIAS) break;
   }
-  await page.screenshot({ path: 'screenshots/15-colonia-dia' + diaMax + '.png' });
+  await page.screenshot({ path: '/tmp/antfarm-capturas/15-colonia-dia' + diaMax + '.png' });
 
   const f = ultimo;
   ok(diaMax >= 3, `el reloj de Chrome llego al dia ${diaMax} (harness: mismo ritmo)`);

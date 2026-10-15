@@ -212,7 +212,10 @@ let plants=[]; // vegetación exterior
 let worldMaterials={stone:0, clay:0, sand:0, fiber:0, wood:0};
 // Lo que la colonia ha HECHO con cada material (minarlo, cargarlo, llevarlo). De aqui saldra el invento:
 // sin arbol de tecnologia escrito, solo costumbre y observacion.
+let antsAtascados=0;
 let materialUso={};
+// habitos de cultivo: cuantas veces ha guardado cada celda comida de huerto, y cuantos votos hay contados
+let _huertoVotos={}; let _huertoVotosN=0;
 // inventos desbloqueables cuando son inteligentes
 let inventions={stone:false, clay:false, fiber:false, wood:false, fungus:false, masonry:false};
 
@@ -545,9 +548,12 @@ function updateSoilPhysics(dt){ updateFallingSand(dt); }
       ruler._hasDrag=true;
       let dragging=false;
       function yToWorld(clientY){
+        // misma escala que las marcas: 0 arriba del todo de la barra = el piso (SURFACE_Y), abajo = el
+        // fondo del mapa. Si se reparte el mundo entero, pinchar en el numero 10 no llevaba al 10.
         const rect=ruler.getBoundingClientRect();
-        const pct=(clientY-rect.top)/rect.height;
-        const worldY=pct*ROWS*CELL;
+        const pct=Math.max(0, Math.min(1, (clientY-rect.top)/Math.max(1,rect.height)));
+        const _pisos=Math.max(2, ROWS-SURFACE_ROW);
+        const worldY=SURFACE_Y + pct*_pisos*CELL;
         return worldY - (typeof H!=='undefined'?H:576)/(view.zoom||1)/2;
       }
       ruler.addEventListener('mousedown',e=>{ dragging=true; view.y=yToWorld(e.clientY); clampView(); updateDepthRuler(); e.preventDefault(); });
@@ -573,18 +579,47 @@ function updateDepthRuler(){
     const _sig=(view.y|0)+'|'+((view.zoom||1)*100|0)+'|'+ROWS+'|'+(typeof window!=='undefined'?window.innerWidth:0);
     if(_rulerSig===_sig) return;
     _rulerSig=_sig;
-    // limpiar y crear marcas discretas a ras de suelo, no barra flotante cielo-infierno
-    // niveles: 0 superficie, -5, -10, -15, -25, -35 (como pediste: 0____ -5 -10)
-    const levels=[0,5,10,15,25,35];
-    const names=['0 SUPERFICIE','-5 ARCILLA','-10 ARENA','-15 PIEDRA','-25 PIZARRA','-35 BEDROCK'];
-    const cols=['#7ec8e3','#ffcc00','#c2b280','#8a8a8a','#6b4a2b','#2a0a0a'];
+    // LOS NUMEROS CUENTAN DESDE EL PISO. La hilera del cesped es la 0 y hacia abajo 5, 10, 15...; arriba
+    // del piso no hay profundidad que medir, hay cielo, y por eso antes el «0» colgaba en el aire y el
+    // reparto de la barra se comia las tres filas del prado. Los materiales salen del mapa de verdad (y
+    // siguen valiendo cuando el mundo crece), no de una lista fija que se quedo corta al expandir.
+    const _pisos = Math.max(2, ROWS - SURFACE_ROW);
+    const _paso = _pisos>96? 25 : _pisos>60? 15 : _pisos>34? 10 : 5;
+    const levels=[]; for(let dv=0; dv<_pisos; dv+=_paso) levels.push(dv);
+    if(levels[levels.length-1] < _pisos-2) levels.push(_pisos-1);
+    // LA BARRA TAMBIEN DICE HASTA DONDE SE PUEDE BAILAR. Con el mundo pequeno (448 px de mapa) y una pantalla
+    // de 576, la camara no puede centrar nada por debajo de la fila 4: pinchar «15» se quedaba en el borde y
+    // el numero parecia mentir (medido en Chrome: el piso decia 336 y la camara paraba en 288). Los pisos que
+    // no se pueden centrar siguen escritos - la profundidad es real aunque la pantalla no la recorra - pero su
+    // cartel lo dice, para que el numero prometido y el salto sean la misma cosa.
+    const _viewH = (typeof H!=='undefined'? H:576)/(view.zoom||1);
+    const _maxCentrable = Math.floor((ROWS*CELL - _viewH/2 - SURFACE_Y)/CELL);
+    // el 0 (la raya del cesped) es la referencia: si no cabe, la camara se queda arriba del todo y se ve igual,
+    // asi que ese no se avisa - el aviso es para los pisos hondo que la pantalla no puede centrar.
+    const _pisoProfundo = (d)=> d>0 && d>_maxCentrable;
+    const NOMBRE_SUELO={0:'AIRE',1:'TIERRA',2:'ARCILLA',3:'ARENA',4:'PIEDRA',5:'PIEDRA',6:'PIZARRA',7:'ROCAMA',8:'COBRE',9:'HIERRO',10:'ORO'};
+    const _materialEn = (d)=>{
+      const r = Math.min(ROWS-1, SURFACE_ROW + d);
+      let cuenta={};
+      for(let cc=1;cc<COLS-1;cc++){ const t=soilType[r] ? soilType[r][cc] : 0; if(t) cuenta[t]=(cuenta[t]||0)+1; }
+      let mejor=0, mejc=-1;
+      for(const k in cuenta){ if(cuenta[k]>mejc){ mejor=+k; mejc=cuenta[k]; } }
+      return NOMBRE_SUELO[mejor] || 'TIERRA';
+    };
+    const names = levels.map(d=> (d===0? 'EL PISO' : d+' · ' + _materialEn(d)) );
+    const cols = levels.map(d=> d===0? '#7ec8e3' : (function(){ const m=_materialEn(d);
+      return m==='ARENA'?'#e8cf8a': m==='ARCILLA'?'#c47a52': m==='PIEDRA'?'#9a9a9a': m==='PIZARRA'?'#6b7a8a': m==='ROCAMA'?'#3a3a44':
+             m==='COBRE'?'#c8703a': m==='HIERRO'?'#b9bcc6': m==='ORO'?'#e8c14b':'#ffcc00'; })());
     // asegurar marcas existen
     levels.forEach((d,i)=>{
       let el=ruler.querySelector('.depth-mark-'+i);
       if(!el){
         el=document.createElement('div'); el.className='depth-mark depth-mark-'+i;
-        el.innerHTML='<i>'+(d===0?'0': '-'+d)+'</i>';
-        el.title='Ir a profundidad '+d+' ('+names[i]+')';
+        el.innerHTML='<i>'+d+'</i>';
+        el.title = _pisoProfundo(d)
+          ? 'Piso '+d+' (ahi toca '+names[i]+') - desde ahi ya se ve el fondo: la pantalla no da para centrarlo'
+          : 'Bajar al piso '+d+' (ahi toca '+names[i]+')';
+        el.style.opacity = _pisoProfundo(d) ? '0.55' : el.style.opacity;
         el.onclick=()=>{ // click como scrollbar
           const targetY = SURFACE_Y + d*CELL - (typeof H!=='undefined'?H:576)/(view.zoom||1)/2;
           view.y = Math.max(0, Math.min(ROWS*CELL - (typeof H!=='undefined'?H:576)/(view.zoom||1), targetY));
@@ -594,11 +629,10 @@ function updateDepthRuler(){
         const line=document.createElement('div'); line.className='depth-line depth-line-'+i;
         ruler.appendChild(line);
       }
-      // posición según profundidad real en el mundo, adaptada a cámara (como Terraria)
+      // la barra representa del PISO al FONDO del mundo: el cielo no es un piso que medir
       const worldY = SURFACE_Y + d*CELL;
-      // convertir a posición en ruler: ruler representa todo el mundo (0..ROWS*CELL), no solo viewport
-      const totalH = ROWS*CELL;
-      const pct = worldY/totalH;
+      const totalH = _pisos*CELL;
+      const pct = (d*CELL)/totalH;
       const rulerH = ruler.clientHeight||720;
       const y = pct*rulerH - 11;
       const lineEl=ruler.querySelector('.depth-line-'+i);
@@ -616,9 +650,10 @@ function updateDepthRuler(){
     // viewport indicator (amarillo) sigue existiendo para referencia de zoom
     let vp=ruler.querySelector('.depth-viewport');
     if(!vp){ vp=document.createElement('div'); vp.className='depth-viewport'; ruler.appendChild(vp); }
-    const totalH2 = ROWS*CELL;
+    const _pisosV = Math.max(2, ROWS-SURFACE_ROW);
+    const totalH2 = _pisosV*CELL;
     const viewH = (typeof H!=='undefined'? H: 576)/ (view.zoom||1);
-    const viewTop = view.y||0;
+    const viewTop = (view.y||0) - SURFACE_Y;
     const tPct = Math.max(0, Math.min(1, viewTop/totalH2));
     const bPct = Math.max(0, Math.min(1, (viewTop+viewH)/totalH2));
     const rulerH2 = ruler.clientHeight||720;
@@ -1041,8 +1076,12 @@ function drawStructures(ctx,W,H,isMini){
 function isSolidPixel(x,y){
   const c=Math.floor(x/CELL),r=Math.floor(y/CELL);
   if(c<0||c>=COLS||r<0||r>=ROWS) return true;
-  // cielo muy arriba fuera del shaft es muro - pero la superficie (y ~ SURFACE_Y-6) es libre para caminar
-  if(y < SURFACE_Y - 12 && Math.abs(x - (CENTER_COL*CELL+8)) > 28) return true;
+  // CIELO PISABLE (Topo: «hay un monton de recursos al aire libre que no agarran»). Arriba del cesped solo
+  // habia aire en una franja de 28 px centrada en el pozo: el resto del prado era muro, asi que una gota de
+  // miel a 40 px de la boca era LITERALMENTE inalcanzable y la excursion se reducian a asomarse al agujero.
+  // Se queda un techo de 34 px sobre la raya del cesped - lo justo para que no suban volando a la nada - y el
+  // prado entero es transitable; la x ya la sujeta el fisico (12..W-12), asi que no se pierden de pantalla.
+  if(y < SURFACE_Y - 34) return true;
   return soil[r][c]===1;
 }
 // === ENRUTADO POR GALERIAS ===
@@ -2175,35 +2214,66 @@ function storageCells(){
 }
 function granerosConstruidos(){ let n=0; try{ for(const st of structures){ if(st && st.type==='granary' && st.built!==false) n++; } }catch(e){} return n; }
 function capacidadAlmacen(){ return 14 + storageCells().length*2 + granerosConstruidos()*12; }
-// un bote/apoyo dibujado en la parte Baja de la celda (nunca en el aire)
-function _boteAlmacen(cx, cy, w, h, col, col2, brillo){
+// UN CUADRO, SIEMPRE DEL MISMO TAMAÑO. El dueno lo pidio claro: las siluetas distintas (bote, losa,
+// monton) se leian mal a 16 px y no decian que eran. Todo es un cuadrado de 6x6 con su borde negro y su
+// franja de apoyo; lo unico que cambia es el color, y los metales llevan encima dos puntitos del tono
+// claro (asi se distingue el cobre del hierro sin leer nada). Lo que hay dentro se cuenta por cuadros:
+// mas material = mas cuadros, no cuadros mas gordos.
+const _CUADRO=6;
+function _boteAlmacen(cx, cy, w, h, col, col2, brillo, puntos){
   ctx.fillStyle='#000'; ctx.fillRect(cx-1, cy-h-1, w+2, h+2);
   ctx.fillStyle=col; ctx.fillRect(cx, cy-h, w, h);
-  ctx.fillStyle=col2; ctx.fillRect(cx, cy-Math.max(1,h*0.35), w, Math.max(1,h*0.35));
+  ctx.fillStyle=col2; ctx.fillRect(cx, cy-Math.max(1,h*0.34), w, Math.max(1,h*0.34));
   if(brillo){ ctx.fillStyle='#fff'; ctx.fillRect(cx+1, cy-h+1, 1, Math.max(1,h*0.4)); }
+  if(puntos){ ctx.fillStyle=puntos; ctx.fillRect(cx+1, cy-h+1, 1, 1); ctx.fillRect(cx+3, cy-3, 1, 1); }
 }
+// cuantos cuadros le tocan a una cantidad: 1 hasta 8, 2 hasta 27, 3 hasta 64, 4 mas
+function _cuadrosDe(n){ return n<=0?0 : n<=8?1 : n<=27?2 : n<=64?3 : 4; }
+const _METAL_PUNTO={cobre:'#ffb877', hierro:'#e6ecf6', oro:'#fff2a8'};
 function dibujarAlmacen(){
   const celdas=storageCells();
   if(!celdas.length) return;
-  // 1) raciones de miel: tarros de ambar en los estantes Bajos
-  const miel=Math.max(0, Math.min(Math.floor(colonyFood), celdas.length, 8 + granerosConstruidos()*4));
+  // 1) las raciones de miel: los mismos cuadros de 6x6, en ambar, apoyados en el suelo de la celda
+  const _raciones=Math.max(0, Math.floor(colonyFood||0));
+  const miel=Math.max(0, Math.min(_cuadrosDe(_raciones)*2, celdas.length, 8 + granerosConstruidos()*4));
   let i=0;
   for(; i<miel; i++){
     const cd=celdas[i%celdas.length]; if(!cd) continue;
     const bx=cd.c*CELL + 4, by=cd.r*CELL + CELL - 1;
-    _boteAlmacen(bx, by, 7, 9, (i%3===0)?'#ffcc33':'#ffda66', '#ff8c00', true);
+    _boteAlmacen(bx, by, _CUADRO, _CUADRO, (i%3===0)?'#ffcc33':'#ffda66', '#ff8c00', true, null);
   }
   // 2) materiales: un monton por recurso, con su propio color y tamano segun cuanto hay
   for(let m=0;m<_MAT_DEFS.length;m++){
     const d=_MAT_DEFS[m], n=Math.max(0, Math.floor(worldMaterials[d.k]||0));
     if(!n) continue;
-    const alto=Math.max(1, Math.min(3, 1+Math.floor(n/4)));   // la pila crece hacia arriba, no de lado
+    const alto=_cuadrosDe(n);                              // cuantos cuadros, no cuanto de gordos
     const cd=celdas[(i+m)%celdas.length]; if(!cd) continue;
-    const bx=cd.c*CELL + 2, base=cd.r*CELL + CELL - 1;
-    for(let p=0;p<alto;p++) _boteAlmacen(bx, base - p*4, d.k==='sand'||d.k==='wood'? 9:8, 4, d.col, d.col2, p===alto-1);
+    const base=cd.r*CELL + CELL - 1;
+    // en fila, del centro de la celda hacia fuera: la cantidad se lee de un golpe y nada flota
+    const _ancho = alto*_CUADRO + (alto-1)*1;
+    const bx0 = cd.c*CELL + Math.max(1, Math.round((CELL-_ancho)/2));
+    for(let p=0;p<alto;p++) _boteAlmacen(bx0 + p*(_CUADRO+1), base, _CUADRO, _CUADRO, d.col, d.col2, p===alto-1, _METAL_PUNTO[d.k]||null);
     i+=1;
   }
   // 3) la marca de la camara: un travesaño de madera en el techo, para que se vea QUE es un sitio
+  // 3) LA CAMARA, no botes sueltos en un agujero (Topo: «el almacen tiene que ser una estructura de verdad»).
+  // Se enmarca el contorno de las celdas abiertas - dintel, suelo y dos postes - y con cada granero que
+  // construyen sale un travesano mas: la obra se ve en el muro, no hace falta contarla en un cartel.
+  let _c0=1e9,_c1=-1e9,_r0=1e9,_r1=-1e9;
+  for(const cd of celdas){ if(cd.c<_c0)_c0=cd.c; if(cd.c>_c1)_c1=cd.c; if(cd.r<_r0)_r0=cd.r; if(cd.r>_r1)_r1=cd.r; }
+  if(_c1>=_c0 && _r1>=_r0){
+    const x0=_c0*CELL, y0=_r0*CELL, x1=(_c1+1)*CELL, y1=(_r1+1)*CELL;
+    ctx.fillStyle='#3a2610';
+    ctx.fillRect(x0-2, y0-2, (x1-x0)+4, 3);
+    ctx.fillRect(x0-2, y1-1, (x1-x0)+4, 3);
+    ctx.fillRect(x0-2, y0-2, 3, (y1-y0)+4);
+    ctx.fillRect(x1-1, y0-2, 3, (y1-y0)+4);
+    ctx.fillStyle='#5b3d1c'; ctx.fillRect(x0+1, y0-1, (x1-x0)-2, 1);
+    for(let k=0;k<Math.min(3, granerosConstruidos());k++){
+      const yy = y0 + Math.round((_r1-_r0+1)*CELL*(k+1)/4);
+      ctx.fillStyle='#4a3214'; ctx.fillRect(x0+1, yy-1, (x1-x0)-2, 2);
+    }
+  }
   const top=celdas[celdas.length-1];
   if(top){ ctx.fillStyle='#4a3214'; ctx.fillRect(top.c*CELL-CELL, top.r*CELL+1, CELL*5, 2); ctx.fillStyle='#2a1b0a'; ctx.fillRect(top.c*CELL-CELL, top.r*CELL+3, CELL*5, 1); }
 }
@@ -2525,6 +2595,18 @@ if(workers.length < getMaxPopulation()){
     }
   }
 }
+// El voto que ensaya el cultivo: donde se suelta el sustrato (mugrón y tierra) y donde se guarda la comida
+// de huerto, ahi puede prender el hongo. Se apunta la celda que se pisa en ese momento, con mas peso para el
+// humus que para la miel, porque el jardin de hormigas cutter Atta CRECE sobre el sustrato que ellas traen.
+function _votaHuerto(x, y, peso){
+  try{
+    const c=Math.floor(x/CELL), r=Math.floor((y+8)/CELL);
+    if(r<=SURFACE_ROW || r>=ROWS-1 || c<1 || c>=COLS-1) return;
+    if(!soil[r] || soil[r][c]!==0) return;                    // tiene que ser camara abierta
+    if(!soil[r+1] || soil[r+1][c]===0) return;                 // y con suelo debajo donde apoyar
+    const k=c+','+r; _huertoVotos[k]=(_huertoVotos[k]||0)+peso; _huertoVotosN+=peso;
+  }catch(e){}
+}
 // v8 realismo: jardines fúngicos - agricultura de 50 Ma (Atta) + gestión de basureros separados
 function updateFungus(dt){
   // asegurar un jardín inicial claustro (reina trae pellet)
@@ -2578,12 +2660,45 @@ function updateFungus(dt){
     for(let w of wastePiles){ if(Math.hypot(w.x-f.x,w.y-f.y)<48) f.health-= dt*0.00012; }
     if(f.health<=0){ fungusGardens.splice(i,1); pushEvent('death','🍄 Jardín fúngico muere - falta cuidado/humedad'); }
   }
-  // crear nuevo jardín cuando colonia crece y aprende hongo
-  if(inventions.fungus && fungusGardens.length<3 && workers.length>=8 && colonyFood>6 && Math.random()<0.0016*Math.max(1, workers.length*0.5)){
-    const q=broodAnchor();
-    fungusGardens.push({x:q.x+(Math.random()-0.5)*44, y:q.y+ 18+Math.random()*34, c:0,r:0, health:0.78, size:0.9, age:0, fed:0});
-    pushEvent('evo','🍄 Nuevo jardín fúngico excavado',`Jardines: ${fungusGardens.length}`);
+  // crear nuevo jardín cuando la colonia crece y aprende hongo. El sitio y el momento salen del USO (los
+  // votos de las obreras que guardan setas y semillas alli), no del dado: asi el huerto aparece donde la
+  // comida ya pasa, y una colonia con mas gen e inteligencia lo aprende con menos ensayos - el oficio se
+  // hereda, no se regala. Si los votos se acumulan sin tener el invento, es que ELLOAS lo descubren: el
+  // invento de `fungus` se abre desde el contador, igual que se abrira el de los metales (ROADMAP 2.7).
+  if(fungusGardens.length<3+Math.floor(workers.length/18) && workers.length>=6 && colonyFood>4){
+    const _umbral = Math.max(2, Math.round(11 - gen*1.6 - Math.max(0,(colonyIQ-112))/9));
+    let _mejor=null, _votos=0, _clave=null;
+    for(const k in _huertoVotos){ if(_huertoVotos[k] > _votos){ const p=k.split(','); _mejor={c:+p[0], r:+p[1]}; _votos=_huertoVotos[k]; _clave=k; } }
+    if(_mejor && _votos >= _umbral){
+      const gx=_mejor.c*CELL+8, gy=_mejor.r*CELL+8;
+      let _vecino=null;
+      for(const g of fungusGardens){ if(Math.hypot(g.x-gx,g.y-gy)<CELL*3) _vecino=g; }
+      if(_vecino && (_vecino.fed||0) < 18){
+        // el huerto de al lado todavia tiene hambre: los votos son cuidado, no siembra nueva
+        _vecino.fed=Math.min(24, (_vecino.fed||0)+0.5);
+        _vecino.health=Math.min(1, _vecino.health+0.02);
+        delete _huertoVotos[_clave];
+        if(!inventions.fungus && (_vecino.fed||0) >= 10){
+          // y el invento sale de esto: si le llevan sustrato y lo mantienen, YA saben cultivar - nadie se lo
+          // conto, lo cuentan los votos.
+          inventions.fungus=true;
+          pushEvent('invention',`🍄 Cultivo descubierto: ${_votos} cargas de sustrato manten el jardin de la camara`, `Aprendizaje por uso - GEN${gen}, IQ ${Math.round(colonyIQ)}`);
+          notifyCanon('🍄 CULTIVO', 'Las obreras aprenden a mantener el hongo donde tiran el sustrato', 5200);
+        }
+      } else if(!soil[_mejor.r] || soil[_mejor.r][_mejor.c]!==0){
+        delete _huertoVotos[_clave];                          // alguien tumbo el suelo: se busca otro rincon
+      } else {
+        fungusGardens.push({x:gx, y:gy, c:_mejor.c, r:_mejor.r, health:0.78, size:0.9, age:0, fed:0});
+        delete _huertoVotos[_clave];
+        inventions.fungus=true;
+        pushEvent('evo','🍄 Nuevo jardín fúngico, en el rincón que ellas usan',`Jardines: ${fungusGardens.length} · ${_votos} cargas votan ese suelo`);
+        notifyCanon('🍄 HUERTO NUEVO', `El trafico de la colonia abre un jardin en [${_mejor.c},${_mejor.r}]`, 4800);
+        if(Math.random()<0.6) pushToast(gx, gy-14, '🍄', '#2de67a', 1.4);
+      }
+    }
   }
+  // los habitos viejos se enfrian: si una celda lleva un dia sin votos, deja de competir
+  if(_huertoVotosN > 40 && (time % (DAY_LENGTH*2)) < 200){ for(const k in _huertoVotos){ _huertoVotos[k]-=1; if(_huertoVotos[k]<=0) delete _huertoVotos[k]; } _huertoVotosN=0; }
 }
 function updateWaste(dt){
   // cada excavación genera residuo que debe ir a cámara separada
@@ -3014,7 +3129,88 @@ function getSensorsForAnt(ant){
   }
   return [foodAngle, foodDist, pheroStr, pheroAng, wallLeft, wallCenter, wallRight, fatigue, carrying, commIn1, commIn2];
 }
+// LOCOMOCION A X64 (medido, y queda aqui para que nadie lo vuelva a intentar sin saber el precio). El paso
+// de cada tick es 1.05*gameSpeed, o sea 67 px a x64: cuatro celdas de golpe. Partirlo en trozos de 8 px hace
+// que la hormiga deje de saltar por encima de las paredes y tenga que pasar por las galerias, que es lo
+// correcto... y la colonia se muere de hambre: la recogida de miel se vuelve 5-8 veces mas lenta y la
+// economia entera esta calibrada con el salto (medido: 0 obreras y 0 raciones al dia 8 en las 3 semillas con
+// el paso partido, con y sin el contador de golpes corregido). Si algun dia se intenta, hay que reequilibrar
+// forrajeo y puesta a la vez; no es un parche de un turno.
 function updateAnt(ant, dt){
+  // SALIDA GLOBAL DEL ATASCO. El atasco no era un problema del forrajeo: una hormiga SIN objetivo puede
+  // quedar encajada en una celda y contar blocked hasta 4.430 pasos, porque las unicas reglas que miran
+  // el atasco viven dentro de la persecucion de la miel. Medido en el mundo pequeno con seis dias de
+  // simulacion: `enSuperficie 0 de 11` desde el dia 5, nueve gotas de miel intactas en el prado, y AW14
+  // clavada en (430,262) con blk 724 -> 4430 sin que nada la sacara. O sea: no es que no sean
+  // aventureras, es que quedan encajadas abajo y no vuelven a ver el cielo.
+  // ENCAJADA = no se ha movido del sitio, no «ha chocado n veces». Todas las ramas de movimiento ponian
+  // blocked=0 con cada paso que podian dar, y una hormiga que rebota contra una pared SIEMPRE puede dar un
+  // pasito lateral: su contador de golpes se borraba y ninguna cura de atasco (ni la A* que ya existia ni
+  // ninguna nueva) llegaba a disparar. Medido: AH9R rebotando 120 ticks en x=452, y 371..432, blk 0, con
+  // la camara de basura a 31 px a la derecha; y AW14 paseando en circulo 4.430 pasos sin objetivo.
+  // Los estados que se trabajan en un sitio fijo no son encajamiento: la que cava se queda pegada a la pared
+  // hasta romperla, y la del jardin del hongo vive encima de su parcela. Si se las cuenta como atascadas, el
+  // rescate les reinicia el progreso cada 40 ticks y no terminan nunca (medido: 814 rescates en 8 dias).
+  const _paradaHonesta = ant.state==='TRABAJAR_JARDIN' || ant.state==='DESCANSAR'
+    || (ant.state==='CAVANDO' && ant.digTarget);
+  if(!ant.isQueen && !_paradaHonesta){
+    const _conObj = !!(ant.targetFood || ant.wasteTarget || ant.food || ant.digTarget);
+    ant._ciclo = (ant._ciclo||0) + 1;
+    const _cada = _conObj ? 40 : 120;
+    if(ant._ciclo % _cada === 0){
+      if(ant._anclaX === undefined){ ant._anclaX=ant.x; ant._anclaY=ant.y; }
+      else {
+        const _neto = Math.hypot(ant.x-ant._anclaX, ant.y-ant._anclaY);
+        if(_neto < (_conObj? 6: 8)) ant.blocked = 61;                 // que las curas que ya existen tengan su oportunidad
+        else { ant.blocked = Math.min(ant.blocked||0, 8); }
+        ant._anclaX = ant.x; ant._anclaY = ant.y;
+      }
+    }
+  }
+  if((ant.blocked||0) > 60 && !ant.isQueen){
+    ant.blocked = 0;
+    const _sinObjetivo = !(ant.targetFood || ant.wasteTarget || ant.food || ant.digTarget);
+    if(_sinObjetivo){
+      // paseando y dando vueltas en el mismo rincon: basta con regalarle un rumbo nuevo
+      ant.angle += Math.PI*0.5 + (Math.random()-0.5)*0.9;
+    } else {
+      const _yoR=Math.floor((ant.y+8)/CELL), _yoC=Math.floor(ant.x/CELL);
+      // a) busca aire pisable cerca; subir puntua mas que bajar, porque arriba esta la comida
+      let _aire=null, _da=1e9;
+      for(let r=_yoR-6; r<=_yoR+6; r++){
+        if(r<SURFACE_ROW-1 || r>=ROWS) continue;
+        for(let c=_yoC-6; c<=_yoC+6; c++){
+          if(c<0 || c>=COLS || !soil[r] || soil[r][c]!==0) continue;
+          const d = Math.abs(r-_yoR) + Math.abs(c-_yoC) - (r<_yoR ? 1.1 : 0);
+          if(d<_da){ _da=d; _aire={r,c}; }
+        }
+      }
+      // b) si hay aire pero no lo alcanza, la solucion es cavar LA PARED que le estorba, no empujarla
+      let _cavar=null, _bc=1e9;
+      if(_aire) for(let dr=-1; dr<=1; dr++) for(let dc=-1; dc<=1; dc++){
+        const r=_yoR+dr, c=_yoC+dc;
+        if(r<SURFACE_ROW || r>=ROWS || c<0 || c>=COLS) continue;
+        if(!soil[r] || soil[r][c]!==1) continue;                       // solo tierra suelta
+        if(soilType[r] && soilType[r][c]===7) continue;                // la roca madre no se cava
+        const haciaAire = Math.abs(r-_aire.r) + Math.abs(c-_aire.c);
+        if(haciaAire > _da+1) continue;                                // que el golpe abra hacia el hueco
+        const coste = haciaAire + (dr>0? 0.5:0) + Math.random()*0.3;
+        if(coste<_bc){ _bc=coste; _cavar={r,c}; }
+      }
+      if(_cavar){
+        // si ya estaba cavando ESA celda, no le borres el progreso: solo cambia de objetivo si es otra
+        if(!ant.digTarget || ant.digTarget.r!==_cavar.r || ant.digTarget.c!==_cavar.c){ ant.digTarget=_cavar; ant.digProgress=0; }
+        ant.state='CAVANDO';
+        if(!ant.food) ant.targetFood=null;                             // que no persiga dos cosas a la vez
+        antsAtascados = (antsAtascados||0)+1;
+      } else if(_aire){
+        ant.angle = Math.atan2((_aire.r+0.5)*CELL - ant.y, (_aire.c+0.5)*CELL - ant.x);
+        if(!ant.food && !ant.digTarget) ant.state='EXPLORAR';
+      } else {
+        ant.angle += Math.PI*0.5 + (Math.random()-0.5)*0.8;           // ni aire ni tierra: que pruebe por detras
+      }
+    }
+  }
   // herramientas: forja cerca del almacén/taller si es inteligente
   if(!ant.tool && !ant.food && dist(ant, storagePos())<26 && Math.random()<0.009){
     tryCraftTool(ant);
@@ -3181,7 +3377,11 @@ function updateAnt(ant, dt){
         if(Math.abs(bestWall.dc)===1 && bestWall.dr===0){
           // vertical wall -> angle debe ser -PI/2 (arriba) o PI/2 (abajo) según destino
           // usa steer y sensores para decidir si va arriba o abajo
-          const wantUp = (ant.digTarget && ant.digTarget.r < _r) || (ant.food && storagePos().y < ant.y) || Math.sin(ant.angle) < -0.3;
+          // El destino manda, no la suerte del angulo. Faltaba el caso de IDA: la que persigue una gota en el
+          // prado no lleva digTarget ni comida, asi que «subo o bajo» se decidia por como miraba al chocar con
+          // la pared - media veces trepaba hacia el nido y nunca salia. Medido: con 5 de 27 obreras con
+          // objetivo en la superficie, `enSuperficie 0 de 27` (daban vueltas dentro del pozo).
+          const wantUp = (ant.digTarget && ant.digTarget.r < _r) || (ant.food && storagePos().y < ant.y) || ant._quiereSubir || Math.sin(ant.angle) < -0.3;
           const targetAngle = wantUp ? -Math.PI/2 : Math.PI/2;
           // interpola ángulo hacia vertical (física: la hormiga gira el cuerpo 90°)
           let diff=((targetAngle - ant.angle + Math.PI*3)%(Math.PI*2)-Math.PI);
@@ -3317,7 +3517,7 @@ function updateAnt(ant, dt){
     const ang=Math.atan2(leader.y-ant.y, leader.x-ant.x);
     ant.angle+= ((ang-ant.angle+Math.PI*3)%(Math.PI*2)-Math.PI)*0.19;
     const nx=ant.x+Math.cos(ant.angle)* (1.18*gameSpeed), ny=ant.y+Math.sin(ant.angle)*(1.18*gameSpeed);
-    if(canMove(nx,ny)){ant.x=nx; ant.y=ny;}
+    if(canMove(nx,ny)){ant.x=nx; ant.y=ny;} else ant.blocked++;
     return;
   }
   if(ant.state==='LLEVANDO_BASURA' && ant.wasteTarget){
@@ -3325,10 +3525,11 @@ function updateAnt(ant, dt){
     const ang=Math.atan2(tgt.y-ant.y, tgt.x-ant.x);
     ant.angle+= ((ang-ant.angle+Math.PI*3)%(Math.PI*2)-Math.PI)*0.13;
     const nx=ant.x+Math.cos(ant.angle)*1.05*gameSpeed, ny=ant.y+Math.sin(ant.angle)*1.05*gameSpeed;
-    if(canMove(nx,ny)){ant.x=nx; ant.y=ny;}
+    if(canMove(nx,ny)){ant.x=nx; ant.y=ny;} else ant.blocked++;
     if(dist(ant,tgt)<10){
       // deja basura en cámara de desecho
       addWaste(tgt.x+(Math.random()-0.5)*12, tgt.y+(Math.random()-0.5)*10);
+      _votaHuerto(ant.x, ant.y, 2);           // el mugron deja el suelo senalado: ahi prendara el hongo
       if(wastePiles.length>22) wastePiles.shift();
       ant.state='EXPLORAR'; ant.wasteTarget=null; ant.fitness+=0.12;
     }
@@ -3544,12 +3745,35 @@ function updateAnt(ant, dt){
     // rincon sin galeria hasta el punto exacto de los tarros. La miel se guarda ahi mismo - lo que
     // importa es que entre en el nido, no que acierte con la celda - y ella vuelve libre a por mas.
     if(!_guarda && ant.y > SURFACE_Y+CELL && (time-(ant._cargaDesde||-1e9)) > DAY_LENGTH*0.22){
-      pantryPos={x:Math.round(ant.x/CELL)*CELL+8, y:Math.round(ant.y/CELL)*CELL+8};
+      // LA DESPENSA NO PUEDE SER UN PUNTO DEL AIRE. Antes valia el sitio donde una obrera hubiera soltado la
+      // carga, aunque fuera un tunel de una celda: los botes quedaban flotando y al dia siguiente no habia nada
+      // dibujado, porque la camara no tenia ni suelo donde apoyar los cuadros. Se funda donde hay piso y al
+      // menos cinco celdas abiertas alrededor; si no, se busca la camara mas grande; y si tampoco la hay, se
+      // deja donde estaba - no se muda el almacen a la nada.
+      const _fc=Math.round(ant.x/CELL), _fr=Math.round(ant.y/CELL);
+      let _abiertas=0;
+      for(let r=_fr-1;r<=_fr+1;r++) for(let c=_fc-2;c<=_fc+2;c++){
+        if(r<SURFACE_ROW||r>=ROWS||c<0||c>=COLS) continue;
+        if(soil[r] && soil[r][c]===0) _abiertas++;
+      }
+      const _piso = !!((soil[_fr+1] && soil[_fr+1][_fc]!==0));
+      if(_abiertas>=5 && _piso){ pantryPos={x:_fc*CELL+8, y:_fr*CELL+8}; }
+      else {
+        const _big=findLargestChamber();
+        if(_big) pantryPos={x:Math.round(_big.x/CELL)*CELL+8, y:Math.round(_big.y/CELL)*CELL+8};
+      }
       _guarda=true;
       if(Math.random()<0.5) pushToast(ant.x, ant.y-14, '\u{1F360} aquí', '#ffcc00', 1.1);
     }
     if(_guarda){
-      const amt=ant.food.amount; ant.food=null; ant.targetFood=null; ant.deliveries++; deliveries++; colonyFood+=amt;
+      const amt=ant.food.amount;
+      // EL HUERTO SE APRENDE CARGANDO, NO PULSANDO. Cada vez que una obrera guarda una seta o una semilla
+      // apunta el suelo que pisa en ese momento: el sitio por donde ya pasa la comida es donde el hongo prende
+      // solo, y ese es el que ella misma elige con su trabajo. El boton del jugador sigue valiendo, pero ya
+      // no es el unico camino (antes, sin el click, la colonia solo huertea por un dado de 0,0016/tick junto
+      // a la camara de la cria, amonton los jardines en un rincon y el resto del nido se quedaba sin cosecha).
+      _votaHuerto(ant.x, ant.y, (ant.food.type==='mushroom'||ant.food.type==='seed'||ant.food.type==='berry') ? 2 : 1);
+      ant.food=null; ant.targetFood=null; ant.deliveries++; deliveries++; colonyFood+=amt;
       // trofalaxia: la forrajera llena su buche y comparte luego
       ant.crop=Math.min(ant.cropMax||1.6, (ant.crop||0)+ amt*0.38);
       const xpGain=amt*14+7; stats.xp+=xpGain; // -40% XP, lleva tiempo
@@ -3569,6 +3793,34 @@ function updateAnt(ant, dt){
     return;
   }
   if(ant.targetFood && !foods.includes(ant.targetFood)) ant.targetFood=null;
+  // EXCURSION (Topo: «las hormigas tienen que ser aventureras, no se si es su personalidad actual»). Subir al
+  // prado no puede depender solo del hambre: medido con la colonia a 27 obreras y 197 raciones en el
+  // almacen, `enSuperficie 0 de 27` y 19 gotas de miel tiradas por el cesped - una colonia que come bien ya
+  // no explora nunca, se queda abajo y deja el techo lleno de migajas. Las ganas las pone el rasgo EXPL
+  // (18..100) y el oficio; un cupo de una de cada cuatro evita dejar el nido vacio.
+  if(!ant.isQueen && !ant.food && !ant.targetFood && !ant.digTarget && !ant.wasteTarget
+     && colonyFood > 4 && (ant._excursionHasta||0) < time
+     // ...y es una salida de ADULTA, no de fundadora: con la colonia corta de manos o la hormiga cansada, la
+     // excursion cuesta la colonia entera (medido: la semilla 2 se apagaba al dia 4 con 8 obreras despues de
+     // mandarla a una gota a 200 px, cuando antes llegaba al dia 21). Solo sale la que sobra, la que esta
+     // fresca, y hasta una gota que se pueda traer en un rato.
+     && workers.length >= 10 && ant.fatigue < 42 && (ant.age||0) > DAY_LENGTH*0.35){
+    let _fuera = 0;
+    for(const _w of workers){ if(_w._excursion && dist(_w, storagePos()) > CELL*6) _fuera++; }
+    const _cupo = Math.max(1, Math.floor(workers.length/4));
+    const _ganas = (ant.traits && ant.traits.exploracion ? ant.traits.exploracion : 40)
+                 + (ant.affinity==='EXPLORADORA'? 25:0) + (colonyIQ>140? 10:0);
+    if(_fuera < _cupo && _ganas >= 70){
+      let _fx=null, _fd=Infinity;
+      for(const _x of foods){ const _dd=dist(ant,_x); if(_dd<_fd){ _fd=_dd; _fx=_x; } }
+      if(_fx && _fd > CELL*22) _fx=null;   // demasiado lejos para un paseo: que la recoja otra u otro dia
+      if(_fx){
+        ant.targetFood=_fx; ant._excursion=true; ant._excursionHasta = time + DAY_LENGTH*0.9;
+        if(Math.random()<0.22) pushToast(ant.x, ant.y-12, '\u{1F9ED}', '#8fbf5f', 1.3);
+      } else ant._excursionHasta = time + DAY_LENGTH*0.3;   // no hay nada arriba: lo intenta mas tarde
+    }
+  }
+  if(ant._excursion && !ant.targetFood && dist(ant, storagePos()) < 24) ant._excursion=false;
   // Topo: despensa vacia = hay que salir a por miel, aunque el manjar este fuera del radio de los
   // sensores (90px). Las fundadoras no tienen rol RECOLECTORA hasta que la colonia evoluciona, asi
   // que sin este impulso se quedaban en el tunel y la colonia nunca juntaba los 3 de la despensa
@@ -3687,7 +3939,14 @@ function updateAnt(ant, dt){
     // la colonia bajaba al nido, la despensa no se reponia y la reina dejaba de poner. Mismo truco
     // en los dos sentidos: primero la boca, luego la miel.
     const _boca = {x: CENTER_COL*CELL+8, y: SURFACE_Y-6};
-    let _meta = (targ.y < SURFACE_Y+12 && ant.y > SURFACE_Y+18) ? _boca : targ;
+    // Para cruzar de dentro a fuera (o al reves) no hay atajo: se pasa por la boca. La prueba anterior
+    // comparaba alturas con un margen (targ < SURFACE_Y+12 y ant > SURFACE_Y+18), y en cuanto la hormiga
+    // entraba en la franja de 30 px de la boca cambiaba de rumbo hacia una gota que estaba a 180 px a la
+    // derecha, se daba de narices contra la pared del tunel y caia de nuevo al nido. Medido: rebotando
+    // 208-260-225-241-189-251 px de la miel, sin sumar NUNCA un golpe contra la pared (blk 0).
+    const _meta = ((targ.y < SURFACE_Y) !== (ant.y < SURFACE_Y - 2)) ? _boca : targ;
+    // para la fisica del pozo: mi destino esta por encima de mi? (sin esto no sabe trepar hacia arriba en la ida)
+    ant._quiereSubir = (targ.y < ant.y - 4);
     if(ant.blocked>10){ const _rs = routeStep(ant, _meta.x, _meta.y); if(_rs) _meta=_rs; }
     const ang=Math.atan2(_meta.y-ant.y, _meta.x-ant.x);
     let diff=((ang-ant.angle+Math.PI*3)%(Math.PI*2)-Math.PI);
@@ -3954,8 +4213,11 @@ const TEX_MAP = {
   mound: texSrc(1,3)
 };
 // === PISOS ESTACIONES - Living Pixel vivo (4 estaciones + estados) ===
-const texCielos = new Image(); texCielos.src = 'assets/textures/categoria_05_cielos_completo.png?v=20261012un'; let texCielosReady=false;
-const texBrote = new Image(); texBrote.src = 'assets/textures/cielo_brote_4climas.png?v=20261012un'; let texBroteReady=false; texBrote.onload=()=>{ texBroteReady=true; tlog('[TEX] brote ready'); }; texCielos.onload=()=>{ texCielosReady=true; tlog('[TEX] cielos completo ready'); };
+// CIELO: se retiran las dos imagenes (categoria_05_cielos_completo.png y cielo_brote_4climas.png). Se
+// pedian al disco, se pintaban encima del degradado con desplazamiento de viento y salian costuras. El
+// cielo de ahora esta codificado (ver drawFarm), asi que ni siquiera se descargan.
+const texCielos = new Image(); let texCielosReady=false;
+const texBrote = new Image(); let texBroteReady=false;
 const texSurfaceFull = new Image(); texSurfaceFull.src = 'assets/textures/categoria_01_surface_fullgrass.png?v=20261012un'; let texSurfaceFullReady=false; texSurfaceFull.onload=()=>{ texSurfaceFullReady=true; markSoilDirty(); tlog('[TEX] surface fullgrass ready'); };
 const texPisos = new Image();
 texPisos.src = 'assets/textures/categoria_01_platformer_pisos_SB.png?v=20261012un&t='+Date.now();
@@ -4033,13 +4295,13 @@ function paintCacheCellTextured(c,r){
         }
       }catch(e){ soilCacheCtx.fillStyle='#ff0000'; soilCacheCtx.fillRect(x-0.5,y-0.5,CELL+1,CELL+1); }
       // la veta se ve: escamas del color del metal sobre la roca, con su sombra de talla
+      // la veta se anuncia con TRES PUNTITOS del color del metal sobre la roca: a 16 px cualquier otra
+      // silueta se confunde con el tunel de al lado, y el dueno lo dijo - «los materiales se leen mal».
       if(t===8||t===9||t===10){
-        const _fc = t===8?'#c8703a':t===9?'#c3c8d4':'#e8c14b';
-        soilCacheCtx.fillStyle='rgba(0,0,0,0.45)';
-        soilCacheCtx.fillRect(x+2,y+3,4,3); soilCacheCtx.fillRect(x+9,y+9,4,3);
+        const _fc = t===8?'#e0884a':t===9?'#d7dce8':'#f0cf5e';
         soilCacheCtx.fillStyle=_fc;
-        soilCacheCtx.fillRect(x+3,y+4,2,1); soilCacheCtx.fillRect(x+10,y+10,2,1);
-        if(((c*7+r*5)%3)===0){ soilCacheCtx.fillRect(x+6,y+12,2,1); soilCacheCtx.fillStyle='rgba(255,255,255,0.35)'; soilCacheCtx.fillRect(x+6,y+12,1,1); }
+        soilCacheCtx.fillRect(x+3,y+4,2,2); soilCacheCtx.fillRect(x+10,y+8,2,2);
+        if(((c*7+r*5)%3)!==0) soilCacheCtx.fillRect(x+6,y+12,2,2);
       }
       // overlay vein speckle for stone? atlas already has vein tile but we can occasionally overlay
       // keep subtle shadow for depth
@@ -4251,6 +4513,19 @@ texUI.onload = ()=>{ texUIReady=true; tlog('[TEX] ui 1448 atlas ready'); };
 texUI.onerror = ()=>console.warn('[TEX] ui failed');
 
 
+// Dos colores hex ('#rrggbb') se mezclan con f (0..1). Sin dependencias y sin PNG: el cielo es codigo.
+function _hex2rgb(h){ const n=parseInt(String(h).slice(1),16); return [(n>>16)&255,(n>>8)&255,n&255]; }
+function _rgb2hex(a){ return '#'+a.map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join(''); }
+function _mezcla16(h1,h2,f){ const A=_hex2rgb(h1), B=_hex2rgb(h2); const k=Math.max(0,Math.min(1,f)); return _rgb2hex([A[0]+(B[0]-A[0])*k, A[1]+(B[1]-A[1])*k, A[2]+(B[2]-A[2])*k]); }
+// paleta por horas: se buscan los dos nodos que enmarcan la hora y se interpola (amanecer y ocaso incluidos)
+function _cieloMezcla(hora, h0,c0, h1,c1, h2,c2, h3,c3, h4,c4, h5,c5, h6,c6){
+  const nod=[[h0,c0],[h1,c1],[h2,c2],[h3,c3],[h4,c4],[h5,c5],[h6,c6]];
+  for(let i=0;i<nod.length-1;i++){
+    const A=nod[i], B=nod[i+1];
+    if(hora>=A[0] && hora<=B[0]) return _mezcla16(A[1], B[1], (hora-A[0])/Math.max(0.001,B[0]-A[0]));
+  }
+  return nod[nod.length-1][1];
+}
 function drawFarm(ctx,W,H,isMini=false){
   const useZoom=!isMini && view.zoom!==1;
   if(useZoom){ctx.save(); ctx.scale(view.zoom,view.zoom); ctx.translate(Math.floor(-view.x),Math.floor(-view.y)); ctx.imageSmoothingEnabled=false;}
@@ -4268,52 +4543,49 @@ function drawFarm(ctx,W,H,isMini=false){
   } else {
     skyTop='#05091a'; skyBot='#0f1a3a';
   }
-  // SKY EXTENDIDO - cubre toda la pantalla incluso al panear 175px más arriba (Topo pidió ver cielo derecho)
+  // CIELO CODIFICADO, SIN TEXTURA PNG. El cielo es una franja de color que cambia con la hora y con el
+  // clima y cubre TODO el fondo de la pantalla, tambien lo que asoma cuando la camara sube por encima del
+  // prado. Se quito el PNG de cielos: dos capas desplazadas por el viento, a alpha 0,28 y 0,36, cortaban
+  // costuras y dejaban bandas - eso era la «textura rara» del cielo.
+  const _horas = gameHour;
+  const _top  = _cieloMezcla(_horas, 0, '#04081c', 5.0, '#3a4a7a', 7.5, '#7ec8e3', 17.0, '#8fc4e8', 19.2, '#ff7a3d', 20.6, '#101a3a', 24, '#04081c');
+  const _bot  = _cieloMezcla(_horas, 0, '#0b1230', 5.0, '#c88a6a', 7.5, '#a8e0f0', 17.0, '#bfe8f5', 19.2, '#ffcc66', 20.6, '#16203f', 24, '#0b1230');
+  const _wt = (typeof weather!=='undefined' && weather.type) ? weather.type : 'clear';
+  const _nublado = _wt==='cloudy'? 0.35 : _wt==='rain'? 0.62 : _wt==='storm'? 0.80 : 0;
+  const _tinte = _nublado>0 ? _mezcla16(_top, '#4a5560', _nublado*0.75) : _top;
+  const _tinte2 = _nublado>0 ? _mezcla16(_bot, '#6a7684', _nublado*0.60) : _bot;
   const skyGrad=ctx.createLinearGradient(0,-H*1.8,0,SURFACE_Y);
-  skyGrad.addColorStop(0,skyTop); skyGrad.addColorStop(1,skyBot);
-  ctx.fillStyle=skyGrad; ctx.fillRect(-W*1.5, -H*1.8, W*4, SURFACE_Y + H*1.8);
-  // cielo BROTE - textura nueva 4 climas con tiempo (día/noche/dusk modulado por gradient+overlay)
-  const sIdxNow = (typeof getCalendarData==='function' ? getCalendarData().seasonIdx : 0) % 4;
-  const isBrote = sIdxNow===0;
-  if(isBrote && typeof texBrote!=='undefined' && texBroteReady){
-    try{
-      let wIdx=0;
-      const wt = (typeof weather!=='undefined' && weather.type) ? weather.type : 'clear';
-      if(wt==='cloudy') wIdx=1;
-      else if(wt==='rain') wIdx=2;
-      else if(wt==='storm') wIdx=3;
-      const tw = texBrote.width/4, th = texBrote.height;
-      const sx = wIdx*tw;
-      let alpha = 0.34;
-      if(wt==='rain') alpha=0.30;
-      if(wt==='storm') alpha=0.36;
-      if(!isDay) alpha *= 0.82;
-      ctx.globalAlpha=alpha;
-      // Topo fix: cielo textura drift sincronizado con nubes y clima, cubre todo el viewport sin cortes
-      let skyDrift = (time * 0.055) % W;
-      for(let ix=-2; ix<=3; ix++){
-        ctx.drawImage(texBrote, sx, 0, tw, th, ix*W + skyDrift - W, -H*1.8, W, SURFACE_Y + H*1.8);
+  skyGrad.addColorStop(0,_tinte); skyGrad.addColorStop(0.62,_tinte2); skyGrad.addColorStop(1,_tinte2);
+  ctx.fillStyle=skyGrad; ctx.fillRect(-W*1.5, -H*1.8, W*4, (SURFACE_Y + H*1.8));
+  if(!isMini){
+    // luceros fijos, con un poco de paralaje al subir la camara; solo de noche y sin nubes encima
+    if(!isDay && _nublado<0.4){
+      const _noche = Math.min(1, Math.max(0, (gameHour>20? (24-gameHour)/3.2 : (5.2-gameHour)/3.2 )));
+      ctx.fillStyle='rgba(255,255,255,'+(0.55+0.35*_noche).toFixed(2)+')';
+      // Las posiciones se reparten por la FRANJA DE CIELO QUE DE VERDAD SE VE (de arriba del mapa a la raya del
+      // cesped), no por encima: colocadas a SURFACE_Y - 1,25*H quedaban fuera del alcance de la camara en un
+      // mundo pequeno (la camera no puede subir de view.y=0) y los luceros nunca se llegaban a pintar.
+      const _banda = Math.max(24, SURFACE_Y - 26);
+      for(let st=0; st<26; st++){
+        const sx2 = ((st*97)%23)*44 + ((st%5)*7) - W*0.4 - (view.x||0)*0.08;
+        const sy2 = 6 + ((st*61)%29)/29*_banda + (view.y||0)*0.12;
+        if(sy2 > SURFACE_Y-18) continue;
+        const _tw = 1 + (st%3===0?1:0);
+        ctx.fillRect(sx2, sy2, _tw, _tw);
       }
-      ctx.globalAlpha=1;
-    }catch(e){ ctx.globalAlpha=1; }
-  } else if(typeof texCielos!=='undefined' && texCielosReady){
-    try{
-      const sIdx = sIdxNow;
-      let wIdx=0;
-      const wt = (typeof weather!=='undefined' && weather.type) ? weather.type : 'clear';
-      if(wt==='cloudy') wIdx=1;
-      else if(wt==='rain') wIdx=2;
-      else if(wt==='storm') wIdx=3;
-      const tw2 = texCielos.width/4, th2 = texCielos.height/4;
-      const sx = wIdx*tw2, sy = sIdx*th2;
-      ctx.globalAlpha=0.28;
-      // Topo fix: drift sincronizado
-      let skyDrift2 = (time * 0.055) % W;
-      for(let ix=-2; ix<=3; ix++){
-        ctx.drawImage(texCielos, sx, sy, tw2, th2, ix*W + skyDrift2 - W, -H*1.8, W, SURFACE_Y + H*1.8);
+    }
+    // nubes dibujadas, no de textura: tres franjas redondeadas que se cruzan segun el viento
+    if(_nublado>0.1){
+      const _vel = _wt==='storm'? 26 : _wt==='rain'? 14 : 7;
+      ctx.fillStyle='rgba(20,26,34,'+(0.16+0.34*_nublado).toFixed(2)+')';
+      for(let cb=0; cb<7; cb++){
+        const cx2 = ((time*0.001*_vel + cb*260) % (W*1.9)) - W*0.45;
+        const cy2 = SURFACE_Y - H*1.05 + ((cb*53)%9)*15;
+        const aw = 90 + (cb%3)*36, ah = 12 + (cb%2)*5;
+        ctx.fillRect(cx2, cy2, aw, ah);
+        ctx.fillRect(cx2+14, cy2-ah*0.6, aw*0.6, ah*0.7);
       }
-      ctx.globalAlpha=1;
-    }catch(e){ ctx.globalAlpha=1; }
+    }
   }
   // sol / luna pixel que se mueve con la hora - Topo fix: más arriba y cielo sincronizado
   if(!isMini){

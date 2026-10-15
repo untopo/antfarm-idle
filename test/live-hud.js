@@ -14,6 +14,7 @@
  */
 const http = require('http');
 const fs = require('fs');
+fs.mkdirSync('/tmp/antfarm-capturas',{recursive:true});
 const path = require('path');
 const puppeteer = require('puppeteer');
 const ROOT = path.resolve(__dirname, '..');
@@ -146,7 +147,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ok   ' + m); } else { fai
   ok(dibujo.flotando === 0, `ninguna pieza flota: todas apoyadas en el suelo de su celda (${dibujo.flotando})`);
 
   ok(errs.length === 0, `cero errores de JavaScript${errs.length ? ': ' + errs.slice(0, 2).join(' | ') : ''}`);
-  await page.screenshot({ path: 'screenshots/16-hud-almacen.png' });
+  await page.screenshot({ path: '/tmp/antfarm-capturas/16-hud-almacen.png' });
   console.log('\n' + pass + ' ok' + (failn ? ' · ' + failn + ' FALLOS' : ' · reservas e inventario en la pantalla real'));
   await browser.close(); server.close();
   process.exit(failn ? 1 : 0);
