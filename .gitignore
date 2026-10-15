@@ -32,3 +32,6 @@ CODIGO-GITHUB.txt
 *.zip
 # capturas del lote de navegador
 screenshots/
+
+# la identidad del taller, no del proyecto
+.gitconfig

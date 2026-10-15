@@ -7,11 +7,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ANT FARM — Pixel Real v4 · 16-BIT</title>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache">
-<link rel="stylesheet" href="css/style.css?v=20261015o">
+<link rel="stylesheet" href="css/style.css?v=20261015p">
 
 <style id="topoHideUntilStart">
   #appRoot{display:none !important}
   #velAntBar, #calendarWidget{visibility:hidden !important; pointer-events:none !important}
+  @media (max-width: 700px){ #velMatChips{display:none !important} }
   body.game-started #appRoot{display:flex !important}
   body.game-started #velAntBar, body.game-started #calendarWidget{visibility:visible !important; pointer-events:auto !important}
 </style>
@@ -165,7 +166,7 @@
     </div>
   </header>
 
-  <div id="economyBar" style="height:28px;background:#1a140f;border-bottom:3px solid #000;display:flex;align-items:center;gap:6px;padding:0 10px;flex-shrink:0;font-family:'Press Start 2P',monospace;font-size:7px;color:#c9b896">
+  <div id="economyBar" style="display:none;height:28px;background:#1a140f;border-bottom:3px solid #000;align-items:center;gap:6px;padding:0 10px;flex-shrink:0;font-family:'Press Start 2P',monospace;font-size:7px;color:#c9b896">
     <span style="color:#8a7a5a">ECONOMÍA</span>
     <span class="eco-item" style="background:#000;border:2px solid #000;padding:3px 6px;display:flex;gap:4px;align-items:center"><span>🍯</span><b id="ecoFood" style="color:#ffcc00">0</b></span>
     <span class="eco-item" style="background:#000;border:2px solid #000;padding:3px 6px;display:flex;gap:4px;align-items:center"><span>🌿</span><b id="ecoFiber" style="color:#2de67a">0</b></span>
@@ -452,6 +453,20 @@
 
 </div>
 
+<!-- INVENTARIO DEL NIDO — mismo hueco que el perfil: uno u otro, nunca los dos -->
+<div id="invSheet" style="display:none;position:fixed;top:62px;right:14px;width:236px;max-width:236px;max-height:calc(100vh - 78px);background:#fff8dc;border:4px solid #000;border-top:none;box-shadow:6px 6px 0 #000;z-index:91;overflow:hidden;transform:translateY(-12px) scaleY(0);opacity:0;transition:transform 0.22s cubic-bezier(.2,.8,.2,1), opacity 0.22s;transform-origin:top">
+  <div style="background:#1a140f;min-height:100%;display:flex;flex-direction:column">
+    <div style="background:#000;padding:8px 10px;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #000">
+      <span style="font-family:'Press Start 2P',monospace;font-size:8px;color:#ffcc00;letter-spacing:0.3px">☰ ALMACÉN</span>
+      <button id="btnCloseInv" style="background:#ff3b30;color:#fff;border:2px solid #000;padding:4px 8px;font-family:'Press Start 2P',monospace;font-size:7px;cursor:pointer;box-shadow:2px 2px 0 #000">✕</button>
+    </div>
+    <div id="invBody" style="padding:8px 10px;display:flex;flex-direction:column;gap:7px;overflow-y:auto;flex:1"></div>
+    <div style="padding:8px 10px;border-top:3px solid #000;background:#000">
+      <button id="btnInvGo" class="pixel-btn small" style="width:100%;padding:6px 4px;font-size:7px;background:#2a0f00;color:#ffcc00;border:2px solid #000;cursor:pointer">▶ IR AL ALMACÉN</button>
+    </div>
+  </div>
+</div>
+
 <!-- PERFIL DE HORMIGA — compacto sin scroll, cabe completo 220x~420 -->
 <div id="antProfile" style="display:none;position:fixed;top:0;right:14px;width:220px;max-width:220px;max-height:calc(100vh - 220px);background:#fff8dc;border:4px solid #000;border-top:none;box-shadow:6px 6px 0 #000;z-index:90;overflow:hidden;transform:translateY(-12px) scaleY(0);opacity:0;transition:transform 0.22s cubic-bezier(.2,.8,.2,1), opacity 0.22s;transform-origin:top">
   <div style="background:#1a140f;min-height:100%;display:flex;flex-direction:column">
@@ -618,7 +633,7 @@
 <!-- CALENDARIO PERMANENTE — híbrido A+C arte pixel madera + panal + teal -->
 
   <!-- HUD VEL+OBRERAS — barra única sobre calendario, réplica exacta mockup -->
-  <div id="velAntBar" style="position:fixed;right:14px;top:14px;z-index:999;width:240px;height:42px;box-sizing:border-box;background:#3e2a14;border:3px solid #000;box-shadow:4px 4px 0 #000;display:flex;align-items:stretch;overflow:hidden;image-rendering:pixelated;border-radius:2px">
+  <div id="velAntBar" style="position:fixed;right:14px;top:14px;z-index:999;width:auto;min-width:380px;max-width:calc(100vw - 28px);height:42px;box-sizing:border-box;background:#3e2a14;border:3px solid #000;box-shadow:4px 4px 0 #000;display:flex;align-items:stretch;overflow:hidden;image-rendering:pixelated;border-radius:2px">
     <div style="position:absolute;inset:0;background:repeating-linear-gradient(0deg, transparent 0 5px, rgba(0,0,0,0.18) 5px 6px), linear-gradient(180deg,#4a321c 0%, #3e2a14 35%, #2e1e0f 100%);opacity:0.95;pointer-events:none"></div>
     <!-- VEL + botones -->
     <div style="position:relative;flex:1;display:flex;align-items:center;gap:3px;padding:3px 6px 3px 7px;z-index:1">
@@ -638,6 +653,22 @@
         <span id="velAntCount" style="font-family:'Press Start 2P',monospace;font-size:13px;color:#fffef0;line-height:1;text-shadow:1px 1px 0 #000, 0 0 6px rgba(255,255,255,0.35);min-width:22px">0</span>
       </div>
       <span style="font-family:'Press Start 2P',monospace;font-size:5px;color:#fff8dc;letter-spacing:0.5px;text-shadow:1px 1px 0 #000;line-height:1">OBRERAS</span>
+    </div>
+    <div style="position:relative;width:3px;background:#000;flex-shrink:0;z-index:1;margin:3px 0;box-shadow:inset 1px 0 0 rgba(255,255,255,0.08)"></div>
+    <!-- ALMACÉN — lo que hay dentro del nido, y la puerta al inventario -->
+    <div style="position:relative;display:flex;align-items:center;gap:5px;padding:2px 6px 2px 7px;flex-shrink:0;z-index:1">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:1px">
+        <div style="display:flex;align-items:center;gap:4px">
+          <span style="font-size:14px;line-height:1;filter:drop-shadow(1px 1px 0 #000)">🍯</span>
+          <span id="velFoodCount" style="font-family:'Press Start 2P',monospace;font-size:13px;color:#ffcc00;line-height:1;text-shadow:1px 1px 0 #000, 0 0 6px rgba(255,204,0,0.35);min-width:20px">0</span>
+        </div>
+        <span style="font-family:'Press Start 2P',monospace;font-size:5px;color:#fff8dc;letter-spacing:0.5px;text-shadow:1px 1px 0 #000;line-height:1">ALMACÉN</span>
+      </div>
+      <div id="velMatChips" style="display:flex;flex-direction:column;justify-content:center;gap:2px;flex-shrink:0;font-family:'Press Start 2P',monospace;font-size:5px;color:#8a7a5a;line-height:1.15;text-shadow:1px 1px 0 #000">
+        <span style="white-space:nowrap">🌿<b id="velMatFiber" style="color:#2de67a">0</b> 🪨<b id="velMatStone" style="color:#c9c9c9">0</b> 🧱<b id="velMatClay" style="color:#e08a5a">0</b></span>
+        <span style="white-space:nowrap">🪵<b id="velMatWood" style="color:#c9a06a">0</b> ⌛<b id="velMatSand" style="color:#e8cf8a">0</b> 🏠<b id="velMatRooms" style="color:#c9b896">0</b></span>
+      </div>
+      <button class="pixel-btn small" id="btnInventory" title="Inventario del nido (tecla I)" aria-label="Inventario" style="min-width:26px;width:26px;height:28px;padding:0;background:#2a0f00;border:2px solid #000;color:#ffcc00;font-size:12px;display:grid;place-items:center;box-shadow:1px 1px 0 #000;line-height:1">☰</button>
     </div>
   </div>
 
@@ -739,7 +770,7 @@
   <!-- Motor del juego — núcleo profesional modular -->
   
 
-<script src="js/app.js?v=20261015o"></script>
+<script src="js/app.js?v=20261015p"></script>
 <script>
 // Vigia del arranque: si js/app.js no termino de cargar, decirlo en pantalla en vez de dejar
 // botones sordos. Es lo unico que vive en el HTML; el juego entero esta en js/app.js.

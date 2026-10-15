@@ -189,6 +189,9 @@ function setZoom(nz,sx,sy){
 }
 function updateZoomLabel(){hudText('zoomLabel', Math.round(view.zoom*100)+'%');}
 const DAY_LENGTH = 72000; // 20 min reales (Minecraft: 24000 ticks -> 20min) a 60 time/s
+// La unidad de la fatiga: 100 puntos por jornada de trabajo (y 1/14 de jornada devolver el aliento).
+// Antes se contaba por frame, asi que la escala se iba arriba en cuanto el reloj se aceleraba.
+const _fatUnidad = 100/DAY_LENGTH;
 let gameSpeed=1, turbo=false, time=DAY_LENGTH*0.28, paused=false, taskbarMode=false, mouse={x:W/2,y:SURFACE_Y-10};
 let deliveries=0, digs=0, accidents=0, rewardsFound=0, gen=0, mutations=0, commsCount=0;
 let colonyFood=0, colonyFitness=0, colonyIQ=100; let lastCoup=0;
@@ -1411,15 +1414,31 @@ function sizeProfile(){
 }
 // Si nace/usurpa una reina por encima de lo que el nido sostiene, se va con tierra en la boca.
 // No se esconde: se cuenta. Y la que se va se va al enjambre, no al vacio.
+// Cuantas coronas mantiene este nido: el tope del mundo y, por debajo, lo que la colonia puede
+// alimentar. Medido en medium al dia 7: 3 reinas con 36 obreras, 8 muertas por jornada en guerras
+// entre facciones y 0 obreras al dia 13. Dos coronas son cosa de colonias con cien bocas.
+function reinasPermitidas(){
+  const _boca = Math.max(0, (workers&&workers.length)||0);
+  return Math.max(1, Math.min(sizeProfile().maxQueens, 1 + (_boca>=70?1:0) + (_boca>=160?1:0)));
+}
 function enforceQueenCap(motivo){
   const cap=sizeProfile().maxQueens;
+  // Solo se expulsa si el nido esta por encima del tope del mundo o si hay boca de sobra para pagar
+  // el enjambre: quedarse sin ninguna corona por una regla de cupo es peor que convivir tres dias.
   let salidas=0;
-  while(queens.length>cap){
-    const i=queens.findIndex(q=>q!==queens[0] && !(society?.factions||[]).some(f=>f.leader===q.name && f.id===q.faction && f.members>2));
-    const q=queens[i<0?queens.length-1:i];
+  while(queens.length>cap || (queens.length>reinasPermitidas() && workers.length>=40)){
+    // se queda la que mejor pinta tiene, no siempre la primera de la lista: si la madre esta
+    // agonizando y nacio una heredera sana, el nido se queda con la heredera y la madre se va volando.
+    const _pinta=(x)=> (x.health||100) + Math.max(0, 1-((x.age||0)/(x.maxAge||DAY_LENGTH*15)))*60 + (x===queens[0]?10:0);
+    let qm=null, pm=-Infinity;
+    for(const x of queens){
+      if((society?.factions||[]).some(f=>f.leader===x.name && f.id===x.faction && f.members>2)) continue;
+      const p=_pinta(x); if(p<pm || qm===null){ if(qm===null || p<pm){ qm=x; pm=p; } }
+    }
+    const q = qm || queens[queens.length-1];
     queens.splice(queens.indexOf(q),1);
     salidas++;
-    const txt=`${q.name} vuela lejos: el nido de ${COLS}x${ROWS} solo sostiene ${cap} reinas (${motivo})`;
+    const txt=`${q.name} vuela lejos: el nido de ${COLS}x${ROWS} solo sostiene ${Math.min(cap,reinasPermitidas())} reinas (${motivo})`;
     pushEvent('evo','🍯 ENJAMBRE '+txt.split(':')[0], txt);
     notifyCanon('🍯 ENJAMBRE', txt, 5600);
     try{ pushToast(q.x, q.y-18, '🍯 vuela','#c08060',3); }catch(e){}
@@ -2044,7 +2063,96 @@ function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
 function nearestFood(from){let best=null,bd=Infinity;for(let f of foods){const d=dist(from,f); if(d<90&&d<bd){bd=d;best=f;}}return best;}
 function nearestPhero(from){let best=null,bd=Infinity, bestRecruit=null, bdR=Infinity; for(let p of pheromones){const d=dist(from,p); if(p.type==='recruit' && p.strength>0.16 && d<90 && d<bdR){bdR=d;bestRecruit=p;} else if(p.strength>0.18 && d<80 && d<bd){bd=d;best=p;}} return bestRecruit||best;}
 function nearestWorker(from, excludeId){let best=null,bd=Infinity; for(let w of workers){if(w.id===excludeId) continue; const d=dist(from,w); if(d<80&&d<bd){bd=d;best=w;}} return best;}
-function storagePos(){return {x:pantryPos.x, y:pantryPos.y};}
+
+
+// === EL ALMACEN: UN SITIO, NO UN NUMERO FLOTANDO ===
+// Topo (pedido del dueño): la comida y los materiales almacenados tienen que VEGERSE en la camara
+// donde ellas los guardan, apoyados en el suelo de la galeria - como un almacen de verdad, no una
+// fila de gotitas suspendidas en medio de la celda que no decian nada. Cada recurso tiene su propio
+// monton y su propio color de atlas.
+// Cuanta cria cabe en la camara: la del tamano del mundo mas lo que la colonia gane abriendo
+// camaras. Era el techo invisible del «se mueren todas y no nacen mas»: en mundo pequeno el fijo
+// era 6, y con obreras que mueren de vejez a los 5 dias una colonia de 15 no podia reponerse - la
+// fila de la camara era mas lenta que la mortandad, la despensa subia y nadie la convertia en hormigas.
+// Ahora criar es un logro del nido: mas camaras, mas cuna.
+function capacidadCria(){
+  let base=6; try{ base=sizeProfile().broodSlots||6; }catch(e){}
+  let camaras=1; try{ camaras=Math.max(1, worldStats().chambers||1); }catch(e){}
+  const extra=Math.max(0,(camaras-1)*2) + granerosConstruidos()*2;
+  return Math.max(3, Math.min(base+extra, base*3+12));
+}
+window.capacidadCria=capacidadCria;
+// Umbral de despensa por debajo del cual la reina paga criar sola (las bocas de la cria).
+function _sostieneCriar(){ try{ return 3 + 0.6*brood.length; }catch(e){ return 3; } }
+const _MAT_DEFS = [
+  {k:'stone', n:'PIEDRA',  col:'#9a9a9a', col2:'#6e6e6e', icon:'\u{1FAA8}', sirve:'muros y herramientas de pico'},
+  {k:'clay',  n:'ARCILLA', col:'#c47a52', col2:'#8f5433', icon:'\u{1F9F1}', sirve:'paredes, granero y tinajas'},
+  {k:'sand',  n:'ARENA',   col:'#e8cf8a', col2:'#b99f5f', icon:'\u231B', sirve:'cimenta y drena el tunel'},
+  {k:'fiber', n:'FIBRA',   col:'#8fbf5f', col2:'#5d8438', icon:'\u{1F33F}', sirve:'cestas, cuerdas y acolchado'},
+  {k:'wood',  n:'MADERA',  col:'#a97a44', col2:'#7a5528', icon:'\u{1FAB5}', sirve:'andamios, puentes y techos'}
+];
+function storagePos(){
+  // Topo: el almacen es el GRANERO que ellas construyen; si todavia no hay ninguno, la camara que
+  // eligieron como despensa (pantryPos). Antes la miel viajaba siempre a pantryPos aunque hubiera
+  // granero: el almacen existia en el numero, no en el mapa.
+  try{
+    let mejor=null, md=Infinity;
+    for(const st of structures){
+      if(!st || st.type!=='granary' || st.built===false) continue;
+      const gx=(st.c+ (st.w||3)/2)*CELL, gy=(st.r+(st.h||2)/2)*CELL;
+      const d=Math.hypot(gx-pantryPos.x, gy-pantryPos.y);
+      if(d<md){ md=d; mejor={x:gx, y:gy}; }
+    }
+    if(mejor) return mejor;
+  }catch(e){}
+  return {x:pantryPos.x, y:pantryPos.y};
+}
+// celdas libres de la camara de almacen, con el suelo primero (lo que se apoya, se apoya)
+function storageCells(){
+  const p=storagePos(); const c0=Math.floor(p.x/CELL), r0=Math.floor(p.y/CELL); const out=[];
+  for(let r=r0-1;r<=r0+1;r++){
+    for(let c=c0-2;c<=c0+2;c++){
+      if(r<SURFACE_ROW||r>=ROWS||c<0||c>=COLS) continue;
+      if(soil[r] && soil[r][c]===0) out.push({c, r, suelo: !!(soil[r+1] && soil[r+1][c]!==0)});
+    }
+  }
+  out.sort((x,y)=> (y.suelo?1:0)-(x.suelo?1:0) || y.r-x.r || x.c-y.c);
+  return out;
+}
+function granerosConstruidos(){ let n=0; try{ for(const st of structures){ if(st && st.type==='granary' && st.built!==false) n++; } }catch(e){} return n; }
+function capacidadAlmacen(){ return 14 + storageCells().length*2 + granerosConstruidos()*12; }
+// un bote/apoyo dibujado en la parte Baja de la celda (nunca en el aire)
+function _boteAlmacen(cx, cy, w, h, col, col2, brillo){
+  ctx.fillStyle='#000'; ctx.fillRect(cx-1, cy-h-1, w+2, h+2);
+  ctx.fillStyle=col; ctx.fillRect(cx, cy-h, w, h);
+  ctx.fillStyle=col2; ctx.fillRect(cx, cy-Math.max(1,h*0.35), w, Math.max(1,h*0.35));
+  if(brillo){ ctx.fillStyle='#fff'; ctx.fillRect(cx+1, cy-h+1, 1, Math.max(1,h*0.4)); }
+}
+function dibujarAlmacen(){
+  const celdas=storageCells();
+  if(!celdas.length) return;
+  // 1) raciones de miel: tarros de ambar en los estantes Bajos
+  const miel=Math.max(0, Math.min(Math.floor(colonyFood), celdas.length, 8 + granerosConstruidos()*4));
+  let i=0;
+  for(; i<miel; i++){
+    const cd=celdas[i%celdas.length]; if(!cd) continue;
+    const bx=cd.c*CELL + 4, by=cd.r*CELL + CELL - 1;
+    _boteAlmacen(bx, by, 7, 9, (i%3===0)?'#ffcc33':'#ffda66', '#ff8c00', true);
+  }
+  // 2) materiales: un monton por recurso, con su propio color y tamano segun cuanto hay
+  for(let m=0;m<_MAT_DEFS.length;m++){
+    const d=_MAT_DEFS[m], n=Math.max(0, Math.floor(worldMaterials[d.k]||0));
+    if(!n) continue;
+    const alto=Math.max(1, Math.min(3, 1+Math.floor(n/4)));   // la pila crece hacia arriba, no de lado
+    const cd=celdas[(i+m)%celdas.length]; if(!cd) continue;
+    const bx=cd.c*CELL + 2, base=cd.r*CELL + CELL - 1;
+    for(let p=0;p<alto;p++) _boteAlmacen(bx, base - p*4, d.k==='sand'||d.k==='wood'? 9:8, 4, d.col, d.col2, p===alto-1);
+    i+=1;
+  }
+  // 3) la marca de la camara: un travesaño de madera en el techo, para que se vea QUE es un sitio
+  const top=celdas[celdas.length-1];
+  if(top){ ctx.fillStyle='#4a3214'; ctx.fillRect(top.c*CELL-CELL, top.r*CELL+1, CELL*5, 2); ctx.fillStyle='#2a1b0a'; ctx.fillRect(top.c*CELL-CELL, top.r*CELL+3, CELL*5, 1); }
+}
 function surfaceEntrance(){return {x:CENTER_COL*CELL+8,y:SURFACE_Y-4};}
 function rayWallDist(x,y,angle,max){for(let d=4;d<=max;d+=4){const nx=x+Math.cos(angle)*d, ny=y+Math.sin(angle)*d; if(isSolidPixel(nx,ny)) return d;}return max;}
 function inkColorForSymbol(sym){ if(sym==='⬢') return '#00e5ff'; if(sym==='⬣') return '#ffdd57'; if(sym==='◆') return '#ff6b9d'; return '#2de67a';}
@@ -2110,9 +2218,20 @@ function updateQueen(dt){
     q.age+=dt;
     // fertilidad decae con la edad
     const ageFactor = Math.max(0.25, 1 - (q.age/q.maxAge)*0.7);
-    if(q.age > q.maxAge){
-      // muerte por vejez
-      pushEvent('death',`♛ ${q.name||q.id||'Reina'} muere de vieja a los ${(q.age/DAY_LENGTH).toFixed(1)}d`, `Vivió ${(q.maxAge/DAY_LENGTH).toFixed(1)}d - GEN${q.genome.gen}`);
+    // La corona no se apaga si no hay quien la coja: una reina vieja o agotada aguanta una semana
+    // mas mientras no haya heredera en el nido, porque "se muere la ultima" es el fin de la partida
+    // y eso no lo decide la edad, lo decide la despensa (el jugador puede darle miel: el panel ya
+    // permite ponerle comida encima y sube +20). Si hay sucesora, muere cuando le toca.
+    const _sinHeredera = !queens.some(x=>x!==q && (x.isQueen||x.isQueenLarva))
+                      && !brood.some(b=>b.isRoyal||b.isQueenLarva);
+    if(_sinHeredera && workers.length>0 && (q.edadPospuesta||0) < DAY_LENGTH*7){
+      q.edadPospuesta = (q.edadPospuesta||0) + dt;
+      if(!q._avisoAguante){ q._avisoAguante=true; pushEvent('evo', '♛ la reina se aguanta: no hay heredera'); }
+    } else if(q.age > q.maxAge || (q._agonia||0) > DAY_LENGTH*0.7){
+      // muerte por vejez, o porque llevaba demasiado tiempo a cero de salud
+      const _agonia = (q._agonia||0) > DAY_LENGTH*0.7 && q.age <= q.maxAge;
+      if(_agonia) pushEvent('evo', `♛ ${q.name||q.id||'Reina'} se apaga`, 'Llevaba un día entero sin fuerzas - la colonia da paso a la heredera');
+      pushEvent('death',`♛ ${q.name||q.id||'Reina'} ${_agonia?'muere agotada':'muere de vieja'} a los ${(q.age/DAY_LENGTH).toFixed(1)}d`, `Vivió ${(q.maxAge/DAY_LENGTH).toFixed(1)}d - GEN${q.genome.gen}`);
       notifyCanon('♛ REINA MUERE', `${q.name} muere a los ${(q.age/DAY_LENGTH).toFixed(1)} días - la colonia busca heredera`, 6200);
       pushToast(q.x,q.y-20,'💀 REINA','#ff3b30',3);
       // partículas de luto
@@ -2156,20 +2275,30 @@ function updateQueen(dt){
     // tamano del mundo): con el fijo de 3 la reina se comia la despensa en huevos, las larvas se
     // quedaban sin nada y el ciclo se paraba justo cuando empezaba a andar.
     const _sostiene = need + 0.6*brood.length;
-    const _sitio = brood.length < Math.max(3, sizeProfile().broodSlots);
+    const _sitio = brood.length < capacidadCria();
     if(colonyFood>=_sostiene && _sitio){
       // FERTILIDAD EVOLUTIVA REALISTA - Lasius 4-7k (100/d pico), Atta 5M (30k/d), argentina billones
       // En juego: base 2.19/d, con evolución GEN30 puede llegar a 18/d por reina (como Atta joven), 4 reinas = 72/d → N=72*18=1296
       const _evoFert = 1 + gen*0.13 + Math.max(0, colonyIQ-108)*0.009 + (q.personality?.fertilidad? (q.personality.fertilidad-50)*0.006:0) + (fungusGardens.filter(f=>f.health>0.62).length*0.12) + (typeof inventions!=='undefined' && inventions.fungus?0.22:0);
-      const rate = 0.00305 * ageFactor * (1 + (q.traits?.cuidado||50)/240) * _evoFert; // escalado evolutivo, no instantáneo
+      // Boca que alimenta = puesta que se sostiene: una fundadora sola pone a un ritmo; una colonia
+      // de 15 obreras trasegando miel no puede seguir poniendo igual si no quiere que la vejez les
+      // gane la carrera (era exactamente el «no nacen mas» del mundo pequeno).
+      const _bocas = 1 + Math.min(2.2, Math.max(0, workers.length-2)*0.16);
+      const rate = 0.00305 * ageFactor * (1 + (q.traits?.cuidado||50)/240) * _evoFert * _bocas; // escalado evolutivo, no instantáneo
       q.progress+= dt*rate;
       if(q.progress>=100){
         q.progress=0;
         let best=workers[0]; if(best) workers.forEach(w=>{ if(w.deliveries > best.deliveries) best=w;});
         const child= best? crossover(q.genome, best.genome) : q.genome;
         const mutated=mutateGenome(child,0.13,0.55);
-        // 4% de ser larva real (futura reina) si la colonia es grande y hay comida
-        const isQueenLarva = workers.length>=6 && colonyFood>8 && Math.random()<0.04 + gen*0.002;
+        // 4% de ser larva real (futura reina) si la colonia es grande y hay comida. Y si la unica
+        // corona esta mayor o sin fuerzas, la heredera deja de ser un azar: se busca ya, con la
+        // madre todavia en pie para poder alimentarla (esperar a que moria era lo que apagaba la
+        // dinastia: sin larva real en ese momento no habia rescate posible).
+        const _hayHeredera = brood.some(b=>b.isQueen) || queens.length>1;
+        const _necesitaHeredera = queens.length===1 && !_hayHeredera && workers.length>=6 &&
+          ( q.age > q.maxAge*0.45 || (q.health||100) < 46 ) && colonyFood>5;
+        const isQueenLarva = _necesitaHeredera || (workers.length>=6 && colonyFood>8 && queens.length < reinasPermitidas() && Math.random()<0.04 + gen*0.002);
         brood.push({type:'egg', progress:0, genome:mutated.genome, time:0, isQueen:isQueenLarva, faction:q.faction, parents:[q.name||q.id, best?best.id:'-'], parentGenomes:[q.genome.id, best?best.genome.id:'-'], x:q.x+(Math.random()-0.5)*22, y:q.y+(Math.random()-0.5)*14, hunger:0});
         colonyFood-=need;
         const eggIcon2=isQueenLarva?'👑':'🥚';
@@ -2195,8 +2324,12 @@ function updateQueen(dt){
       }
     } else q.progress=Math.max(0, q.progress - dt*0.04);
     q.state= colonyFood>=3? 'GRÁVIDA' : 'HAMBRIENTA';
-    // salud de reina
-    if(colonyFood===0 && Math.random()<0.001) q.health-=0.5;
+    // salud de reina. Topo: la vida de la corona NO era un numero que hiciera nada - bajaba de cero
+    // (se leia -69 en el panel) y la reina seguia poniendo: un cadaver util que bloqueaba la
+    // succession, porque la heredera solo se buscaba CUANDO la reina moria, y ella nunca mora.
+    if(colonyFood===0 && Math.random()<0.001) q.health=Math.max(0, (q.health||100)-0.5);
+    q.health=Math.max(0, q.health||0);
+    if(q.health<=0) q._agonia=(q._agonia||0)+dt; else q._agonia=Math.max(0,(q._agonia||0)-dt*0.5);
   }
   // mantener referencia principal
   if(queens.length>0) queen=queens[0];
@@ -2250,7 +2383,11 @@ function updateBrood(dt){
         }
         if(nivel>=3){
           colonyFood = Math.max(0, colonyFood - _g*(nivel===3?0.030:0.018));
-          if(nivel===3 && queens.length>0) queens[0].health = Math.max(4, (queens[0].health||100) - _g*0.02); // criar sola le cuesta
+          // Criar sola le cuesta, SI: solo cuando la despensa no llega para lo que la cria pide.
+          // Con el granero lleno quien alimenta es la colonia, y la reina no deveria estar pagando
+          // 20 puntos de vida por jornada (medido: 100 -> 60 en dos dias con 7 obreras trabajando),
+          // porque una reina que se apaga a la mitad de su vida es una sucesion forzada cada semana.
+          if(nivel===3 && queens.length>0 && colonyFood < _sostieneCriar()) queens[0].health = Math.max(4, (queens[0].health||100) - _g*0.02);
         }
         b.hunger=Math.max(0, b.hunger- dt*(nivel<=2?0.08:0.045));
         if(byp > (SURFACE_ROW+10)*CELL) b.progress+= dt*0.00042; // más cálido abajo
@@ -2278,8 +2415,11 @@ if(workers.length < getMaxPopulation()){
           if(b.isQueen){
             let _qn2=genPersonalName({faction: (b.faction!==undefined? b.faction : (queens[0]? queens[0].faction : 0)), role:'REINA', affinity:'NODRIZA', caste:'media', parents:[b.genome.id], genome:b.genome, isQueen:true, rank:'LÍDER', ageDays:0, idCode:'Q'+(queens.length+1)+'-'+Math.random().toString(36).slice(2,4).toUpperCase()});
             const newQueen={x:an.x+(Math.random()-0.5)*22, y:an.y+(Math.random()-0.5)*12, genome:b.genome, progress:0, state:'GRÁVIDA', age:0, maxAge: getQueenMaxAge(), generation:gen+1, faction: b.faction!==undefined? b.faction : queens[0].faction, health:100, name:_qn2.name, personalName:_qn2.name, nameMeaning:_qn2.meaning, nameStage:_qn2.stage};
-            // 35% funda nueva facción (cisma) - derrocar líderes, guerra de sucesión
-            if(queens.length>=1 && Math.random()<0.35){
+            // 35% funda nueva facción (cisma) - PERO solo si la corona no cabe en el nido. Mientras la
+            // colonia la aguanta, la hermana se suma a la corte: fundar una facción rival dentro del mismo
+            // tunel era fabricar una guerra civil que se comia a las obreras (medido en big al dia 11:
+            // 28 muertas en guerra, 3 reinas y 25 obreras - la colonia se quedaba sin brazos).
+            if(queens.length>=1 && Math.random()<0.35 && queens.length >= reinasPermitidas()){
               const newFac=society.nextFaction++;
               newQueen.faction=newFac;
               society.factions.push({id:newFac,name:'Cisma '+(newFac),color: newFac%2?'#ff3b30':'#00e5ff',members:0,belief:'-',leader:newQueen.name});
@@ -2366,7 +2506,12 @@ function updateFungus(dt){
     // COSECHA: el jardin echa gongylidia y una obrera la lleva al granero con el mismo camino que
     // la miel de la superficie (que ya funciona). Sin esto la produccion quedaba en el hongo y la
     // despensa de la colonia no se enteraba.
-    if(f.health>0.5 && f.size>0.8 && foods.length < Math.max(4, workers.length+2) && Math.random()<dt*0.0022*f.size*f.health){
+    // El tope de la cosecha mira lo que hay CERCA del jardin, no la miel esparcida por la superficie
+    // (la miel no se pudre, asi que el mapa se llena de gotas lejanas y el jardin dejaba de dar
+    // fruto justo cuando la colonia era grande - medido: 36 gotas fuera y cosecha a cero).
+    const _sp=storagePos(); let _aMano=0;
+    for(const _f of foods){ if(Math.hypot(_f.x-f.x, _f.y-f.y) < CELL*16) _aMano++; }
+    if(f.health>0.5 && f.size>0.8 && _aMano < Math.max(3, Math.round(workers.length*0.6)) && Math.random()<dt*0.0022*f.size*f.health){
       spawnFoodAt(f.x, f.y, 1, 'mushroom');
       if(Math.random()<0.25) pushToast(f.x, f.y-14, '🍄', '#e8d5a3', 1.1);
     }
@@ -2563,6 +2708,7 @@ function closeAntProfile(immediate=false){
   }, 220);
 }
 function showAntProfile(ant){
+  try{ cerrarInventario(); }catch(e){} // uno u otro: la hoja del perfil y el inventario no se apilan
   const modal=document.getElementById('antProfile');
   const facCol=society.factions.find(f=>f.id===ant.faction)?.color || '#ffcc00';
   hudText('profileTitle', `${antDisplayName(ant)} [${ant.role}] F${ant.faction}`); document.getElementById('profileTitle').title=ant.nameMeaning||ant.id;
@@ -2944,7 +3090,7 @@ function updateAnt(ant, dt){
       else if(soil[cr]&&soil[cr][cc]===1){
         ant.y = cr*CELL - 10;
         ant.vy=0;
-        ant.fatigue=Math.min(100, ant.fatigue+0.6);
+        ant.fatigue=Math.min(100, ant.fatigue + _fatUnidad*0.9);  // aterrizar de una caida cuesta
         if(ant.vy>3 && Math.random()<0.18) particles.push({x:ant.x,y:ant.y+10,vx:(Math.random()-0.5)*0.7,vy:-0.6,life:0.6,decay:0.05,color:'#8b7a5a'});
       } else {
         if(ant.state==='CAVANDO') { ant.state='EXPLORAR'; ant.digTarget=null; }
@@ -2956,7 +3102,7 @@ function updateAnt(ant, dt){
     } else if(gripWall){
       if(ant.vy) ant.vy*=0.72;
       if(ant.vy && Math.abs(ant.vy)>0.6) ant.vy= Math.max(-1.2, Math.min(1.2, ant.vy*0.5));
-      ant.fatigue+=0.006*gameSpeed;
+      ant.fatigue += _fatUnidad*dt*0.5;  // trepar cansa medio punto mas que andar (antes multiplicaba por gameSpeed y se iba al doble)
       ant._climbing=true;
       // física real: la cabeza apunta a donde trepa (arriba/abajo por pared), no solo izq-der
       // calcula pared más cercana para orientar la cabeza
@@ -3061,10 +3207,18 @@ function updateAnt(ant, dt){
   if(ant.tool==='pick') speed*=1.16;
   if(ant.tool==='trowel') speed*=1.09;
   if(ant.state!=='DESCANSAR'){
-    ant.fatigue+=dt*0.10;
-    if(ant.fatigue>86 && Math.random()<0.02) ant.state='DESCANSAR';
+    // Unidades: la fatiga se media por FRAME y el reloj simula en milisegundos escalados, asi que a
+    // dt~42 (x64) o incluso a x1 la escala subia +1,7 por paso: cualquier obrera estaba al 100% en un
+    // segundo de tiempo real y ya no volvia a bajar (medido: 28 de 28 hormigas con fatiga>92, `forr 0`,
+    // y el input de fatiga de la red clavado en 1,0 - o sea, "no tengo ganas" permanente). Ahora se mide
+    // en jornadas: una jornada entera de trabajo la agota, ni un segundo.
+    ant.fatigue += _fatUnidad*dt*1.0;
+    // Con la miel en la boca el sorteo del 2% no la sacaba nunca (vease arriba): si va cargada y
+    // al limite, se para en seco y descansa AHII, sin soltar la carga.
+    if(ant.fatigue>92 && (ant.food || ant.state!=='DESCANSAR') && (ant.blocked||0)>3) ant.state='DESCANSAR';
+    else if(ant.fatigue>86 && Math.random()<0.02) ant.state='DESCANSAR';
   }else{
-    ant.fatigue-=dt*0.6;
+    ant.fatigue -= _fatUnidad*dt*14;   // la siesta devuelve el aire en ~1,7 horas de juego
     if(ant.fatigue<=12) ant.state='EXPLORAR';
     const deep={x:CENTER_COL*CELL, y:(SURFACE_ROW+12)*CELL};
     const ang=Math.atan2(deep.y-ant.y, deep.x-ant.x);
@@ -3294,7 +3448,7 @@ function updateAnt(ant, dt){
     return;
   }
   const carrying=!!ant.food && !ant.food.isSoil;
-  if(carrying){
+  if(carrying && ant.state!=='DESCANSAR'){
     ant.state='VOLVER_COMIDA';
     let tgt=storagePos();
     // waypoint Minecraft: si estás en la superficie (y < 100) y lejos del hueco central, ve primero a la boca del túnel para no atravesar tierra en diagonal
@@ -3312,7 +3466,16 @@ function updateAnt(ant, dt){
     const nx=ant.x+Math.cos(ant.angle)*speed, ny=ant.y+Math.sin(ant.angle)*speed;
     if(canMove(nx,ny)){ant.x=nx;ant.y=ny;ant.blocked=0;}else{ ant.blocked++; ant.angle+=(Math.random()-0.5)*0.9 + 0.12; if(ant.blocked>32){ ant.angle+=Math.PI*0.45; ant.blocked=0; /* no abandonar miel: seguir intentando VOLVER_COMIDA */ } }
     if(time-ant.lastPhero>11){ const isRecruit=!!ant.food && !ant.food.isSoil; const amt=isRecruit?(ant.food.amount||1):1; pheromones.push({x:ant.x,y:ant.y,strength: isRecruit? 0.92+amt*0.18 : 0.38, life:1, type: isRecruit?'recruit':'explore', quality: amt}); ant.lastPhero=time; }
-    if(dist(ant,tgt)<14){
+    let _guarda = dist(ant,tgt)<14;
+    // Una obrera que lleva media jornada dando vueltas DENTRO del nido no esta perdida: esta en un
+    // rincon sin galeria hasta el punto exacto de los tarros. La miel se guarda ahi mismo - lo que
+    // importa es que entre en el nido, no que acierte con la celda - y ella vuelve libre a por mas.
+    if(!_guarda && ant.y > SURFACE_Y+CELL && (time-(ant._cargaDesde||-1e9)) > DAY_LENGTH*0.22){
+      pantryPos={x:Math.round(ant.x/CELL)*CELL+8, y:Math.round(ant.y/CELL)*CELL+8};
+      _guarda=true;
+      if(Math.random()<0.5) pushToast(ant.x, ant.y-14, '\u{1F360} aquí', '#ffcc00', 1.1);
+    }
+    if(_guarda){
       const amt=ant.food.amount; ant.food=null; ant.targetFood=null; ant.deliveries++; deliveries++; colonyFood+=amt;
       // trofalaxia: la forrajera llena su buche y comparte luego
       ant.crop=Math.min(ant.cropMax||1.6, (ant.crop||0)+ amt*0.38);
@@ -3408,7 +3571,27 @@ function updateAnt(ant, dt){
     // con 830-2536 pasos bloqueados, cero bloques cavados, cero entregas, despensa clavada en 2.2
     // y la reina sin poner - o sea, que no nacia nadie. Una obrera atascada que cava destruye el
     // atasco; una que se queda quieta hunde la colonia.
-    if(ant.blocked>70){ ant.targetFood=null; ant.blocked=0; ant._frustrada=time; }
+    if(ant.blocked>70){
+      ant.blocked=0; ant._frustrada=time;
+      // El comentario de arriba prometa «se pone a cavar» y el codigo solo soltaba el bocado: la obrera
+      // se quedaba dando vueltas junto a la miel y la colonia entera se morria de hambre con 8-10 gotas
+      // a la vista (medido: despena clavada en 0,5 y miel 8 en el mapa, dia 12, extincion). Ahora cava la
+      // pared que la separa; si no hay pared que cavar (la gota esta en terreno duro) si que abandona.
+      const _tR = Math.floor(targ.y/CELL), _tC = Math.floor(targ.x/CELL);
+      const _yoR = Math.floor(ant.y/CELL), _yoC = Math.floor(ant.x/CELL);
+      let _abrir = null, _bestD = 1e9;
+      for(let dr=-1; dr<=1; dr++) for(let dc=-1; dc<=1; dc++){
+        const r=_yoR+dr, c=_yoC+dc;
+        if(r<0||c<0||r>=ROWS||c>=COLS) continue;
+        if(!soil[r] || soil[r][c]!==1) continue;              // solo tierra suelta, no roca ni vacio
+        if(soilType[r] && soilType[r][c]===7) continue;        // bedrock no se cava
+        if(r <= SURFACE_ROW) continue;                         // no abrir el cielo por arriba
+        const d = Math.hypot((c-_tC)*CELL, (r-_tR)*CELL) - (dr*0.6+dc*0.2);
+        if(d < _bestD){ _bestD=d; _abrir={r, c}; }
+      }
+      if(_abrir && _bestD < CELL*6){ ant.digTarget=_abrir; ant.digProgress=0; ant.state='CAVANDO'; }
+      else ant.targetFood=null;
+    }
     // Topo: el regreso a la despensa ya tenia punto de paso por la boca del tunel; la SALIDA a por
     // miel no. En un tunel de 3 celdas, apuntar en linea recta al bocado se clava contra la pared y
     // a los 36 pasos bloqueados la hormiga abandonaba el objetivo: las entregas se paraban en cuanto
@@ -3419,9 +3602,15 @@ function updateAnt(ant, dt){
     if(ant.blocked>10){ const _rs = routeStep(ant, _meta.x, _meta.y); if(_rs) _meta=_rs; }
     const ang=Math.atan2(_meta.y-ant.y, _meta.x-ant.x);
     let diff=((ang-ant.angle+Math.PI*3)%(Math.PI*2)-Math.PI);
-    ant.angle+= diff*0.06 + steer*0.13;
-    if(ant.sensors.wallLeft>0.7) ant.angle+=0.18;
-    if(ant.sensors.wallRight>0.7) ant.angle-=0.18;
+    // Al aire libre no hay galerias que esquivar, y con 0.06 de giro la forrajera vaga en circulos a
+    // 300 px de la miel: medido x 63->67->56->59 en 200 pasos con blk 0 (no esta bloqueada, es que no
+    // gira hacia la meta). Fuera del nido se gira en seco y sin esquivar paredes.
+    const _aire = ant.y < SURFACE_Y+14 && targ.y < SURFACE_Y+14;
+    ant.angle+= diff*(_aire?0.45:0.06) + steer*(_aire?0.02:0.13);
+    if(!_aire){
+      if(ant.sensors.wallLeft>0.7) ant.angle+=0.18;
+      if(ant.sensors.wallRight>0.7) ant.angle-=0.18;
+    }
     const nx=ant.x+Math.cos(ant.angle)*speed, ny=ant.y+Math.sin(ant.angle)*speed;
     if(canMove(nx,ny)){ant.x=nx;ant.y=ny;ant.blocked=0;}else{
       if(canMove(ant.x+Math.cos(ant.angle)*speed, ant.y)) ant.x+=Math.cos(ant.angle)*speed*0.45;
@@ -3434,7 +3623,7 @@ function updateAnt(ant, dt){
         const cap=2+(ant.role==='RECOLECTORA'?1:0)+(ant.tool==='basket'?1:0);
         const take=Math.min(cap, targ.amount);
         if(targ.amount>take) targ.amount-=take; else {foods.splice(idx,1);}
-        ant.food={amount:take}; ant.targetFood=null; ant.blocked=0; colonyFitness+=0.35;
+        ant.food={amount:take}; ant.targetFood=null; ant.blocked=0; colonyFitness+=0.35; ant._cargaDesde=time;
         ant.commOut=[0.9, 0.7];
         commInks.push({x:ant.x,y:ant.y,sym:'⬢',color:'#00e5ff',life:1,decay:0.0014});
         pushToast(ant.x,ant.y-22,'⬢ ¡MIEL!','#00e5ff',1.6);
@@ -4613,26 +4802,8 @@ const pulse = Math.floor(time*0.08)%2;
   if(!isMini){
     const bob = Math.sin(time*0.08)*2; // kept for subtle hole animation but no text
 
-    // DESPENSA emergente - sin letrero, solo la miel donde ellas decidan (pantryPos)
-    const s1={x:pantryPos.x, y:pantryPos.y};
-    // gotitas sin cartel - la despensa se reconoce porque ahí está la miel acumulada
-    // Topo: un tarro vive en una celda de túnel. Si no hay cámara cavada, no hay miel almacenada a la vista.
-    const _ppc=Math.floor(s1.x/CELL), _ppr=Math.floor(s1.y/CELL);
-    const _spots=[];
-    for(let _dy=-1;_dy<=1;_dy++) for(let _dx=-2;_dx<=2;_dx++){
-      const _rr=_ppr+_dy, _cc=_ppc+_dx;
-      if(_rr<SURFACE_ROW||_rr>=ROWS||_cc<0||_cc>=COLS) continue;
-      if(Array.isArray(soil)&&soil[_rr]&&soil[_rr][_cc]===0) _spots.push({x:_cc*CELL+2,y:_rr*CELL+4});
-    }
-    const _jars=Math.max(0, Math.min(colonyFood, _spots.length*2, 16));
-    for(let i=0;i<_jars;i++){
-      const sp=_spots[i>>1]; if(!sp) continue;
-      const px=sp.x+(i&1)*7, py=sp.y;
-      ctx.fillStyle='#000'; ctx.fillRect(px,py,6,8);
-      ctx.fillStyle= i%3===0? '#ffcc33' : '#ffda66'; ctx.fillRect(px+1,py+1,4,6);
-      ctx.fillStyle='#fff'; ctx.fillRect(px+1,py+1,1,2);
-      ctx.fillStyle='#ff8c00'; ctx.fillRect(px+1,py+6,4,1);
-    }
+    // El almacen de la colonia, dibujado en su camara (tarros y montones apoyados)
+    try{ dibujarAlmacen(); }catch(e){}
     const s2={x:queen.x,y:queen.y};
   }
   // inks
@@ -6172,7 +6343,6 @@ wrap.addEventListener('wheel',e=>{
   const sy=rect.height? (e.clientY-rect.top)/rect.height*H : H/2;
   const delta= e.deltaY<0? 1.12 : 0.88;
   const nz=clamp(view.zoom*delta,0.6,3.2);
-  if((nz===0.6 && delta<1) || (nz===3.2 && delta>1)){ if(Math.random()<0.12) showNotify('warn', nz===3.2?'Zoom máximo 320%':'Zoom mínimo 60%', nz===3.2?'No puedes acercar más.':'No puedes alejar más.',1200); }
   setZoom(view.zoom*delta, sx, sy);
 },{passive:false});
 canvas.addEventListener('mousedown',e=>{
@@ -6288,8 +6458,8 @@ canvas.addEventListener('dblclick',e=>{
 });
 canvas.addEventListener('contextmenu',e=>{e.preventDefault(); const rect=canvas.getBoundingClientRect(); const sx=rect.width? (e.clientX-rect.left)/rect.width*W : W/2; const sy=rect.height? (e.clientY-rect.top)/rect.height*H : H/2; const pos=screenToWorld(sx,sy); spawnFoodAt(pos.x,pos.y,3); pushEvent('food',`Miel grande en [${Math.floor(pos.x)},${Math.floor(pos.y)}]`); pushToast(pos.x,pos.y,'🍯 GRANDE','#ffcc00');});
 
-document.getElementById('btnZoomIn').onclick=()=>{ const n=Math.min(3.2,view.zoom*1.25); if(n===view.zoom && view.zoom>=3.19) showNotify('warn','Zoom máximo','320% - no puedes acercar más.',1800); setZoom(n);};
-document.getElementById('btnZoomOut').onclick=()=>{ const minZ=getMinZoom(); const n=Math.max(minZ,view.zoom*0.8); if(n===view.zoom && view.zoom<=0.61) showNotify('warn','Zoom mínimo','60%.',1600); setZoom(n);};
+document.getElementById('btnZoomIn').onclick=()=>{ setZoom(Math.min(3.2,view.zoom*1.25)); };
+document.getElementById('btnZoomOut').onclick=()=>{ const minZ=getMinZoom(); setZoom(Math.max(minZ,view.zoom*0.8)); };
 document.getElementById('btnZoomReset').onclick=()=>{ const z=getMinZoom(); view.zoom=z; view.x=(W - W/z)/2; view.y=(H - H/z)/2; clampView(); updateZoomLabel(); };
 document.getElementById('togEyes').onclick=(e)=>{showEyes=!showEyes; e.currentTarget.classList.toggle('on',showEyes);};
 document.getElementById('togTrail').onclick=(e)=>{showTrail=!showTrail; e.currentTarget.classList.toggle('on',showTrail);};
@@ -7595,6 +7765,7 @@ function _updateBothAntCounts(){ try{
       const c=document.getElementById('calAntCount'); if(c) c.textContent=n;
       const tb=document.getElementById('tbPop'); if(tb) tb.textContent=n;
       const hPop=document.getElementById('hPop'); if(hPop && typeof getMaxPopulation==='function'){ try{ hPop.textContent=n+'/'+getMaxPopulation(); }catch(e){ hPop.textContent=n; } }
+      updateEcoHud();
     }catch(e){ console.warn('antCount',e); }
 }
 setInterval(_updateBothAntCounts, 350);
@@ -7956,3 +8127,98 @@ setTimeout(_updateBothAntCounts, 1800);
   };
   // si ya hay mundo creado y no es primera vez, saltar splash? No, siempre splash breve
 })();
+
+// === HUD DE RESERVAS E INVENTARIO ===
+// Topo (pedido del dueño): la colonia tiene que ver su moneda -cuanta miel y cuantos materiales hay
+// dentro del nido- sin abrir un libro, y tiene que poder entrar al detalle desde el mismo sitio donde
+// se cuentan las obreras activas. Los numeros viven aqui; la barra de arriba se retiro para no decir
+// lo mismo dos veces, y el detalle no se apila encima del perfil de una hormiga (uno u otro).
+function _ecoTxt(id, v){ const e=document.getElementById(id); if(e && e.textContent!==String(v)) e.textContent=String(v); }
+let _invAbierto=false;
+function updateEcoHud(){
+  try{
+    _ecoTxt('velFoodCount', Math.max(0, Math.floor(colonyFood)));
+    _ecoTxt('velMatFiber', Math.max(0, Math.floor(worldMaterials.fiber||0)));
+    _ecoTxt('velMatStone', Math.max(0, Math.floor(worldMaterials.stone||0)));
+    _ecoTxt('velMatClay',  Math.max(0, Math.floor(worldMaterials.clay||0)));
+    _ecoTxt('velMatWood',  Math.max(0, Math.floor(worldMaterials.wood||0)));
+    _ecoTxt('velMatSand',  Math.max(0, Math.floor(worldMaterials.sand||0)));
+    _ecoTxt('velMatRooms', storageCells().length);
+    if(_invAbierto) pintarInventario();
+  }catch(e){ /* un nodo que falte no puede parar el bucle */ }
+}
+function _filaInv(icono, nombre, valor, nota, color){
+  return '<div style="display:flex;align-items:center;gap:7px;background:#000;border:2px solid #000;padding:5px 6px">'
+    + '<span style="font-size:13px;line-height:1;filter:drop-shadow(1px 1px 0 #000)">'+icono+'</span>'
+    + '<span style="flex:1;min-width:0;font-family:\'VT323\',monospace;font-size:14px;color:#c9b896;letter-spacing:0.3px">'+nombre
+    + (nota? '<br><span style="font-size:11px;color:#7a6a4e">'+nota+'</span>' : '')+'</span>'
+    + '<b style="font-family:\'Press Start 2P\',monospace;font-size:11px;color:'+(color||'#ffcc00')+';text-shadow:1px 1px 0 #000">'+valor+'</b></div>';
+}
+function pintarInventario(){
+  const body=document.getElementById('invBody'); if(!body) return;
+  const celdas=storageCells(), p=storagePos(), cap=capacidadAlmacen();
+  const miel=Math.max(0, Math.floor(colonyFood));
+  const lleno=Math.max(0, Math.min(100, Math.round(miel/Math.max(1,cap)*100)));
+  let html='';
+  html += '<div style="background:#2a0f00;border:3px solid #000;padding:7px 8px">'
+    + '<div style="display:flex;align-items:baseline;gap:6px"><span style="font-size:16px">🍯</span>'
+    + '<b style="font-family:\'Press Start 2P\',monospace;font-size:16px;color:#ffcc00;text-shadow:1px 1px 0 #000">'+miel+'</b>'
+    + '<span style="font-family:\'VT323\',monospace;font-size:13px;color:#c9b896">raciones · caben '+cap+'</span></div>'
+    + '<div style="height:7px;background:#000;border:2px solid #000;margin-top:6px"><div style="height:100%;width:'+lleno+'%;background:linear-gradient(90deg,#ffcc00,#ff8c00)"></div></div>'
+    + '</div>';
+  html += '<div style="font-family:\'VT323\',monospace;font-size:12px;color:#7a6a4e;line-height:1.25">Guardado en '
+    + (celdas.length? '<b style="color:#c9b896">'+celdas.length+' celda'+(celdas.length===1?'':'s')+'</b> de la cámara <b style="color:#c9b896">['+Math.floor(p.x/CELL)+','+Math.floor(p.y/CELL)+']</b>' : '<b style="color:#ff8c00">sin cámara excavada</b>')
+    + (granerosConstruidos()? ' · graneros: '+granerosConstruidos() : '') + '</div>';
+  for(const d of _MAT_DEFS){
+    html += _filaInv(d.icon, d.n, Math.max(0, Math.floor(worldMaterials[d.k]||0)), d.sirve, '#fff8dc');
+  }
+  try{
+    const herramientas={pick:['⛏','PICO'],basket:['🧺','CESTA'],trowel:['🪝','PALETA']};
+    const partes=[];
+    for(const k in herramientas){ const n=workers.filter(w=>w.tool===k).length; if(n) partes.push(herramientas[k][0]+' '+herramientas[k][1]+' ×'+n); }
+    const estructur=structures.filter(st=>st&&st.built!==false).length;
+    if(partes.length||estructur) html += '<div style="font-family:\'VT323\',monospace;font-size:12px;color:#7a6a4e;line-height:1.3">'
+      + (partes.length? partes.join(' · ')+'<br>':'') + (estructur? 'construcciones en pie: <b style="color:#c9b896">'+estructur+'</b>' : '') + '</div>';
+    const crias=brood.length;
+    html += '<div style="font-family:\'VT323\',monospace;font-size:12px;color:#7a6a4e">cría en la cámara: <b style="color:#c9b896">'+crias+'</b> · desecho acumulado: <b style="color:#c9b896">'+wastePiles.length+'</b></div>';
+  }catch(e){}
+  if(body.dataset.stamp!==html){ body.innerHTML=html; body.dataset.stamp=html; }
+}
+function abrirInventario(){
+  const sh=document.getElementById('invSheet'); if(!sh) return;
+  try{ closeAntProfile(); }catch(e){}
+  try{ closeQueenProfile(); }catch(e){}
+  _invAbierto=true; sh.setAttribute('data-open','1'); sh.style.display='block';
+  pintarInventario();
+  requestAnimationFrame(()=>{ sh.style.transform='translateY(0) scaleY(1)'; sh.style.opacity='1'; });
+}
+function cerrarInventario(){
+  const sh=document.getElementById('invSheet'); if(!sh) return;
+  _invAbierto=false; sh.removeAttribute('data-open');
+  sh.style.transform='translateY(-12px) scaleY(0)'; sh.style.opacity='0';
+  setTimeout(()=>{ if(!_invAbierto) sh.style.display='none'; }, 240);
+}
+window.abrirInventario=abrirInventario; window.cerrarInventario=cerrarInventario;
+function initInventarioHud(){
+  const b=document.getElementById('btnInventory');
+  if(b && !b.dataset.wired){ b.dataset.wired='1'; b.onclick=(e)=>{ if(e) e.stopPropagation(); if(_invAbierto) cerrarInventario(); else abrirInventario(); }; }
+  const c=document.getElementById('btnCloseInv');
+  if(c && !c.dataset.wired){ c.dataset.wired='1'; c.onclick=cerrarInventario; }
+  const sh=document.getElementById('invSheet');
+  if(sh && !sh.dataset.wired){ sh.dataset.wired='1'; sh.onclick=(e)=>{ if(e.target===sh) cerrarInventario(); }; }
+  const go=document.getElementById('btnInvGo');
+  if(go && !go.dataset.wired){ go.dataset.wired='1'; go.onclick=()=>{
+    try{ const p=storagePos(); const b2=getPanBounds(); view.x=clamp(p.x - W/view.zoom/2, b2.minX, b2.maxX); view.y=clamp(p.y - H/view.zoom/2, b2.minY, b2.maxY); clampView(); pushToast(p.x, p.y-18, '🍯', '#ffcc00', 1.4); }catch(e){}
+  }; }
+  window.addEventListener('keydown', e=>{
+    if(e.key==='Escape' && _invAbierto){ cerrarInventario(); return; }
+    if((e.key==='i'||e.key==='I') && _topoHasWorld && !e.ctrlKey && !e.metaKey && !e.altKey){
+      const t=e.target; if(t && (t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable)) return;
+      e.preventDefault(); if(_invAbierto) cerrarInventario(); else abrirInventario();
+    }
+  });
+  try{ const w=document.getElementById('velAntBar'); if(w && !w.dataset.wired){ w.dataset.wired='1'; w.onclick=(e)=>{ if(e.target && e.target.closest && e.target.closest('button')) return; }; } }catch(e){}
+}
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', initInventarioHud);
+else initInventarioHud();
+setTimeout(initInventarioHud, 600);
