@@ -4386,30 +4386,9 @@ function paintCacheCell(c,r,isMini){
         if(depth>8 && (c*3+r*5)%20===0){ soilCacheCtx.fillStyle='#2e1a0a'; soilCacheCtx.fillRect(x+10,y+2,1,6); } // veta profunda
       }
     }else{
-      // túnel - suelo compactado realista, no plano
-      // base crema con variación por profundidad
-      const tunnelBase = (r-SURFACE_ROW)<4 ? '#fff1c8' : (r-SURFACE_ROW)<10 ? '#fff8dc' : '#ffedc0';
-      soilCacheCtx.fillStyle=tunnelBase; soilCacheCtx.fillRect(x-0.5,y-0.5,CELL+1,CELL+1);
-      // suelo pisoteado más oscuro abajo
-      soilCacheCtx.fillStyle='#f5d8a0'; soilCacheCtx.fillRect(x,y+CELL-5,CELL,3); soilCacheCtx.fillStyle='#e8c99a'; soilCacheCtx.fillRect(x,y+CELL-3,CELL,2);
-      // granito fino en suelo
-      const tseed = (c*11+r*7)%10;
-      if(tseed===2){ soilCacheCtx.fillStyle='#e0c080'; soilCacheCtx.fillRect(x+4,y+11,2,1); }
-      if(tseed===5){ soilCacheCtx.fillStyle='rgba(0,0,0,0.08)'; soilCacheCtx.fillRect(x+9,y+8,1,1); }
-      // pared con ladrillo pixel donde colinda con tierra - más realista con mortero
-      const _sol = (rr,cc)=> (rr<0||cc<0||rr>=ROWS||cc>=COLS) ? true : !!(soil[rr] && soil[rr][cc]===1);
-      const up = _sol(r-1,c), down = _sol(r+1,c), left = _sol(r,c-1), right = _sol(r,c+1);
-      if(up){
-        soilCacheCtx.fillStyle='#2e0f00'; soilCacheCtx.fillRect(x,y,CELL,4); 
-        soilCacheCtx.fillStyle='#8b5a2b'; soilCacheCtx.fillRect(x,y, CELL,1);
-        soilCacheCtx.fillStyle='#4a2510'; soilCacheCtx.fillRect(x+2,y+2,4,1); soilCacheCtx.fillRect(x+10,y+2,4,1); // ladrillitos
-      }
-      if(down){soilCacheCtx.fillStyle='#2e0f00'; soilCacheCtx.fillRect(x,y+CELL-4,CELL,4); soilCacheCtx.fillStyle='#1a0a00'; soilCacheCtx.fillRect(x,y+CELL-2,CELL,2);}
-      if(left){soilCacheCtx.fillStyle='#2e0f00'; soilCacheCtx.fillRect(x,y,4,CELL); soilCacheCtx.fillStyle='#6b3a1f'; soilCacheCtx.fillRect(x+1,y+4,1,4); soilCacheCtx.fillRect(x+1,y+10,1,4);}
-      if(right){soilCacheCtx.fillStyle='#2e0f00'; soilCacheCtx.fillRect(x+CELL-4,y,4,CELL); soilCacheCtx.fillStyle='#4a2510'; soilCacheCtx.fillRect(x+CELL-2,y+3,1,6);}
-      // brillo interior arriba (luz del túnel)
-      soilCacheCtx.fillStyle='rgba(255,255,255,0.45)'; soilCacheCtx.fillRect(x+4,y+4, CELL-8,1);
-      if(!up){ soilCacheCtx.fillStyle='rgba(255,255,255,0.15)'; soilCacheCtx.fillRect(x+2,y+2,2,2); }
+      // El CREMA se acab6 (era '#fff1c8' y parpadeaba cuando el cuadro caia en la ruta vieja): el hueco
+      // lo pinta el mismo ayudante que usa la cache y el minimapa, asi que no hay dos versiones que ver.
+      pintarHuecoVoxel(soilCacheCtx,c,r,true);
     }
 }
 
@@ -4750,15 +4729,150 @@ function _pieCueva(cr,rr){
 }
 function _humorPlant(ax,ay,n){ return (Math.floor(ax)*7 + Math.floor(ay)*13 + n*29) % 5; }
 
+// ============================ LA PARED DE FONDO DEL HUECO ============================
+// Topo (2026-10-16): «los graficos del fondo del mapa se glitchean, hay un flash solo en la textura de
+// fondo de las cuevas. Crea una textura voxel acorde para el fondo de la cueva que de ese efecto de pared
+// de fondo, como en Terraria». Dos cosas, y las dos se arreglan aqui:
+//
+//  1. EL FLASH. El tunel se pintaba de dos maneras distintas segun la ruta: la cache usa bloque oscuro,
+//     y el camino de emergencia de `drawFarm` (y el `paintCacheCell` viejo) usaba un crema `#fff1c8`.
+//     Cuando habia un repintado pendiente en el aire, ESE cuadro salia por el camino viejo y toda la
+//     cueva parpadeaba clara. Se acaba el doble pintor: un solo ayudante dibuja el hueco, y lo llaman
+//     las tres rutas (cache, mini y emergencia). Si las tres pintan lo mismo, no hay nada que parpadee.
+//  2. LA PARED. Antes el hueco era aire negro (#1c1108) y ya. Terraria ensena otra cosa: detras del
+//     tunel hay roca QUEDA, sin tallar, del material de esa capa, con sus hiladas de ladrillo y su junta.
+//     Eso es lo que da profundidad: el hueco se ve HUECO porque detras hay una pared, no porque sea negro.
+//     El tono sale del material que rodea el cuadro (asi la cueva de piedra es gris, la de obsidiana
+//     violeta casi negro y la del basalto cocida), y cada ladrillo lleva su media tilde por coordenada:
+//     dos casillas seguidas no pueden salir calcadas, y como el ruido no depende del reloj no parpadea.
+const PARED_FONDO = {
+  1:'#43291a', 2:'#4d2e1d', 3:'#5b4c37', 4:'#3d3d44', 5:'#37343d',
+  6:'#333b46', 7:'#312f3a', 8:'#3f3a32', 9:'#3a3d44', 10:'#403a2e',
+  11:'#4b4657', 12:'#2b2730', 13:'#1b1626', 14:'#31201c', 15:'#5e2a14',
+  16:'#3a3a44', 17:'#2a262e', 18:'#4d4f56'
+};
+function _paredDe(t){ return PARED_FONDO[t] || '#3a2f26'; }
+
+// ── LA PARED DE FONDO DEL HUECO, v2 (2026-10-16, despues de verla pintada) ──
+// La primera pasada salia como UNA PERSIANA: hiladas de 4 px con la junta muy marcada, y el musgo de 3 px
+// se leia como polvo suelto. Mirada en el lienzo, la pared tiene que leerse como LADRILLO DETRAS del tune
+// (lo que hace Terraria): piezas de 8x8 con junta de un pixel en las DOS direcciones y la junta solo un
+// punto mas oscura que la pieza. Cambios, y por que:
+//   · hilada de 8 px (no 4): menos lineas, menos rayas de persiana;
+//   · mortero a -22 % (era -30 %) y en horizontal Y vertical con el mismo peso: la reja desaparece;
+//   · el tono de cada pieza entra por el hash de la PIEZA (no de la casilla), asi el patrón es continuo
+//     a traves de las casillas y dos casillas seguidas siguen sin salir calcadas;
+//   · fuera el musgo verde (parecia glitch); en las bandas duras queda una chispa de 1 px, y en las de
+//     tierra las raices que cuelgan, que es lo que de verdad dice «estamos cerca de arriba».
+function pintarHuecoVoxel(g, c, r, det){
+  const x = c*CELL, y = r*CELL;
+  const _soil1 = (rr,cc)=> (rr<0||cc<0||rr>=ROWS||cc>=COLS) ? true : !!(soil[rr] && soil[rr][cc]===1);
+  let t = 0;
+  const _vec = [[-1,0],[1,0],[0,-1],[0,1]];
+  for(let i=0;i<4;i++){ const rr=r+_vec[i][0], cc=c+_vec[i][1];
+    if(rr>=0 && rr<ROWS && cc>=0 && cc<COLS && soil[rr] && soil[rr][cc]===1 && soilType[rr] && soilType[rr][cc]>0){ t = soilType[rr][cc]; break; } }
+  if(!t){ try{ t = tipoDePiso(Math.max(0, r-SURFACE_ROW)); }catch(e){ t = 1; } if(!t) t = 1; }
+  const base = _paredDe(t);
+  const up = _soil1(r-1,c), down = _soil1(r+1,c), izq = _soil1(r,c-1), der = _soil1(r,c+1);
+  const abiertos = (!up?1:0)+(!down?1:0)+(!izq?1:0)+(!der?1:0);
+  const camara = abiertos >= 2;
+  const mort = adjust(base, -22);
+  const luz  = adjust(base,  12);
+  // 1) mortero de fondo: si una pieza no se pinta, lo que se ve es la junta, no un hueco negro
+  g.fillStyle = mort; g.fillRect(x, y, CELL, CELL);
+  // 2) las piezas de 8x8, con la hilada superior desplazada medio ladrillo (el clasicazo del aparejo)
+  for(let i=0;i<2;i++){
+    const yy = y + i*8, salta = ((r*2 + i) % 2) ? 4 : 0;
+    for(let k=-1;k<3;k++){
+      const bxc = c*2 + k + ((r*2 + i) % 2 ? 1 : 0);           // columna de pieza, continua entre casillas
+      const byr = r*2 + i;
+      const x0 = x + salta + k*8, px0 = Math.max(x, x0 + 1), px1 = Math.min(x+CELL, x0 + 8);
+      if(px1 <= px0) continue;
+      const kk = ((bxc*13 + byr*7 + ((bxc*5) % 3)) % 7) - 3;    // -3..+3: cada pieza, su tilde
+      g.fillStyle = _tilde16(base, kk);
+      g.fillRect(px0, yy + 1, px1 - px0, 6);
+    }
+    g.fillStyle = mort; g.fillRect(x, yy, CELL, 1);             // junta de la hilada
+    for(let k=-1;k<3;k++){ const jx = x + salta + k*8 + 7;
+      if(jx > x && jx < x+CELL) g.fillRect(jx, yy + 1, 1, 6); }  // junta vertical, misma fuerza que la otra
+    if(det && ((c*3 + r*5 + i) % 5) === 0){                      // y una arista iluminada por pieza, rara
+      g.fillStyle = luz; g.fillRect(x + 1 + ((c*7 + i*5) % 8), yy + 2, 2, 1);
+    }
+  }
+  // 3) el techo: sombra de voladizo, suave y en dos pasos (una barra negra era lo que hacia el hueco
+  //    parece un boton en lugar de un tune
+  if(up){ g.fillStyle='rgba(0,0,0,0.30)'; g.fillRect(x, y, CELL, 2); g.fillStyle='rgba(0,0,0,0.42)'; g.fillRect(x, y, CELL, 1); }
+  // 4) el suelo: la linea de apoyo sobre la que van las hormigas y su canto claro
+  if(down){ g.fillStyle = adjust(base, -14); g.fillRect(x, y+CELL-2, CELL, 2); g.fillStyle = luz; g.fillRect(x, y+CELL-1, CELL, 1); }
+  const kk2 = (c*11 + r*7) % 9;
+  if(det && kk2 === 2){ g.fillStyle = adjust(base, 20); g.fillRect(x+4+((c*5)%6), y+CELL-3, 2, 1); }   // cascote
+  if(det && kk2 === 5){ g.fillStyle = 'rgba(0,0,0,0.28)'; g.fillRect(x+9-((r*3)%4), y+CELL-4, 1, 1); }  // y su sombra
+  // 5) raices que cuelgan, solo en las bandas de tierra (tipos 1-3) y solo donde hay roca encima
+  if(det && up && (t===1||t===2||t===3) && (kk2===0||kk2===4)){
+    const rx = x+3+((c*3)%9), largo = 3 + ((c+r)%3);
+    g.fillStyle = '#2b1a0c'; g.fillRect(rx, y+2, 1, largo);
+    g.fillStyle = '#43291a'; g.fillRect(rx+1, y+2+largo, 1, 1);
+  }
+  // 6) en las bandas duras, una chispa minima en un rincon de la pieza (cuarcita y marmol brillan; antes
+  //    era musgo verde y parecia un pixel suelto de la nada)
+  if(det && camara && (t===11||t===12||t===16) && ((c*5 + r*3) % 11) === 0){
+    g.fillStyle = 'rgba(255,255,255,0.20)'; g.fillRect(x+2+((c*7)%9), y+3+((r*5)%7), 1, 1);
+  }
+  // 7) camara amplia: la pared se hunde un punto arriba (entrada de luz por el tune
+  if(camara){ g.fillStyle = 'rgba(0,0,0,0.14)'; g.fillRect(x, y, CELL, 2); }
+  // 8) el corte contra la roca tallada: 1 px, y solo donde de verdad hay material (un marco por los
+  //    cuatro lados era una reja: eso se quito el 2026-10-15 y sigue fuera)
+  const corte = adjust(base, -40);
+  g.fillStyle = corte;
+  if(up)  g.fillRect(x, y+2, CELL, 1);
+  if(izq) g.fillRect(x, y+2, 1, CELL-4);
+  if(der) g.fillRect(x+CELL-1, y+2, 1, CELL-4);
+  if(soilType[r] && (soilType[r][c-1]===17 || soilType[r][c+1]===17)){ g.fillStyle='#57536b'; g.fillRect(x,y,CELL,1); }
+}
+
+// El agua de los charcos y de la lluvia: la dibujaba SOLO el camino de emergencia de drawFarm, o sea
+// que aparecia y desaparecia segun si habia o no repintado pendiente. Misma razon, misma solucion: un
+// ayudante que llaman las dos rutas. Se pinta ENCIMA del cache (es lo unico del terreno que se mueve).
+function pintarAguaVoxel(g,c,r){
+  const x=c*CELL, y=r*CELL;
+  if(!water || !water[r] || !(water[r][c]>0.08)) return;
+  // OJO: no se puede leer la `time` de fuera aunque exista mas abajo: es un `let` de ambito y dentro de
+  // la funcion cae en su zona muerta (medido: renderLoop ReferenceError cada cuadro). performance.now().
+  const time=performance.now();
+  const wa=water[r][c];
+  const leftW = c>0 && water[r][c-1]>0.08 ? water[r][c-1] : 0;
+  const rightW = c<COLS-1 && water[r][c+1]>0.08 ? water[r][c+1] : 0;
+  const upW = r>0 && water[r-1] && water[r-1][c]>0.08 ? water[r-1][c] : 0;
+  const downW = r+1<ROWS && water[r+1] && water[r+1][c]>0.08 ? water[r+1][c] : 0;
+  let col = wa>0.62? '#1a4a7a' : wa>0.38? '#2e6ea6' : wa>0.18? '#4a8fcc' : '#7ec8e3';
+  if(r<SURFACE_ROW+2 && wa<0.3) col='#8ec8f0';
+  const isSurface = !upW || upW < 0.12;
+  g.fillStyle=col; g.fillRect(x-1, y-1, CELL+2, CELL+2);
+  if(leftW>0.08) g.fillRect(x-1, y, 1, CELL);
+  if(rightW>0.08) g.fillRect(x+CELL, y, 1, CELL);
+  if(upW>0.08) g.fillRect(x, y-1, CELL, 1);
+  if(downW>0.08) g.fillRect(x, y+CELL, CELL, 1);
+  g.fillStyle='rgba(0,0,0,0.18)';
+  if(!downW) g.fillRect(x-1, y+CELL, CELL+2, 1);
+  if(!leftW) g.fillRect(x-1, y-1, 1, CELL+2);
+  if(!rightW) g.fillRect(x+CELL, y-1, 1, CELL+2);
+  if(isSurface){
+    const wave = Math.sin(time*0.022 + c*0.85 + r*0.2)*1.6;
+    const w2 = Math.sin(time*0.018 + c*1.1)*0.9;
+    g.fillStyle='rgba(255,255,255,0.38)'; g.fillRect(x+1+wave, y+1, CELL-2, 1);
+    g.fillStyle='rgba(255,255,255,0.22)'; g.fillRect(x+2+w2, y+3, CELL-4, 1);
+    if(wa>0.42){ g.fillStyle='rgba(255,255,255,0.16)'; g.fillRect(x+3, y+2, 2,1); }
+  } else {
+    if((c+r)%3===0){ g.fillStyle='rgba(255,255,255,0.08)'; g.fillRect(x+4, y+6, 3,1); }
+  }
+}
+
 function paintCacheCellTextured(c,r){
   const g=soilCacheCtx, x=c*CELL, y=r*CELL;
   const _h=((c*7+r*13)%5), _h2=((c*11+r*5)%4);       // el "ruido" sale de la coordenada: no parpadea al repintar
   if(soil[r][c]!==1){
-    // tunel: hueco liso y oscuro; el techo se oscurece 2 px si arriba hay material, y si hay suelo debajo se
-    // marca una linea de apoyo. Los marcos de 3 px por los cuatro lados se acabaron: en grupo era una reja.
-    g.fillStyle='#1c1108'; g.fillRect(x,y,CELL,CELL);
-    if(r>0 && soil[r-1] && soil[r-1][c]===1){ g.fillStyle='#0d0704'; g.fillRect(x,y,CELL,2); }
-    if(r+1<ROWS && soil[r+1] && soil[r+1][c]===1){ g.fillStyle='rgba(255,214,150,0.055)'; g.fillRect(x,y+CELL-1,CELL,1); }
+    // el hueco no es aire negro: detras hay PARED de la roca que queda, sin tallar (ver pintarHuecoVoxel)
+    pintarHuecoVoxel(g,c,r,!_voxMini);
     return;
   }
   const t=(soilType[r]&&soilType[r][c])||1;
@@ -5345,16 +5459,25 @@ function drawFarm(ctx,W,H,isMini=false){
   // soil & tunnels - PIXEL ART DETALLADO REALISTA - con LOD para x16 smooth
   // (debug preview removido)
   // CACHE: si hay cache válido y no es mini, usarla (ahora con worldW correcto)
-  if(!isMini && soilCacheCanvas && !soilCacheDirty){ // FIX AZUL REACTIVADO sf: cache con pisos platformer
-    // dibujar cache del mundo completo (1024x576) - el zoom ya hizo translate
-      ctx.imageSmoothingEnabled=false; ctx.drawImage(soilCacheCanvas, 0, 0);
-  } else {
-    // si está dirty, reconstruir cache en background y dibujar directo este frame
-    if(!isMini && soilCacheCanvas && soilCacheDirty){
+  let cStart=0,cEnd=COLS,rStart=SURFACE_ROW,rEnd=ROWS;
+  if(useZoom){cStart=Math.max(0,Math.floor(view.x/CELL)-1); cEnd=Math.min(COLS,Math.ceil((view.x+W/view.zoom)/CELL)+1); rStart=Math.max(SURFACE_ROW,Math.floor(view.y/CELL)-1); rEnd=Math.min(ROWS,Math.ceil((view.y+H/view.zoom)/CELL)+1);}
+  if(!isMini && soilCacheCanvas){
+    // TOP0 - EL FLASH DE LAS CUEVAS, CERRADO (2026-10-16). Como estaba montado, habia DOS pintores del
+    // terreno: el cache (hueco con pared oscura) y este camino a mano (hueco CREMA '#fff1c8' y el agua).
+    // El condicionante era `!soilCacheDirty`: cualquier cuadro con repintado pendiente (o sea, casi cada vez
+    // que una hormiga muerde) salia pintado a mano, y al siguiente volvian el cache y el oscuro. Eso es lo
+    // que el dueño vio como «un flash solo en la textura de fondo de las cuevas». Ahora el mundo principal
+    // SIEMPRE se pinta desde el cache: si esta pendiente se reconstruye en este mismo cuadro y se dibuja el
+    // cache, y encima solo se repasa lo que de verdad se mueve (el agua). El camino a mano queda para el
+    // minimapa, que no tiene cache. Y como los dos llaman al MISMO ayudante de hueco, aunque alguien
+    // vuelva a caer aqui no va a ver dos cuevas distintas.
+    if(soilCacheDirty){
       try{ rebuildSoilCache(); }catch(e){ console.warn('rebuild fail',e); soilCacheDirty=false; }
     }
-    let cStart=0,cEnd=COLS,rStart=SURFACE_ROW,rEnd=ROWS;
-  if(useZoom){cStart=Math.max(0,Math.floor(view.x/CELL)-1); cEnd=Math.min(COLS,Math.ceil((view.x+W/view.zoom)/CELL)+1); rStart=Math.max(SURFACE_ROW,Math.floor(view.y/CELL)-1); rEnd=Math.min(ROWS,Math.ceil((view.y+H/view.zoom)/CELL)+1);}
+    ctx.imageSmoothingEnabled=false; ctx.drawImage(soilCacheCanvas, 0, 0);
+    for(let r=rStart;r<rEnd;r++) for(let c=cStart;c<cEnd;c++){ if(water && water[r] && water[r][c]>0.08) pintarAguaVoxel(ctx,c,r); }
+  }
+  if(isMini || !soilCacheCanvas){
   for(let r=rStart;r<rEnd;r++) for(let c=cStart;c<cEnd;c++){
     const x=c*CELL, y=r*CELL;
     if(soil[r][c]===1){
@@ -5398,68 +5521,10 @@ function drawFarm(ctx,W,H,isMini=false){
         }
       }
     }else{
-      // túnel - suelo compactado realista, no plano
-      // base crema con variación por profundidad
-      const hasWater = water[r] && water[r][c]>0.08;
-      if(hasWater){
-        const wa=water[r][c];
-        // Topo - agua unificada que fluye (no charcos separados) - estilo reloj pixelado
-        const leftW = c>0 && water[r][c-1]>0.08 ? water[r][c-1] : 0;
-        const rightW = c<COLS-1 && water[r][c+1]>0.08 ? water[r][c+1] : 0;
-        const upW = r>0 && water[r-1] && water[r-1][c]>0.08 ? water[r-1][c] : 0;
-        const downW = r+1<ROWS && water[r+1] && water[r+1][c]>0.08 ? water[r+1][c] : 0;
-        // color por profundidad/cantidad como madera del reloj pero en azul
-        let col = wa>0.62? '#1a4a7a' : wa>0.38? '#2e6ea6' : wa>0.18? '#4a8fcc' : '#7ec8e3';
-        if(r<SURFACE_ROW+2 && wa<0.3) col='#8ec8f0'; // charco superficial claro
-        const isSurface = !upW || upW < 0.12;
-        // dibujar bloque base unificado con solape para no dejar grid blanco
-        ctx.fillStyle=col; ctx.fillRect(x-1, y-1, CELL+2, CELL+2);
-        // conectar laterales: rellenar hueco 1px entre celdas vecinas con agua
-        if(leftW>0.08) ctx.fillRect(x-1, y, 1, CELL);
-        if(rightW>0.08) ctx.fillRect(x+CELL, y, 1, CELL);
-        if(upW>0.08) ctx.fillRect(x, y-1, CELL, 1);
-        if(downW>0.08) ctx.fillRect(x, y+CELL, CELL, 1);
-        // borde oscuro sutil como el reloj (solo donde no hay vecino con agua)
-        ctx.fillStyle='rgba(0,0,0,0.18)';
-        if(!downW) ctx.fillRect(x-1, y+CELL, CELL+2, 1);
-        if(!leftW) ctx.fillRect(x-1, y-1, 1, CELL+2);
-        if(!rightW) ctx.fillRect(x+CELL, y-1, 1, CELL+2);
-        // onda superior animada solo en superficie del cuerpo de agua
-        if(isSurface){
-          const wave = Math.sin(time*0.022 + c*0.85 + r*0.2)*1.6;
-          const w2 = Math.sin(time*0.018 + c*1.1)*0.9;
-          ctx.fillStyle='rgba(255,255,255,0.38)'; ctx.fillRect(x+1+wave, y+1, CELL-2, 1);
-          ctx.fillStyle='rgba(255,255,255,0.22)'; ctx.fillRect(x+2+w2, y+3, CELL-4, 1);
-          // reflejo pixelado estilo reloj
-          if(wa>0.42){ ctx.fillStyle='rgba(255,255,255,0.16)'; ctx.fillRect(x+3, y+2, 2,1); }
-        } else {
-          // interior: vetas sutiles de flujo
-          if((c+r)%3===0){ ctx.fillStyle='rgba(255,255,255,0.08)'; ctx.fillRect(x+4, y+6, 3,1); }
-        }
-      } else {
-        const tunnelBase = (r-SURFACE_ROW)<4 ? '#fff1c8' : (r-SURFACE_ROW)<10 ? '#fff8dc' : '#ffedc0';
-        ctx.fillStyle=tunnelBase; ctx.fillRect(x-0.5,y-0.5,CELL+1,CELL+1);
-      // suelo pisoteado más oscuro abajo
-      ctx.fillStyle='#f5d8a0'; ctx.fillRect(x,y+CELL-5,CELL,3); ctx.fillStyle='#e8c99a'; ctx.fillRect(x,y+CELL-3,CELL,2);
-      // granito fino en suelo
-      const tseed = (c*11+r*7)%10;
-      if(tseed===2){ ctx.fillStyle='#e0c080'; ctx.fillRect(x+4,y+11,2,1); }
-      if(tseed===5){ ctx.fillStyle='rgba(0,0,0,0.08)'; ctx.fillRect(x+9,y+8,1,1); }
-      // pared con ladrillo pixel donde colinda con tierra - más realista con mortero
-      const _sol = (rr,cc)=> (rr<0||cc<0||rr>=ROWS||cc>=COLS) ? true : !!(soil[rr] && soil[rr][cc]===1);
-      const up = _sol(r-1,c), down = _sol(r+1,c), left = _sol(r,c-1), right = _sol(r,c+1);
-      if(up){
-        ctx.fillStyle='#2e0f00'; ctx.fillRect(x,y,CELL,4); 
-        ctx.fillStyle='#8b5a2b'; ctx.fillRect(x,y, CELL,1);
-        ctx.fillStyle='#4a2510'; ctx.fillRect(x+2,y+2,4,1); ctx.fillRect(x+10,y+2,4,1); // ladrillitos
-      }
-      if(down){ctx.fillStyle='#2e0f00'; ctx.fillRect(x,y+CELL-4,CELL,4); ctx.fillStyle='#1a0a00'; ctx.fillRect(x-0.3,y+CELL-2.3,CELL+0.6,2.6);}
-      if(left){ctx.fillStyle='#2e0f00'; ctx.fillRect(x,y,4,CELL); ctx.fillStyle='#6b3a1f'; ctx.fillRect(x+1,y+4,1,4); ctx.fillRect(x+1,y+10,1,4);}
-      if(right){ctx.fillStyle='#2e0f00'; ctx.fillRect(x+CELL-4,y,4,CELL); ctx.fillStyle='#4a2510'; ctx.fillRect(x+CELL-2,y+3,1,6);}
-      // brillo interior arriba (luz del túnel)
-      ctx.fillStyle='rgba(255,255,255,0.45)'; ctx.fillRect(x+4,y+4, CELL-8,1);
-      if(!up){ ctx.fillStyle='rgba(255,255,255,0.15)'; ctx.fillRect(x+2,y+2,2,2); }
-      }
+      // El hueco y el agua del minimapa salen de los mismos ayudantes que la cache: si manana se pinta
+      // distinto en uno y otro lado, se ve. Hoy no se puede.
+      if(water && water[r] && water[r][c]>0.08){ pintarAguaVoxel(ctx,c,r); }
+      else{ pintarHuecoVoxel(ctx,c,r,false); }
     }
   }
   // hongos de cueva en túneles húmedos - atlas

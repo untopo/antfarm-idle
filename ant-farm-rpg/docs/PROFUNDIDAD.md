@@ -197,3 +197,29 @@ Y una idea que no es de ningún juego de la lista, sino de la colonia: **la losa
 se rompe**. La barra de progreso está encima de la roca, en el mundo, y solo avanza si hay cuadrilla
 abajo. Ninguna hormiga sola abre banda, y eso es exactamente lo que la IA actual (una red de 59 pesos de
 media) no puede fingir: el avance es de la colonia, no del individuo.
+
+## 10 · El fondo de las cuevas: pared de ladrillo detrás del hueco (2026-10-16)
+
+**Lo que vio el dueño:** un flash de textura de un cuadro en el fondo de las cuevas, y el pedido de una
+pared de fondo voxel como en Terraria.
+
+**Causa del flash, medida:** el mundo principal se pintaba desde el cache solo cuando no había repintado
+pendiente; en cualquier otro cuadro salía por un camino a mano que pintaba el hueco en crema `#fff1c8` y
+el agua encima. Con la colonia cavando, eso ocurría cuadro sí, cuadro no. Ahora el mundo principal se
+pinta siempre desde el cache (reconstruido en el mismo cuadro si hace falta) y el agua va encima en cada
+cuadro. El color crema ya no existe en el código; el hueco lo pintan los mismos ayudantes en las tres
+rutas (cache, emergencia y minimapa).
+
+**La pared:** detrás del hueco hay roca que queda, con aparejo de piezas de 8×8 desplazadas medio ladrillo,
+junta de mortero en las dos direcciones, tono por material (la del obsidiana es casi negra y tira a
+violeta; la de mármol, gris frío), sombra de voladizo donde arriba hay roca, y raíces colgando solo en
+las bandas de tierra. Va siempre por detrás del corte tallado: al menos un 20 % más apagada.
+
+**Lo que se descartó:** una primera versión con hiladas de 4 px salió como persiana y el musgo verde se
+leía como polvo. Se cambió a piezas de 8 px con mortero más suave.
+
+**Prueba:** `test/fondo-cueva.js` (23 ok · 0 fallos). Mide cuadros que pintan el mundo por el camino viejo
+(0), el color crema fuera del código, el aparejo en dos direcciones, la pared por detrás, la
+determinación (repintar dos veces da la misma firma), el agua en cada cuadro y cero errores de consola.
+Dos condiciones se fabrican a mano y se dicen en el propio test: el repintado pendiente constante (sin él
+el flash no aparece) y la cámara de obsidiana (en el mapa pequeño todavía no existe).
