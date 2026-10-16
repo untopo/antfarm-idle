@@ -119,8 +119,14 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ok   ' + m); } else { fai
       (esMiel ? out.mieles : out.alimentos).push(Object.assign({ tipo: f.ftype, amt: f.amount }, r1));
       out.textosCerca += T.filter(t => Math.abs(t[1] - f.x) <= 14 && Math.abs(t[2] - f.y) <= 16 && (/^\d+$/.test(t[0]) || /^x\d+$/.test(t[0]) || t[0] === '?')).length;
     }
+    let secas = 0;
     for (const pl of plants) {
       if (pl.cave) continue;
+      // La que se esta secando se pinta de paja a proposito (2.12: el dueño queria VER que se muere, no que
+      // desaparece). No tiene verde que medirle - y la familia de 14x22 que le cae encima es la cesped del
+      // alrededor, que no lleva relieve y no es suya. Su prueba propia esta en test/plantas-piso.js, que
+      // mide los rectangulos color paja cuadro a cuadro.
+      if (pl.seca) { secas++; continue; }
       const r1 = familia(pl.x, pl.y - 6, 14, 22, verde);
       if (r1) out.plantas.push(Object.assign({ tipo: pl.type }, r1));
       out.textosCerca += T.filter(t => Math.abs(t[1] - pl.x) <= 12 && Math.abs(t[2] - (pl.y - 10)) <= 14 && (/^\d+$/.test(t[0]) || t[0] === '?')).length;
@@ -134,6 +140,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ok   ' + m); } else { fai
       out.celdasAlmacen = cs.length;
     } catch (e) { out.errorAlmacen = e.message; }
     out.totales = { foods: foods.length, plants: plants.length };
+    out.plantasSecas = secas;
     return out;
   });
 
@@ -146,11 +153,13 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ok   ' + m); } else { fai
   const alMiel = resumen(pinta.mieles, 'miel'), alCom = resumen(pinta.alimentos, 'otros alimentos'), alPl = resumen(pinta.plantas, 'plantas'), alBo = resumen(pinta.botes, 'bote del almacen');
   const sellao = f => f.cuerpos > 0 && f.sellados === f.cuerpos;
   ok(pinta.rectangulos > 400, `el cuadro pinta por rectángulos sueltos (bloque a bloque): ${pinta.rectangulos} distintos en seis cuadros`);
-  ok(sellao(alCom), `cada racimo, seta y semilla lleva el sello puesto: ${alCom.sellados}/${alCom.cuerpos}`);
+  // Con la camara en la boca del nido puede tocar un cuadro SIN una sola miga a la vista: eso no es un
+  // racimo sin relieve, es que no habia racimo. Mismo criterio que la linea de la miel, mas abajo.
+  ok(pinta.alimentos.length === 0 || sellao(alCom), `cada racimo, seta y semilla lleva el sello puesto: ${alCom.sellados}/${alCom.cuerpos}${pinta.alimentos.length ? '' : ' (esta vez no habia ni una miga a la vista)'}`);
   ok(alPl.cuerpos > 0 && alPl.sellados >= Math.ceil(alPl.cuerpos * 0.95), `las matas del prado leen como bloques con su relieve: ${alPl.sellados}/${alPl.cuerpos}`);
   ok(sellao(alBo), `la cámara del almacén se pinta con el mismo sello: ${alBo.sellados}/${alBo.cuerpos} bloques`);
   ok(pinta.mieles.concat(pinta.alimentos, pinta.plantas, pinta.botes).reduce((s, o) => s + o.negro, 0) === 0, 'ningún bulto lleva ya contorno negro: lo que separa es la sombra');
-  ok(pinta.plantas.length >= 3, `el prado tiene plantas dibujadas a mano: ${pinta.plantas.length} de ${pinta.totales.plants}`);
+  ok(pinta.plantas.length >= 3, `el prado tiene plantas dibujadas a mano: ${pinta.plantas.length} de ${pinta.totales.plants}${pinta.plantasSecas ? ' · ' + pinta.plantasSecas + ' en seco, que se pintan de paja y se miden en plantas-piso.js' : ''}`);
   ok(pinta.plantas.length > 0 && pinta.plantas.every(p => p.verdes > 0), `todas salen en el verde de la estación, el mismo del terreno: ${pinta.plantas.filter(p => p.verdes > 0).length}/${pinta.plantas.length}`);
   ok(pinta.plantas.reduce((s, p) => s + p.colores, 0) / Math.max(1, pinta.plantas.length) >= 1.8, `cada mata lleva más de un tono: media ${(pinta.plantas.reduce((s, p) => s + p.colores, 0) / Math.max(1, pinta.plantas.length)).toFixed(2)} colores`);
 

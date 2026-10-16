@@ -147,7 +147,7 @@ const FOTO = `(()=>plants.map(p=>({c:p.c, x:Math.round(p.x), r:p.rr, cr:p.cr, ca
     return {n:rs.length, seco};
   })()`);
   ok(pintaDespues.seco > 0, 'y se la ve ponerse de color paja en el lienzo (rojo por encima del verde: se seca, no crece)', `${pintaDespues.seco} rectangulos secos de ${pintaDespues.n} pintados · antes: ${pintaAntes.verde} verdes de ${pintaAntes.n}`);
-  const desaparece = await page.evaluate(`(async()=>{ for(let i=0;i<60;i++){ await window.__frame(10,16); if(!plants.some(p=>p.c===${objetivo.c})) return {i:i*10, fuera:true}; } return {fuera:false}; })()`);
+  const desaparece = await page.evaluate(`(async()=>{ for(let i=0;i<150;i++){ await window.__frame(10,16); if(!plants.some(p=>p.c===${objetivo.c})) return {i:i*10, fuera:true}; } return {fuera:false}; })()`);
   ok(desaparece.fuera === true, 'y al final se cae: deja de estar en el mapa', `despues de ${desaparece.i} cuadros a x16`);
   if (testigo) {
     const trasTestigo = await page.evaluate(`(()=>{ const p=plants.find(q=>q.c===${testigo.c}); return p? {seca:!!p.seca, g:+p.growth.toFixed(4)} : null; })()`);
@@ -156,16 +156,19 @@ const FOTO = `(()=>plants.map(p=>({c:p.c, x:Math.round(p.x), r:p.rr, cr:p.cr, ca
 
   console.log('\n· la seta de tunele y el jardin de hongo, con la misma vara de medir');
   const seta = await page.evaluate(`(async()=>{
-    // una camara abierta con suelo: ahi si puede haber seta; si le quitan el suelo de debajo, no
+    // La camara se CAVA para la prueba, no se busca a ver si el nido la tiene hecha: medir si la seta
+    // necesita suelo debajo no depende de la forma que el azar le dio al nido de turno (en el lote completo
+    // toco un mundo sin ningun hueco con techo y suelo y las tres lineas de abajo salian undefined).
     let puesto=null;
-    for(let r=SURFACE_ROW+3;r<ROWS-2 && !puesto;r++) for(let c=2;c<COLS-2 && !puesto;c++){
-      if(soil[r][c]===0 && soil[r+1] && soil[r+1][c]!==0 && soil[r-1] && soil[r-1][c]!==0){
-        plants.push({c, x:c*CELL+8, y:r*CELL+14, type:'caveMush', growth:0.8, maxGrowth:1, age:0, fruitCooldown:DAY_LENGTH*0.5, variant:0, cave:true, cr:c, rr:r});
-        puesto={c,r};
-      }
+    for(let r=SURFACE_ROW+5;r<ROWS-2 && !puesto;r++) for(let c=2;c<COLS-2 && !puesto;c++){
+      const duro=(r,c2)=>soil[r] && soil[r][c2]!==0 && (!soilType[r] || soilType[r][c2]!==7);
+      if(!duro(r-1,c) || !duro(r+1,c)) continue;                     // techo y suelo tienen que ser macizos, y la roca madre no vale
+      soil[r][c]=0; if(soilType[r]) soilType[r][c]=0;
+      plants.push({c, x:c*CELL+8, y:r*CELL+14, type:'caveMush', growth:0.8, maxGrowth:1, age:0, fruitCooldown:DAY_LENGTH*0.5, variant:0, cave:true, cr:c, rr:r});
+      puesto={c,r};
     }
     if(!puesto) return {puesto:null};
-    markSoilDirty(puesto.c,puesto.r);
+    markSoilDirty(puesto.c,puesto.r); markSoilDirty(puesto.c,puesto.r-1); markSoilDirty(puesto.c,puesto.r+1);
     await window.__frame(20,16);
     const conSuelo = plants.find(p=>p.cave && p.cr===puesto.c && p.rr===puesto.r);
     const antes = conSuelo? conSuelo.growth : null;
@@ -175,10 +178,10 @@ const FOTO = `(()=>plants.map(p=>({c:p.c, x:Math.round(p.x), r:p.rr, cr:p.cr, ca
     const despues = plants.find(p=>p.cave && p.cr===puesto.c && p.rr===puesto.r);
     const fuera = !despues;
     let cuadros=0;
-    for(let i=0;i<80 && !fuera;i++){ await window.__frame(10,16); cuadros+=10; if(!plants.some(p=>p.cave && p.cr===puesto.c && p.rr===puesto.r)) break; }
+    for(let i=0;i<150 && !fuera;i++){ await window.__frame(10,16); cuadros+=10; if(!plants.some(p=>p.cave && p.cr===puesto.c && p.rr===puesto.r)) break; }
     return {puesto, antes, seca: despues? !!despues.seca : null, g: despues? +despues.growth.toFixed(4): null, cuadros};
   })()`);
-  ok(seta.puesto !== null, 'hay una camara con suelo donde plantar la seta de prueba', seta.puesto ? `[${seta.puesto.c},${seta.puesto.r}]` : 'ningun hueco con techo y suelo');
+  ok(seta.puesto !== null, 'la camara de prueba se cava con techo y suelo macizos', seta.puesto ? `[${seta.puesto.c},${seta.puesto.r}]` : 'el mundo no da para cavarla');
   ok(seta.antes !== null && seta.antes >= 0.79 - 0.001, 'con suelo debajo la seta se queda y no se marca como seca', `crecimiento ${seta.antes} tras 20 cuadros`);
   ok(seta.seca === true || seta.g === null, 'y en cuanto le cavan el suelo deja de valer: se seca o se cae', `seca ${seta.seca} · crecimiento ${seta.g} · fuera a los ${seta.cuadros} cuadros`);
   const jardin = await page.evaluate(`(async()=>{

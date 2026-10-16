@@ -3062,6 +3062,8 @@ function showAntProfile(ant){
   void modal.offsetWidth;
   modal.style.transition='transform 0.22s cubic-bezier(.2,.8,.2,1), opacity 0.22s';
   modal.style.transform='translateY(0) scaleY(1)';
+  modal.style.overflowY='auto'; asentarHoja(modal);
+  requestAnimationFrame(()=>{ asentarHoja(modal); });
   modal.style.opacity='1';
   // tabs
   try{
@@ -7356,7 +7358,7 @@ function showQueenProfile(q){
   modal.style.border = '4px solid #000';
   modal.style.borderTop = 'none';
   modal.style.boxShadow = '6px 6px 0 #000';
-  modal.style.overflow='hidden';
+  modal.style.overflow='hidden'; modal.style.overflowY='auto';
   modal.style.transformOrigin='top';
   modal.style.transform='translateY(-12px) scaleY(0)';
   modal.style.opacity='0';
@@ -7366,6 +7368,8 @@ function showQueenProfile(q){
   void modal.offsetWidth;
   modal.style.transition='transform 0.22s cubic-bezier(.2,.8,.2,1), opacity 0.22s';
   modal.style.transform='translateY(0) scaleY(1)';
+  modal.style.overflowY='auto'; asentarHoja(modal);
+  requestAnimationFrame(()=>{ asentarHoja(modal); });
   modal.style.opacity='1';
   // tabs idénticos a hormiga - 4 pestañas rasgo/estado/arbol/hist
   try{
@@ -8564,13 +8568,42 @@ function pintarInventario(){
   }catch(e){}
   if(body.dataset.stamp!==html){ body.innerHTML=html; body.dataset.stamp=html; }
 }
+// Topo (dueño, 2026-10-15): «en el menu del inventario o almacen quiero que puedas scrollear, porque hay
+// muchos items y algunos no se pueden ver». Habia dos cosas mal. Una de caja: la hoja del almacen cortaba
+// su lista contra el borde y el `overflow-y:auto` del cuerpo no tenia nada que scrollear (el envoltorio
+// interior pedian `min-height:100%`, que contra un padre de altura auto no resolve, asi que la caja nunca
+// quedaba limitada). Y otra de cuentas: el alto maximo se calculaba con `calendarWidget.offsetHeight` en el
+// instante de abrir - si el calendario aun estaba montando, la cuenta salia corta y la hoja se salia por
+// abajo de la pantalla, que es justo lo que queda invisibles. `asentarHoja` usa el borde superior REAL de
+// la hoja (medido despues de pintar) y deja que lo que no cabe se recorra.
+function asentarHoja(el){
+  if(!el) return 0;
+  try{
+    // Ojo: durante la apertura la hoja viene con `translateY(-12px)` y la animacion la deja 12 px mas
+    // abajo. Medir el borde con getBoundingClientRect ahi da un topo cortito y la hoja se sale por abajo
+    // de la pantalla (medido: de 228 a 628 en una ventana de 620). Se lee el `top` de layout, que no
+    // conoce de transformaciones.
+    const st=parseFloat(getComputedStyle(el).top);
+    const top=isFinite(st)&&st>0? st : Math.round(el.getBoundingClientRect().top);
+    if(!(top>0)) return 0;
+    const alto=Math.max(180, (window.innerHeight||800) - top - 10);
+    // ...y con `!important`, porque el CSS de la hoja de perfil declara su max-height asi (una regla
+    // importante del estilo gana a un style inline normal: medido, la hoja seguia midiendo 400 px con
+    // 382 pedidos). Con important declarada en la hoja misma, la cuenta de arriba es la que manda.
+    el.style.setProperty('max-height', alto+'px', 'important');
+    const oy=getComputedStyle(el).overflowY;
+    if(oy!=='auto' && oy!=='scroll') el.style.overflowY='auto';
+    el.style.overscrollBehavior='contain';   // y la rueda no se escapa al mundo
+    return alto;
+  }catch(e){ return 0; }
+}
 function abrirInventario(){
   const sh=document.getElementById('invSheet'); if(!sh) return;
   try{ closeAntProfile(); }catch(e){}
   try{ closeQueenProfile(); }catch(e){}
-  _invAbierto=true; sh.setAttribute('data-open','1'); sh.style.display='block';
+  _invAbierto=true; sh.setAttribute('data-open','1'); sh.style.display='flex';
   pintarInventario();
-  requestAnimationFrame(()=>{ sh.style.transform='translateY(0) scaleY(1)'; sh.style.opacity='1'; });
+  requestAnimationFrame(()=>{ sh.style.transform='translateY(0) scaleY(1)'; sh.style.opacity='1'; asentarHoja(sh); });
 }
 function cerrarInventario(){
   const sh=document.getElementById('invSheet'); if(!sh) return;

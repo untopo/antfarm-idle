@@ -508,3 +508,14 @@
 body{ font-size:19px; }
 .pixel-btn{ font-size:9px !important; }
 .h-stat{ font-size:10px !important; }
+
+/* === HOJAS (almacen, perfiles) — lo que no cabe se recorre, no se queda cortado ===
+   El dueño: «quiero que puedas scrollear, hay muchos items y algunos no se pueden ver». La caja ya
+   estaba limitada por max-height de la hoja; lo que faltaba era que el scroll tuviera piel del juego y
+   que la rueda no se escape al mundo (overscroll-behavior). */
+.hoja-cuerpo{scrollbar-width:thin;scrollbar-color:#3a2a1a #efe3c8;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.hoja-cuerpo::-webkit-scrollbar{width:9px}
+.hoja-cuerpo::-webkit-scrollbar-track{background:#efe3c8;border-left:2px solid #000}
+.hoja-cuerpo::-webkit-scrollbar-thumb{background:#3a2a1a;border:2px solid #000}
+.hoja-cuerpo::-webkit-scrollbar-thumb:hover{background:#5a4326}
+.hoja-cuerpo:focus-visible{outline:2px solid #ffcc00;outline-offset:-2px}
