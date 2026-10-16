@@ -192,13 +192,13 @@ async function leePanel(page, id) {
   ok(!!tirada, 'se puede enterrar una geoda en la banda nueva', tirada ? `[${tirada.c},${tirada.r}]` : 'no habia donde ponerla');
   const desc = await page.evaluate(`(()=>{ checkRewardDiscovery(${tirada ? tirada.c : 0}, ${tirada ? tirada.r : 0});
     return {rel:reliquias.slice(), bonus:bonusCava, cuarzo:worldMaterials.cuarzo||0, rels:Object.keys(TREASURE_DEFS).length}; })()`);
-  ok(desc.rel.length === 1 && /cuarzo/i.test(desc.rel[0].tipo), 'la reliquia se apunta con su piso y su historia', desc.rel[0] ? `${desc.rel[0].tipo} · piso ${desc.rel[0].piso} · D${desc.rel[0].dia}` : 'vacia');
+  ok(desc.rel.length === 1 && /quartz|geode|cuarzo/i.test(desc.rel[0].tipo), 'la reliquia se apunta con su piso y su historia', desc.rel[0] ? `${desc.rel[0].tipo} · piso ${desc.rel[0].piso} · D${desc.rel[0].dia}` : 'vacia');
   ok(desc.cuarzo >= 3, 'y su material entra en la colonia', `${desc.cuarzo} cuarzo`);
   ok(desc.bonus > 0.015 && desc.bonus <= 0.30, 'el bonus de excavacion sube con la reliquia, y tiene tope', `+${(desc.bonus * 100).toFixed(0)}%`);
   await page.evaluate(`(()=>{ try{ lastUIUpdate=0; updateColonyUI(); }catch(e){} })()`);
   await sleep(220);
   const vit = await leePanel(page, 'ecoRelics');
-  ok(/cuarzo/i.test(vit), 'la VITRINA del panel del mundo la enseña', JSON.stringify(vit.replace(/\\s+/g, ' ').slice(0, 64)));
+  ok(/quartz|geode|cuarzo/i.test(vit), 'la VITRINA del panel del mundo la enseña', JSON.stringify(vit.replace(/\\s+/g, ' ').slice(0, 64)));
   const umTxt = await leePanel(page, 'ecoUmbral');
   ok(/LOSA|losas rotas/i.test(umTxt), 'y el panel dice como va la losa, sin haberla roto a ciegas', JSON.stringify(umTxt.replace(/\\s+/g, ' ').slice(0, 72)));
   // y el cuadro de tesoros entero: cada banda tiene su surtido de cosas asombrosas

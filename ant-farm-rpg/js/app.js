@@ -243,68 +243,10 @@ const TOOL_DEFS={
 // `typeof TREASURE_DEFS!=='undefined'` que mentia: def salia null y ningun tesoro de tier>=2 hacia nada
 // al descubrirse (ni fibra, ni ambar, ni nada). Subirlo a nivel de modulo arregla eso y permite que cada
 // banda tenga lo suyo. `reliquia:` = se queda para siempre en la VITRINA y da un bonus pequeno y visible.
-const TREASURE_DEFS = {
-  // banda 0-1 (raices y barro): lo de siempre, comida y material de relleno
-  semillas:   {food:10, mat:null,      w:22, color:'#ffcc00', msg:'¡SEMILLAS! +10 comida', tier:1},
-  agua:       {food:0,  mat:null, fatigue:30, w:20, color:'#00e5ff', msg:'¡AGUA! fatiga restaurada', tier:1},
-  hongo:      {food:6,  mat:null,      w:18, color:'#2de67a', msg:'¡HONGO! +6 comida', tier:1},
-  // banda 2-3 (arena y piedra): materiales de obra y las primeras cuevas
-  fibra:      {food:2,  mat:'fiber',   matAmt:2, w:14, color:'#c9b896', msg:'¡FIBRA! +2 fibra', tier:2},
-  piedra:     {food:0,  mat:'stone',   matAmt:2, w:12, color:'#8a8a8a', msg:'¡PIEDRA! +2 piedra', tier:2},
-  arcilla:    {food:0,  mat:'clay',    matAmt:1, w:10, color:'#a08060', msg:'¡ARCILLA! +1 arcilla', tier:2},
-  hongoCueva: {food:8,  mat:null,      w:8,  color:'#6b3a1f', msg:'¡HONGO CUEVA! +8 comida', tier:2},
-  anfora:     {food:26, mat:null,      w:5,  color:'#ffb700', msg:'¡ÁNFORA DE MIEL! +26 comida', tier:2},
-  // banda 4-5 (pizarra y cuarcita): aqui empiezan las cosas asombrosas
-  fosil:      {food:0,  mat:null, xp:120, w:5, color:'#e8dcc0', tier:3, msg:'¡FÓSIL! la trampa de un hormiga león', reliquia:'Fósil de hormiga león',
-               lore:'Una trampa de arena de hace mil dias: el cono tallado y la victima dentro.', bonus:0.02},
-  geoda:      {food:0,  mat:'cuarzo', matAmt:3, xp:90, w:5, color:'#c8a6ff', tier:4, msg:'¡GEODA! +3 cuarzo', reliquia:'Geoda de cuarzo',
-               lore:'Dieciseis caras de cristal en un puno de tierra. Alumbran el tunel si las dejas sueltas.', bonus:0.02},
-  ambar:      {food:0,  mat:null, xp:80, w:6, color:'#ffb700', tier:3, msg:'¡ÁMBAR! +80 XP', reliquia:'Ámbar con una hormiga dentro',
-               lore:'Se ve la pata levantada, como si fuera a empezar a correr. Lleva aqui muchisimo tiempo.', bonus:0.02},
-  semillaRara:{food:14, mat:'fiber', matAmt:1, w:7, color:'#b47aff', msg:'¡SEMILLA RARA! +14 comida', tier:3},
-  // banda 6-7 (marmol y obsidiana): luz, sal y vidrio negro
-  lente:      {food:0,  mat:null, xp:150, w:4, color:'#7ad3ff', tier:5, msg:'¡LENTE! alguien talló esto', reliquia:'Lente de cristal de roca',
-               lore:'Algo la tall y lo pulio. No hay nadie aqui para contarlo.', bonus:0.03},
-  sal:        {food:0,  mat:'cuarzo', matAmt:2, w:6, color:'#e9f2fb', msg:'¡SAL DE ROCA! +2 cuarzo', tier:6},
-  hongoLinterna:{food:10, mat:null, xp:130, w:4, color:'#2de67a', tier:6, msg:'¡HONGO LINTERNA! +10 comida y luz', reliquia:'Hongo linterna',
-               lore:'Aguanta encendido tres dias bajo tierra. Donde lo plantas, la colonia trabaja mas rato.', bonus:0.03},
-  lagrima:    {food:0,  mat:'obsidiana', matAmt:2, xp:180, w:3, color:'#9a6bff', tier:7, msg:'¡LÁGRIMA DE OBSIDIANA! +2 vidrio negro', reliquia:'Lágrima de obsidiana',
-               lore:'Vidrio negro, frio, con una gota congelada a media bajada. Cava mas rapido quien la tiene.', bonus:0.04},
-  // banda 8 (basalto igneo): lo que no deberia estar ahi abajo
-  corazon:    {food:20, mat:null, xp:300, w:2, color:'#ff3b30', tier:8, msg:'¡CORAZÓN DE COLINA! late bajo la arena', reliquia:'Corazón de colina',
-               lore:'Late una vez cada cuatro segundos. La camara de la reina lo escucha.', bonus:0.05},
-  meteorito:  {food:0,  mat:'meteorito', matAmt:1, xp:220, w:2, color:'#ff8c00', tier:9, msg:'¡METEORITO! aún quema', reliquia:'Meteorito hundido',
-               lore:'No es de aqui. La roca tiene la corteza de quemarse entrando y aun esta caliente.', bonus:0.05},
-  nidoAntiguo:{food:0,  mat:'obsidiana', matAmt:1, xp:260, w:2, color:'#c9b896', tier:9, msg:'¡NIDO ANTIGUO! otra colonia, otro final', reliquia:'Nido de la colonia vieja',
-               lore:'Camaras pequenas, huevos vacios, y un tunel ciego que no lleva a ninguna parte. Se fue como se van todas.', bonus:0.03},
-};
-// El sorteo: la banda manda (pool por tier) y la prog de la colonia solo pesa, no bloquea. Antes un
-// pool vacio hacia que `type` saliera undefined y se sembraran 200 cofres vacios: el suelo de reserva
-// se queda por eso.
+// El sorteo vive en core/tesoros.js; aqui solo se le pasa el progreso de la colonia.
 function pickTreasureType(depthTier){
-  const tier = Math.max(1, Math.min(9, depthTier|0));
   const prog = (typeof gen!=='undefined'?gen:0) + (typeof colonyIQ!=='undefined'? colonyIQ-100:0)/40;
-  let pool;
-  if(tier===1)      pool=['semillas','agua','hongo'];
-  else if(tier===2) pool=['semillas','hongo','fibra','anfora','piedra'];
-  else if(tier===3) pool=['fibra','arcilla','hongoCueva','fosil','piedra'];
-  else if(tier===4) pool=['piedra','arcilla','geoda','hongoCueva','fibra'];
-  else if(tier===5) pool=['geoda','ambar','arcilla','semillaRara','piedra'];
-  else if(tier===6) pool=['lente','geoda','sal','ambar'];
-  else if(tier===7) pool=['hongoLinterna','lagrima','sal','lente'];
-  else if(tier===8) pool=['lagrima','corazon','hongoLinterna','lente'];
-  else              pool=['meteorito','corazon','nidoAntiguo','lagrima'];
-  if(prog<2) pool=pool.filter(t=> (TREASURE_DEFS[t].tier||1)<4);
-  if(prog<1) pool=pool.filter(t=> (TREASURE_DEFS[t].tier||1)<3);
-  if(!pool.length) pool=['semillas','agua','hongo','fibra'];
-  const weights = pool.map(t=>{
-    let w=TREASURE_DEFS[t].w||1;
-    if((TREASURE_DEFS[t].tier||1) > tier) w*=0.55;      // que se cuele algo mejor de lo que toca, pocas veces
-    return w;
-  });
-  const tot=weights.reduce((a,b)=>a+b,0);
-  let r=Math.random()*tot; for(let i=0;i<pool.length;i++){ r-=weights[i]; if(r<=0) return pool[i]; }
-  return pool[0];
+  return pickTreasure(depthTier, prog);
 }
 
 // ---- EL UMBRAL: la losa que cierra la escalera ----
@@ -8683,7 +8625,7 @@ function deserializeSave(){
     // --- la escalera vuelve como estaba (o se repone la losa: un guardado viejo no la tiene y sin losa
     //     el mundo se queda sin techo, que es justo lo que el umbral evita) ---
     bandaMax = Math.max(0, data.bandaMax|0); umbralesRotos = Math.max(0, data.umbralesRotos|0);
-    reliquias = Array.isArray(data.reliquias)? data.reliquias.map(x=>({tipo:x.tipo,nombre:x.tipo,piso:x.piso|0,dia:x.dia|0,gen:x.gen|0,lore:x.lore||'',bonus:x.bonus||0.02})) : [];
+    reliquias = Array.isArray(data.reliquias)? data.reliquias.map(x=>({tipo:(LEGADO_RELIQUIA[x.tipo]||x.tipo),nombre:(LEGADO_RELIQUIA[x.tipo]||x.tipo),piso:x.piso|0,dia:x.dia|0,gen:x.gen|0,lore:x.lore||'',bonus:x.bonus||0.02})) : [];
     bonusCava = Math.min(0.30, Number(data.bonusCava)||reliquias.reduce((a,x)=>a+(x.bonus||0),0));
     umbral = null;
     try{
