@@ -258,7 +258,20 @@ const GANCHO = `(()=>{
   await fijar(13.0, 'clear', 40); const pradoSeco = await prado();
   await fijar(13.0, 'snow', 40); const pradoNieve = await prado();
   ok(pradoNieve[2] > pradoSeco[2] + 18 && pradoNieve[0] > 110, 'mientras nieva el prado se pone blanco por encima (y el cache del suelo se repinta)', `seco rgb(${pradoSeco}) · nevado rgb(${pradoNieve})`);
-  const eco = async () => { await page.evaluate(`(()=>{ try{ updateColonyUI(); }catch(e){} })()`); return page.evaluate(`(()=>{ const e2=document.getElementById('ecoWeather'); const t=document.getElementById('timeLabel'); return (e2&&e2.textContent||'?')+' // '+(t&&t.textContent||'?'); })()`); };
+  // El panel del mundo se refresca con un porteria de tiempo (shouldUpdateUI: 140 ms) para no
+  // pintar la barra entera en cada cuadro. El test quiere el texto YA, asi que llama hasta que la
+  // porteria deje pasar una -y si el texto jamas acompaña al clima, se sale por tiempo y falla igual.
+  const eco = async () => {
+    const lee = `(()=>{ const e2=document.getElementById('ecoWeather'); const t=document.getElementById('timeLabel'); return (e2&&e2.textContent||'?')+' // '+(t&&t.textContent||'?'); })()`;
+    const quiere = await page.evaluate(`(()=>{ const w={clear:'claro',cloudy:'nublado',rain:'lluvia',storm:'tormenta',snow:'nieve'}; return w[weather.type]||weather.type; })()`);
+    let txt = await page.evaluate(lee);
+    for(let i=0; i<15 && txt.indexOf(quiere) < 0; i++){
+      await new Promise(r=>setTimeout(r,100));
+      await page.evaluate(`(()=>{ try{ updateColonyUI(); }catch(e){} })()`);
+      txt = await page.evaluate(lee);
+    }
+    return txt;
+  };
   const iconoNieve = await eco();
   ok(iconoNieve.indexOf('nieve') >= 0, 'el panel del mundo dice NIEVE (antes caia nieve y el cartel seguia con su solecito)', JSON.stringify(iconoNieve));
   await fijar(13.0, 'rain', 40);
