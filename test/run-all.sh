@@ -24,7 +24,7 @@ fi
 
 # Los tres de pintura se corren DE UNO EN UNO: abren Chrome y si comparten la maquina los
 # Runtime.evaluate revientan por CPU, no por culpa del juego (medido).
-for t in fondo-pinta voxel-graficos voxel-objetos voxel-cielo plantas-piso paneles-scroll vel-barra-unica hojas-legibles live-hud; do
+for t in hormiga-voxel fondo-pinta voxel-graficos voxel-objetos voxel-cielo plantas-piso paneles-scroll vel-barra-unica hojas-legibles live-hud; do
   printf '\n=== test/%s.js (pintura en navegador) ===\n' "$t"
   if node "test/$t.js" > /tmp/_vp.out 2>&1; then
     tail -n 2 /tmp/_vp.out

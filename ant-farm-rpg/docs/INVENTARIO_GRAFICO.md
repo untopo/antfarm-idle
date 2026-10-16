@@ -78,21 +78,21 @@ Una por hormiga `ant.tool`, bonus excavación/carga.
 | 41 | **Paleta arcilla** | `trowel` | +28% build | Rect `#7a7a7a` 4×2 |
 
 ## 7) PERSONAJES / CASTAS — 12+ variantes
-Todas usan spritesheets `32×16` grid, 4 estados animados.
+**Desde 2026-10-16 no hay spritesheets de bicho**: todos se pintan a mano con `_hormigaVoxel` (misma regla que el terreno: cara de luz arriba, canto de sombra abajo, junta de 1 px entre segmentos). Los cinco PNG que había (`ant-body-walk-6f`, `ant-idle-4f`, `ant-dig-4f`, `ant-rest-2f`, `queen-2f`) se borraron del proyecto: medido en el navegador, cero peticiones de imagen de bicho al arrancar. Medidas de ancho de bulto, sacadas de los píxeles pintados (`test/hormiga-voxel.js`).
 | # | Objeto | Código | Gráfico actual | Notas |
 |---|--------|--------|----------------|-------|
-| 42 | **Obrera minim** | `caste minim` 24% | Sprite `antWalk6` 30×14 escalado 0.92, más pequeña | Vida -0.14d, crop 1.2 |
-| 43 | **Obrera media** | `caste media` 60% | Sprite estándar 30×14 | Base |
-| 44 | **Obrera major** | `caste major` 16% | Sprite grande, vida +0.38d, crop 2.0 | Cabeza grande |
-| 45 | **Excavadora** | `role EXCAVADORA` | Sprite sheet col 1 (segundo sprite) | Pico en mano si anthro |
-| 46 | **Recolectora** | `role RECOLECTORA` | col 0 | Gota miel en mandíbula |
-| 47 | **Exploradora** | `role EXPLORADORA` | col 2 | Antenas wiggle |
-| 48 | **Nodriza** | `role NODRIZA` | col 0 (mismo que recolectora ahora) | Falta distinción visual |
-| 49 | **Obrera genérica** | `role OBRERA` | col 0 | Sin oficio aún (GEN<2) |
-| 50 | **Reina Ada** | `queen` | `queen-2f.png` 64×44, corona `♛`, barra salud | Única clase, crece 48→58px |
-| 51 | **Reinas hijas** | `queens[]` | Mismo sprite reina, tinte facción | Facción color dot |
-| 52 | **Antropo chibi** | `anthroStyle 0` | `ants-anthro-animated.png` 128×128 | 4 roles, 2 frames |
-| 53 | **Antropo hoodie** | `anthroStyle 2` | `ants-humanlike-3.png` | Alternativo |
+| 42 | **Obrera minim** | `caste minim` 24% | `_hormigaVoxel` a escala 0,82 → 26×12 px | Vida -0,14d, crop 1,2 |
+| 43 | **Obrera media** | `caste media` 60% | escala 1 → 33×15 px | Base |
+| 44 | **Obrera major** | `caste major` 16% | escala 1,3 → 45×18 px, mandíbulas de 5 px | Vida +0,38d, crop 2,0 |
+| 45 | **Excavadora** | `role EXCAVADORA` | franja roja de 1 px en el tórax | Pico en las mandíbulas (bloque, sin contorno) |
+| 46 | **Recolectora** | `role RECOLECTORA` | franja de miel | Lleva la gota prendida, dentro del propio pintor |
+| 47 | **Exploradora** | `role EXPLORADORA` | franja cian | Antenas que bailan un bloque entero |
+| 48 | **Nodriza** | `role NODRIZA` | franja violeta | Distinta ya por color y por postura al criar |
+| 49 | **Obrera genérica** | `role OBRERA` | franja de miel | Sin oficio aún (GEN<2) |
+| 50 | **Reina Ada** | `queen` | escala 1,75 → 57×27 px, corona de tres puntas apoyada en la cabeza | Única clase; la barra de puesta y la de vida son bloques duros |
+| 51 | **Reinas hijas** | `queens[]` | mismo pintor, tinte de facción en la barra | Facción color dot |
+| 52 | **Antropo chibi** | `anthroStyle 0/1` | bípedo dibujado a mano (18×24 px), testa más grande en el 1 | Lo que changea el botón es la POSTURA, no un fichero |
+| 53 | **Antropo hoodie** | `anthroStyle 2` | ídem, con capucha de 4 px | Alternativo |
 | — | **Estados anim** | — | `walk 6f @110ms`, `idle 4f @520ms`, `dig 4f hold 200ms`, `rest 2f @600ms` | Ya existe, necesita pulir transiciones |
 
 ## 8) CRÍA / BROOD — 4 tipos

@@ -58,27 +58,11 @@ function hudValue(id, v){ const el=document.getElementById(id); if(el && el.valu
 
 function shouldUpdateUI(){ const now=performance.now(); if(now - lastUIUpdate < 140) return false; lastUIUpdate=now; return true; }
 
-// Sprites de hormiga: los PNG sueltos (pixel-ants-cropped y las hojas antropomorfas) ya no estan
-// en el proyecto, y pedirlos costaba 6x HTTP 404 y dos avisos en consola en cada arranque. Las
-// Image siguen aqui porque el pintado las mira, pero sin src: con *_Ready en false el dibujo
-// empieza a mano, que es el arte unico que qued6 y el mismo que usan los antropomorfos.
-const antSprite = new Image();
-let antSpriteReady=false;
-const anthroSprite = new Image();
-let anthroReady=false;
-const antWalk6 = new Image();
-antWalk6.src = 'assets/ant-body-walk-6f.png?v=20261015f';
-let antWalk6Ready=false;
-antWalk6.onload=()=>{ antWalk6Ready=true; tlog('walk6 ready', antWalk6.width, antWalk6.height); };
-antWalk6.onerror=()=>{ console.warn('walk6 failed'); };
-const antIdle4 = new Image(); antIdle4.src='assets/ant-idle-4f.png?v=20261015f';
-let antIdleReady=false; antIdle4.onload=()=>{ antIdleReady=true; tlog('idle4 ready',antIdle4.width,antIdle4.height); };
-const antDig4 = new Image(); antDig4.src='assets/ant-dig-4f.png?v=20261015f';
-let antDigReady=false; antDig4.onload=()=>{ antDigReady=true; tlog('dig4 ready',antDig4.width,antDig4.height); };
-const antRest2 = new Image(); antRest2.src='assets/ant-rest-2f.png?v=20261015f';
-let antRestReady=false; antRest2.onload=()=>{ antRestReady=true; tlog('rest2 ready',antRest2.width,antRest2.height); };
-const queenSprite = new Image(); queenSprite.src='assets/queen-2f.png?v=20261015f';
-let queenSpriteReady=false; queenSprite.onload=()=>{ queenSpriteReady=true; tlog('queen ready',queenSprite.width,queenSprite.height); };
+// Las hormigas se pintan a mano (ver _hormigaVoxel). Los cinco PNG de cuerpo -walk6, idle4,
+// dig4, rest2 y la reina- salian de una hoja recortada que no concordaba con el mundo de
+// bloques: de cerca se veia el canto del recorte y de lejos era una mancha. Se quitan la
+// carga, el decode y cinco peticiones al arranque. El boton ANTHRO sigue valiendo: lo que
+// changea es la POSTURA, no el fichero (vease la rama anthropo del pintor).
 const FOOD_DEFS={
   honey:{rotDays:99, color:'#ffb700', cap:'#ffcc33', name:'MIEL'},
   berry:{rotDays:1.4, color:'#6a1a7a', cap:'#a83ac2', name:'BAYA'},
@@ -2998,21 +2982,14 @@ function showAntProfile(ant){
     // dibujar hormiga grande compacta
     pctx.fillStyle= facCol; pctx.fillRect(0,0,64,3);
     pctx.fillStyle='#1a140f'; pctx.fillRect(6,12,52,36);
-    // usar sprite si existe
-    if(useAnthro && typeof anthroSprite!=='undefined' && anthroReady){
-      const cellW=128, cellH=128;
-      let sIdx= ant.role==='EXCAVADORA'?1: ant.role==='EXPLORADORA'?0:2;
-      if(ant.isQueen) sIdx=3;
-      const sx=sIdx*cellW, sy=0;
-      try{ pctx.drawImage(anthroSprite, sx,sy,cellW,cellH, 10,6,44,44); }catch(e){}
-    } else if(typeof antSprite!=='undefined' && antSpriteReady){
-      const nSprites=3, sw=antSprite.width/nSprites, sh=antSprite.height;
-      let sIdx= ant.role==='EXCAVADORA'?1: ant.role==='EXPLORADORA'?2:0;
-      const sx=sIdx*sw;
-      try{ pctx.drawImage(antSprite, sx,0,sw,sh, 12,14,40,24); }catch(e){}
-    } else {
-      pctx.fillStyle='#c47a0a'; pctx.fillRect(16,20,32,14);
-    }
+    // EL RETRATO CON EL MISMO PINCEL que el lienzo: la hormiga de la hoja y la del barro son
+    // la misma figura, aquI mas grande. Antes esto era un rectAngulo liso de un solo color,
+    // porque los PNG del avatar se fueron del proyecto y el pincel de reserva no pintaba nada
+    // que se pareciera a una hormiga. El tamano se pasa por `s`, no por ctx.scale: escalar con
+    // decimales borra los bordes y el retrato es lo unico que se mira de cerca sin zoom.
+    pctx.save(); pctx.translate(30,30);
+    _hormigaVoxel(pctx, ant, 1.6, false, ant.id|0);
+    pctx.restore();
     pctx.fillStyle='#fff'; pctx.font='bold 8px "Press Start 2P"'; pctx.textAlign='center'; pctx.fillText(ant.role.slice(0,3),32,58);
   }
   // botones
@@ -4301,6 +4278,136 @@ function _bloque(g,x,y,w,h,col,k){
   if(h0>=5 && w0>=2){ g.fillStyle=_tilde16(col,-24); g.fillRect(x0+w0-1,y0+1,1,h0-2); }
   if(w0>=4 && h0>=3){ g.fillStyle='rgba(0,0,0,0.14)'; g.fillRect(x0,y0,1,h0); }
 }
+
+// ── LA HORMIGA DE BLOQUES ───────────────────────────────────────────────────
+// La hormiga era un PNG de 30x14 pegado encima del mundo: de cerca se le veia el recorte,
+// de lejos era una mancha, y las patas -que ya estaban dibujadas a mano- quedaron apagadas
+// por un «si el PNG no cargo» que nunca se cumplia. Aqui se pinta con la misma regla que el
+// terreno, el sol y las plantas: cara clara arriba, canto derecho a sombra, base oscura y
+// junta de 1 px entre segmentos. Gana tres cosas: se lee a cualquier zoom, las patas vuelven
+// y el arranque pide cinco imagenes menos. El abdomen es un octogono de bloques (panas de
+// 1 px arriba y abajo) porque un rectangulo perfecto parece un ladrillo, no un bicho.
+//   s    = tamano del caste (1 = media). Todo se redondea a entero: medio pixel de vaiven no
+//          se ve, solo cuesta relleno y saca borde borroso.
+//   mini = mapa de bolsillo: silueta de tres bloques y nada mas, que a ese tamano no hay patas.
+function _hormigaVoxel(g, ant, s, mini, idx){
+  const Q = v => Math.round(v*s);
+  const st = ant.state, caste = ant.caste||'media', rol = ant.role||'FORRAJEADORA';
+  const cavando = st==='CAVANDO', durmiendo = st==='DESCANSAR';
+  const moviendo = !cavando && !durmiendo;
+  const i = (((Number.isFinite(+idx)? (+idx|0) : 0) % 7) + 7) % 7;   // el id puede no ser numero: sin esto, NaN y antenas invisibles
+  const _wp = ant._walkPhase||0, _bp = ant._bobPhase||0;
+  const anthropo = !!useAnthro && !mini;
+  let base = ant.isQueen? '#a06a20' : (caste==='major'? '#8f5510' : caste==='minim'? '#c98a2a' : '#b06a10');
+  const tinte = rol==='EXCAVADORA'? '#ff3b30' : rol==='EXPLORADORA'? '#00e5ff' : rol==='NODRIZA'? '#b47aff' : '#ffcc00';
+  // pose: se agacha al cavar, se hunde al dormir, y al andar el cuerpo sube UN bloque entero
+  const bob = (moviendo && Math.sin(_bp*1.0 + i) > 0.55) ? -1 : 0;
+  const oy = bob + (durmiendo? 1 : cavando? 1 : 0);
+  const _golpe = cavando ? (Math.floor(_bp*1.8 + i) % 2) : 0;   // 0 = levanta, 1 = picazo
+
+  // ── patas ────────────────────────────────────────────────────────────────
+  // Tres por lado en trípode: las del otro lado van oscuras y cortas, detras del cuerpo;
+  // las de aqui delante son dos cascos (fémur y tibia) y levantan un bloque al pasar.
+  const _piernas = (g, cerca)=>{
+    for(let n=0; n<3; n++){
+      const bx = Q(-3 + n*3.4);
+      const fase = _wp*2.6 + n*2.09 + (cerca? 0 : 1.05);
+      const swing = Math.sin(fase);
+      const levanta = moviendo && swing > 0.42;
+      const y0 = Q(3) + oy;
+      g.fillStyle = cerca? '#2e1a0a' : '#170c02';
+      g.fillRect(bx, y0, 1, 2);
+      const rodilla = bx + Math.round(swing*2);
+      g.fillRect(rodilla, y0+2 + (levanta?-1:0), 1, durmiendo?1:2);
+      if(cerca && !durmiendo){ g.fillStyle='#432204'; g.fillRect(rodilla + (levanta?-1:0), y0+4-(levanta?1:0), 2, 1); }
+    }
+  };
+
+  if(mini){
+    // silueta: abdomen, tórax y cabeza
+    _bloque(g, Q(-11), Q(-3)+oy, Q(8), Q(6), base);
+    _bloque(g, Q(-3), Q(-2)+oy, Q(5), Q(4), base);
+    _bloque(g, Q(2), Q(-3)+oy, Q(5), Q(5), _tilde16(base, 14));
+    g.fillStyle=tinte; g.fillRect(Q(-2), Q(-2)+oy, Q(3), 1);
+    return;
+  }
+
+  if(anthropo){
+    // EVOLUCION HUMANOIDE - antes era otro PNG (que ya no existe). Bipedo con su cara clara,
+    // sus dos piernas y su capucha segun el estilo que se changea con la tecla.
+    const _cabeza = anthroStyle===1? 9 : 7;                                  // chibi: testa grande
+    const _brazo = Math.round(Math.sin(_wp*1.6 + i)*2);
+    g.fillStyle='#2e1a0a'; g.fillRect(Q(-4), Q(6), 3, 5); g.fillRect(Q(1), Q(6), 3, 5);
+    _bloque(g, Q(-6), Q(-4)+oy, Q(12), Q(10), base);
+    if(anthroStyle===2){ g.fillStyle='#4a2a6a'; g.fillRect(Q(-7), Q(-9)+oy, Q(14), 4); }
+    _bloque(g, Q(-4), Q(-12)+oy, Q(1)+_cabeza, Q(8), _tilde16(base, 14));
+    g.fillStyle='#fff8dc'; g.fillRect(Q(-1), Q(-10)+oy, 2, 2);
+    g.fillStyle='#1a0a00'; g.fillRect(Q(1), Q(-10)+oy, 1, 2);
+    g.fillStyle='#2e1a0a'; g.fillRect(Q(6), Q(-2)+_brazo+oy, 3, 3); g.fillRect(Q(-9), Q(-2)-_brazo+oy, 3, 3);
+    g.fillStyle=tinte; g.fillRect(Q(-5), Q(-4)+oy, Q(10), 1);
+    if(ant.isQueen){ _bloque(g, Q(-4), Q(-16)+oy, Q(9), Q(4), '#ffcc00'); }
+    return;
+  }
+
+  _piernas(g, false);                                        // las de atras, tras el cuerpo
+
+  // aguijon + abdomen (octogono de bloques)
+  const gx = Q(-15), gy = Q(-5)+oy, gw = Q(11), gh = Q(9);
+  _bloque(g, gx, gy, gw, gh, base);
+  if(gh>=9){ g.fillStyle=_tilde16(base,26); g.fillRect(gx+1, gy+1, gw-2, 1); }
+  g.fillStyle = base;
+  g.fillRect(gx+Q(2), gy-1, gw-Q(4), 1);
+  g.fillRect(gx+Q(2), gy+gh, gw-Q(4), 1);
+  g.fillStyle = _tilde16(base,-46);
+  g.fillRect(gx-1, gy+Q(3), 1, Q(3));
+  // talle: dos pixeles desnudos, la junta que delata que es un insecto y no una albondiga
+  g.fillStyle = _tilde16(base,-74); g.fillRect(Q(-4), Q(-1)+oy, 2, Q(4));
+  // torax
+  _bloque(g, Q(-2), Q(-4)+oy, Q(8), Q(8), base);
+  g.fillStyle = tinte; g.fillRect(Q(-1), Q(-4)+oy, Q(6), 1);  // franja del oficio: ni letrero ni burbuja
+  // cabeza: baja cuando pica
+  const hy = Q(-3) + oy + (cavando? 1 + _golpe : 0);
+  _bloque(g, Q(6), hy, Q(8), Q(7), _tilde16(base, 12));
+  // mandibulas: se abren con el golpe y cierran la carga
+  const _boca = cavando? (1 - _golpe) : (ant.food? 1 : 0);
+  g.fillStyle = '#1a0a00'; g.fillRect(Q(14), hy+Q(2)-_boca, caste==='major'? Q(5):Q(3), 2);
+  if(caste==='major'){ g.fillRect(Q(14), hy+Q(4)+_boca, Q(4), 2); }
+  // ojo: dos de luz con su pupila; dormida = una raya, sin Z ni letrero
+  if(durmiendo){ g.fillStyle='#1a0a00'; g.fillRect(Q(9), hy+Q(2), 3, 1); }
+  else { g.fillStyle='#fff8dc'; g.fillRect(Q(9), hy+Q(1), 2, 2); g.fillStyle='#1a0a00'; g.fillRect(Q(10), hy+Q(1), 1, 2); }
+  // antenas: nudillo y punta, bailan un bloque entero (no medio)
+  const wig = Math.round(Math.sin(_bp*1.5 + i*1.7));
+  g.fillStyle = '#2e1a0a';
+  g.fillRect(Q(12)+wig, hy-Q(3), 1, 3); g.fillRect(Q(13)+wig, hy-Q(4), 1, 1);
+  g.fillRect(Q(10)-wig, hy-Q(3), 1, 3); g.fillRect(Q(11)-wig, hy-Q(4), 1, 1);
+  if(ant.isQueen){
+    // corona: tres puntas de oro apoyadas EN la cabeza (el desplazamiento se calcula sobre el
+    // alto de la cabeza, no sobre un numero fijo: a escala de reina lo fijo la dejaba flotando)
+    const _cy = hy - Q(6);
+    _bloque(g, Q(6), _cy, Q(8), Q(4), '#ffcc00');
+    g.fillStyle='#fff8dc';
+    g.fillRect(Q(7), _cy-1, 1, 2); g.fillRect(Q(10), _cy-1, 1, 2); g.fillRect(Q(13), _cy-1, 1, 2);
+  }
+  _piernas(g, true);                                         // las de delante, sobre el cuerpo
+
+  // LA CARGA VA AQUI DENTRO, prendida de las mandibulas: es parte del cuerpo, no un letrero que
+  // el lienzo cuelga encima. Asi la hoja de perfil ensena a la hormiga con lo que lleva, y en el
+  // mapa de bolsillo se ve un punto del color de la miel (una colonia cargada se distingue).
+  if(ant.food){
+    const _w = Math.round(Math.sin(_bp*1.4 + i)*1.2);
+    if(ant.food.isSoil){
+      _bloque(g, Q(15)+_w, hy-Q(1), Q(8), Q(6), '#6b3a1f');
+      g.fillStyle='#8b5a2b'; g.fillRect(Q(16)+_w, hy, 2, 1);
+    } else {
+      const _col = ant.food.amount>=3 ? '#ffb700' : ant.food.amount===2 ? '#ffcc33' : '#ffda66';
+      _bloque(g, Q(15)+_w, hy-Q(2), Q(7), Q(8), _col);      // al altura de las mandibulas: se ve que la lleva sujeta
+      g.fillStyle='#fff8dc'; g.fillRect(Q(16)+_w, hy-Q(1), 1, 2);
+      // la cantidad NO se escribe: en grupo eran veinte numeritos flotando
+    }
+  } else if(mini && ant.isQueen){
+    g.fillStyle='#ffcc00'; g.fillRect(Q(1), Q(-6)+oy, 2, 2);
+  }
+}
 // el verde del prado: el MISMO que pinta la franja de hierba del terreno, para que una mata plantada encima
 // de una casilla no sea de otro color que la propia casilla
 function _hierbaHoy(){
@@ -4600,6 +4707,13 @@ function _cieloMezcla(hora, h0,c0, h1,c1, h2,c2, h3,c3, h4,c4, h5,c5, h6,c6){
 let _cieloEst = 0, _cieloEstDia = -1;
 function drawFarm(ctx,W,H,isMini=false){
   const useZoom=!isMini && view.zoom!==1;
+  // LA CAJA QUE DE VERDAD SE VE, en coordenadas del mundo. Casi todos los rellenos "de capa"
+  // (el cielo, el oscurecido de noche, el velo de la lluvia, el destello del rayo) se echaban
+  // sobre 0,0,W,H: con la camara acercada eso es pintar hasta 16 veces lo que asoma por la
+  // ventana, y el lienzo no perdonaba ni uno. Cada capa cubre desde aqui lo visible y ni un
+  // pixel mas. Medido a x10: de 66.829 rellenos por cuadro a 1.711, con 20 ms de mediana.
+  const _cvx = useZoom? Math.floor(view.x) : 0, _cvy = useZoom? Math.floor(view.y) : 0;
+  const _cvw = Math.ceil(useZoom? W/view.zoom : W) + 2, _cvh = Math.ceil(useZoom? H/view.zoom : H) + 2;
   if(useZoom){ctx.save(); ctx.scale(view.zoom,view.zoom); ctx.translate(Math.floor(-view.x),Math.floor(-view.y)); ctx.imageSmoothingEnabled=false;}
   ctx.imageSmoothingEnabled=false;
   if(!soil || !soil.length || !soil[0]){ ctx.fillStyle='#6b3a1f'; ctx.fillRect(0,SURFACE_Y,W,H-SURFACE_Y); ctx.fillStyle='#3a9d23'; ctx.fillRect(0,SURFACE_Y-12,W,12); /* no return, sigue dibujando cielo */ }
@@ -4635,9 +4749,30 @@ function drawFarm(ctx,W,H,isMini=false){
   // el degradado va de arriba del mapa a la raya del cesped, que es la franja de cielo que de verdad se
   // ve: con -H*1.8 de recorrido todo lo visible caia en el ultimo diez por ciento y el cielo salia un
   // color plano (el alba no se enteraba). El relleno sigue cubriendo el hueco de la camara, por eso.
-  const skyGrad=ctx.createLinearGradient(0,0,0,SURFACE_Y);
-  skyGrad.addColorStop(0,_tinte); skyGrad.addColorStop(0.62,_tinte2); skyGrad.addColorStop(1,_tinte2);
-  ctx.fillStyle=skyGrad; ctx.fillRect(-W*1.5, -H*1.8, W*4, (SURFACE_Y + H*1.8));
+  // EL CIELO, EN FAJAS DE DIECISEIS. El degradado suave era lo ultimo que quedaba del dibujo
+  // antiguo: sobre un mundo de bloques una rampa continua se leia como niebla y AdemAs
+  // costaba un degradado nuevo por cuadro (tres paradas, recomponer, y encima alpha). Se
+  // recorre la misma rampa pero saltando de bloque en bloque, y la tabla de colores se
+  // guarda: mientras el tono no cambie (y cambia una vez cada hora del juego) no se vuelve
+  // a mezclar. Cada faja es un rectAngulo duro, sin interpolaciOn.
+  const _tope = SURFACE_Y|0, _n = Math.max(4, Math.ceil((_tope + Math.ceil(H*1.8))/16));
+  const _key = _tinte+_tinte2+'|'+_tope+'|'+_n;
+  if(drawFarm._fajasKey !== _key){
+    const _fajas = new Array(_n);
+    const _yTop = -Math.ceil(H*1.8/16)*16;
+    for(let i=0;i<_n;i++){
+      const f = (_yTop + i*16) / Math.max(16,_tope);
+      _fajas[i] = f<=0 ? _tinte : (f>=0.62 ? _tinte2 : _mezcla16(_tinte,_tinte2, f/0.62));
+    }
+    drawFarm._fajas = _fajas; drawFarm._fajasKey = _key; drawFarm._fajasTop = _yTop;
+  }
+  {
+    const _f = drawFarm._fajas, _top = drawFarm._fajasTop;
+    // la rampa entera mide ~100 fajas; por la ventana entran las que tocan, ni una mas
+    let _i0 = Math.floor((_cvy - _top)/16), _i1 = Math.ceil((_cvy + _cvh - _top)/16);
+    _i0 = Math.max(0, _i0); _i1 = Math.min(_f.length, _i1);
+    for(let i=_i0;i<_i1;i++){ ctx.fillStyle=_f[i]; ctx.fillRect(_cvx, _top + i*16, _cvw, 16); }
+  }
   if(!isMini){
     // luceros fijos, con un poco de paralaje al subir la camara; solo de noche y sin nubes encima
     if(!isDay && _nublado<0.4){
@@ -4652,7 +4787,8 @@ function drawFarm(ctx,W,H,isMini=false){
         const sy2 = 6 + ((st*61)%29)/29*_banda + (view.y||0)*0.12;
         if(sy2 > SURFACE_Y-18) continue;
         const _tw = 1 + (st%3===0?1:0);
-        ctx.fillRect(sx2, sy2, _tw, _tw);
+        if(sx2+_tw < _cvx || sx2 > _cvx+_cvw) continue;              // y los que caen a la izquierda o a la derecha, tampoco
+        ctx.fillRect(Math.floor(sx2), Math.floor(sy2), _tw, _tw);   // entero: un lucero de medio pixel es una mancha
       }
     }
     // nubes dibujadas, no de textura: tres franjas redondeadas que se cruzan segun el viento
@@ -4661,11 +4797,13 @@ function drawFarm(ctx,W,H,isMini=false){
       ctx.globalAlpha=(0.16+0.34*_nublado);
       ctx.fillStyle= _nievando? '#8ea3b8' : '#141a22';
       for(let cb=0; cb<7; cb++){
-        const cx2 = ((time*0.001*_vel + cb*260) % (W*1.9)) - W*0.45;
+        const cx2 = ((time*0.001*_vel + cb*260) % (W*1.9)) - W*0.45;   // anclada al mundo: si se
+        // ancla a la ventana, la nube salta de sitio cada vez que se mueve la camara
         const cy2 = SURFACE_Y - H*1.05 + ((cb*53)%9)*15;
-        const aw = 90 + (cb%3)*36, ah = 12 + (cb%2)*5;
-        ctx.fillRect(cx2, cy2, aw, ah);
-        ctx.fillRect(cx2+14, cy2-ah*0.6, aw*0.6, ah*0.7);
+        const aw = 88 + (cb%3)*36, ah = 12 + (cb%2)*4, _cx = Math.floor(cx2), _cy = Math.floor(cy2);
+        if(_cx+aw+24 < _cvx || _cx > _cvx+_cvw) continue;          // y fuera de la ventana, ni se intenta
+        ctx.fillRect(_cx, _cy, aw, ah);
+        ctx.fillRect(_cx+16, _cy-Math.round(ah*0.6), Math.round(aw*0.6), Math.round(ah*0.7));   // la pana de arriba
       }
       ctx.globalAlpha=1;
     }
@@ -4690,7 +4828,7 @@ function drawFarm(ctx,W,H,isMini=false){
       // luna
       _bloque(ctx,Math.floor(sunX)-12, Math.floor(sunY),22,22,'#e8e8d8'); ctx.fillStyle='#c8c8b8'; ctx.fillRect(Math.floor(sunX)-6,Math.floor(sunY)+6,4,4); ctx.fillStyle='#05091a'; ctx.fillRect(Math.floor(sunX)+4,Math.floor(sunY)+2,6,6);
       // estrellas fijas (no random cada frame para no parpadear)
-      ctx.fillStyle='rgba(255,255,255,0.9)'; for(let i=0;i<18;i++){ const sx=(i*67 + 11)%W, sy=8+(i*13)%22; ctx.fillRect(sx,sy,1,1); }
+      ctx.fillStyle='rgba(255,255,255,0.9)'; for(let i=0;i<18;i++){ const sx=(i*67 + 11)%W, sy=8+(i*13)%22; if(sx<_cvx || sx>_cvx+_cvw) continue; ctx.fillRect(sx,sy,1,1); }
     }
     // nubes bloque - drift natural sincronizado con textura cielo, cubre todo el ancho
     const cloudAlpha = weather.type==='clear'? 0.92 : weather.type==='cloudy'? 0.85 : 0.62;
@@ -4700,6 +4838,7 @@ function drawFarm(ctx,W,H,isMini=false){
     let cloudDrift = (time * 0.04) % (W*2);
     for(let i=0;i<8;i++){
       let baseX = (i * (W/4.2) + cloudDrift) % (W*1.9) - W*0.45;
+      if(baseX + 90 < _cvx || baseX > _cvx+_cvw+24) continue;       // la nube no asoma por la ventana
       let y = 14 + (i%3)*7 + Math.sin(i*0.9 + time*0.001)*3;
       let w = 30 + (i%3)*10;
       let h = 10 + (i%2)*4;
@@ -4710,16 +4849,16 @@ function drawFarm(ctx,W,H,isMini=false){
       _bloque(ctx,cx,y,w,h,'#ffffff');
       _bloque(ctx,cx-6,y+4,6,6,'#f2f7ff');
       _bloque(ctx,cx+w,y+4,6,6,'#eaf1fb');
-      if(i%2===0){ ctx.fillRect(cx+8,y-2,12,3); }
+      if(i%2===0){ _bloque(ctx,cx+8,Math.floor(y)-4,12,4,'#f2f7ff'); }   // el gorrito de la nube, en bloque y entero
     }
     ctx.globalAlpha=1;
     // oscurecimiento al anochecer / tormenta
     if(isNight || weather.type==='storm'){
       const darkAlpha = isNight? 0.22 + Math.sin(time*0.01)*0.04 : 0.18;
-      ctx.fillStyle=`rgba(0,0,0,${darkAlpha})`; ctx.fillRect(0,0,W,SURFACE_Y);
+      ctx.fillStyle=`rgba(0,0,0,${darkAlpha})`; ctx.fillRect(_cvx,_cvy,_cvw,Math.max(0,Math.min(SURFACE_Y,_cvy+_cvh)-_cvy));
     }
     if(dusk){
-      ctx.fillStyle='rgba(255,122,61,0.18)'; ctx.fillRect(0,0,W,SURFACE_Y);
+      ctx.fillStyle='rgba(255,122,61,0.18)'; ctx.fillRect(_cvx,_cvy,_cvw,Math.max(0,Math.min(SURFACE_Y,_cvy+_cvh)-_cvy));
     }
   }
   // PRADERA VIVA - fertilidad real, evoluciona con días, lluvia y tiempo
@@ -5015,7 +5154,7 @@ function drawFarm(ctx,W,H,isMini=false){
       let cx=w.digTarget.c*CELL, cy=w.digTarget.r*CELL;
       let stage= prog<0.25?0: prog<0.55?1: prog<0.85?2:3;
       if(stage>=0){ ctx.fillStyle='rgba(0,0,0,0.50)'; ctx.fillRect(cx+7,cy+7,2,2); }
-      if(stage>=1){ ctx.strokeStyle='rgba(0,0,0,0.88)'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(cx+4,cy+4); ctx.lineTo(cx+12,cy+12); ctx.moveTo(cx+12,cy+4); ctx.lineTo(cx+4,cy+12); ctx.stroke(); }
+      if(stage>=1){ ctx.fillStyle='rgba(0,0,0,0.72)'; ctx.fillRect(cx+4,cy+4,2,2); ctx.fillRect(cx+6,cy+6,2,2); ctx.fillRect(cx+8,cy+8,2,2); ctx.fillRect(cx+10,cy+10,2,2); }  // la grieta, en escalones: un trazo fino no se veia a x1
       if(stage>=2){ ctx.fillStyle='rgba(255,255,220,0.18)'; ctx.fillRect(cx+5,cy+2,6,1); ctx.fillStyle='rgba(0,0,0,0.25)'; ctx.fillRect(cx+2,cy+8,12,1); }
       if(stage>=3){ ctx.fillStyle='#2e0f00'; ctx.fillRect(cx+2,cy+7,12,2); ctx.fillStyle='#8b5a2b'; ctx.fillRect(cx+3,cy+7,10,1); ctx.fillStyle='rgba(255,255,120,0.12)'; ctx.fillRect(cx+1,cy+1,CELL-2,2); }
     }}
@@ -5084,14 +5223,14 @@ function drawFarm(ctx,W,H,isMini=false){
         if(prog < 1){
           // overlay grietas que crecen
           ctx.fillStyle='rgba(0,0,0,0.14)'; ctx.fillRect(x+2,y+2,12,12);
-          ctx.strokeStyle='#1a0a00'; ctx.lineWidth=1;
+          ctx.fillStyle='rgba(26,10,0,0.80)';
           if(prog > 0.15){
-            // grieta 1 diagonal
-            ctx.beginPath(); ctx.moveTo(x+4,y+4); ctx.lineTo(x+8,y+8); ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(x+8,y+4); ctx.lineTo(x+4,y+8); ctx.stroke();
+            // grieta 1: una X de bloques de 2 px (un trazo de ancho 1 desaparecia a x1)
+            ctx.fillRect(x+4,y+4,2,2); ctx.fillRect(x+6,y+6,2,2); ctx.fillRect(x+8,y+8,2,2);
+            ctx.fillRect(x+8,y+4,2,2); ctx.fillRect(x+6,y+6,2,2); ctx.fillRect(x+4,y+8,2,2);
           }
           if(prog > 0.35){
-            ctx.beginPath(); ctx.moveTo(x+3,y+10); ctx.lineTo(x+10,y+3); ctx.stroke();
+            ctx.fillRect(x+3,y+9,2,2); ctx.fillRect(x+5,y+7,2,2); ctx.fillRect(x+7,y+5,2,2); ctx.fillRect(x+9,y+3,2,2);
             ctx.fillStyle='#2a1200'; ctx.fillRect(x+5,y+5,2,2);
           }
           if(prog > 0.6){
@@ -5169,7 +5308,7 @@ function drawFarm(ctx,W,H,isMini=false){
         ctx.fillStyle='#fff8dc'; for(let i=0;i<3;i++) ctx.fillRect(fx-3+(i*3), fy-2, 2,2);
         ctx.fillStyle='#e8d5a3'; ctx.fillRect(fx-1,fy+1,2,2);
       }
-      ctx.strokeStyle='rgba(90,58,22,0.32)'; ctx.lineWidth=1; ctx.strokeRect(fx-sz/2, fy-sz/2, sz, sz);
+      ctx.fillStyle='rgba(60,38,12,0.34)'; ctx.fillRect(Math.floor(fx-sz/2), Math.floor(fy+sz/2)-1, sz, 1); ctx.fillRect(Math.floor(fx+sz/2)-1, Math.floor(fy-sz/2), 1, sz);   // el canto del bulto, a la manera del terreno: un borde duro, no un trazo
       if(f.health<0.62){ ctx.fillStyle='#000'; ctx.fillRect(fx-8,fy-sz/2-5,16,2); ctx.fillStyle= f.health>0.32 ? '#ffcc00' : '#ff3b30'; ctx.fillRect(fx-7,fy-sz/2-4, Math.floor(f.health*14),1); }
     }
     // waste piles - montón marrón oscuro separado
@@ -5217,7 +5356,14 @@ function drawFarm(ctx,W,H,isMini=false){
     ctx.fillStyle='#3d1f00'; ctx.fillRect(mx-8, my-2,16,2);
   }
   // entrance pixel
-  ctx.fillStyle='#fff8dc'; ctx.fillRect(CENTER_COL*CELL+8-20,SURFACE_Y-10,40,10); ctx.strokeStyle='#000'; ctx.lineWidth=3; ctx.strokeRect(CENTER_COL*CELL+8-20,SURFACE_Y-10,40,10);
+  {
+    // la boca del nido: losa de bloque, con su cara de luz y su canto. El marco negro de 3 px
+    // era el ultimo recuerdo del dibujo viejo: en este mundo los bultos se delimitan solos.
+    const _bx=CENTER_COL*CELL+8-20, _by=SURFACE_Y-10;
+    _bloque(ctx,_bx,_by,40,10,'#f4e9cf');
+    ctx.fillStyle='rgba(0,0,0,0.30)'; ctx.fillRect(_bx+6,_by+3,28,5);          // el hueco, dentro
+    ctx.fillStyle='#1a1208'; ctx.fillRect(_bx+8,_by+4,24,3);
+  }
   if(!isMini){
     const bob = Math.sin(time*0.08)*2; // kept for subtle hole animation but no text
 
@@ -5235,21 +5381,33 @@ function drawFarm(ctx,W,H,isMini=false){
       const a=ink.life;
       // tinta sutil: puntito 6px con símbolo 5px y alpha bajo
       ctx.globalAlpha=a*0.58;
-      ctx.fillStyle=ink.color; ctx.beginPath(); ctx.arc(Math.floor(ink.x), Math.floor(ink.y), 3.5, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle=ink.color; ctx.fillRect(Math.floor(ink.x)-3, Math.floor(ink.y)-3, 7, 7);
+      ctx.fillStyle='rgba(255,255,255,0.20)'; ctx.fillRect(Math.floor(ink.x)-3, Math.floor(ink.y)-3, 7, 1);
+      ctx.fillStyle='rgba(0,0,0,0.28)'; ctx.fillRect(Math.floor(ink.x)-3, Math.floor(ink.y)+3, 7, 1);
       ctx.globalAlpha=a*0.88;
       if(_dejaLetra){ ctx.fillStyle='#000'; ctx.font='bold 6px "Press Start 2P"'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(ink.sym, Math.floor(ink.x), Math.floor(ink.y)+0.5); }
       ctx.globalAlpha=1;
     }
   }
   if(showTrail && !isMini){
-    for(let p of pheromones){
+    // el rastro se pinta SOLO de las mas recientes: la colonia sigue oliendo todas (la lista es
+    // del paso de simulacion, no del lienzo), pero 5.000 rombitos por cuadro no los mira nadie.
+    const _fer = pheromones.length>1100 ? pheromones.slice(-1100) : pheromones;
+    for(let p of _fer){
       if(isSolidPixel(p.x,p.y)) continue;
       const a=p.life; const isExplore=(p.type==='explore');
 
       ctx.globalAlpha=a*(isExplore?0.13:0.19);
-      ctx.fillStyle= isExplore? 'rgba(120,200,150,1)' : 'rgba(255,204,0,1)'; ctx.beginPath(); ctx.arc(Math.floor(p.x), Math.floor(p.y), isExplore?2.4:3, 0, Math.PI*2); ctx.fill();
+      // el rastro es un rombo de bloques: ocho rellenos duros en vez de dos paths con curvas,
+      // y a x1 el centro sigue leyendose porque es de 2x2, no de 1.3 px de radio
+      const _px=Math.floor(p.x), _py=Math.floor(p.y), _r=isExplore?2:3;
+      ctx.fillStyle= isExplore? 'rgba(120,200,150,1)' : 'rgba(255,204,0,1)';
+      ctx.fillRect(_px-_r, _py-_r+1, _r*2, _r*2-2);
+      ctx.fillRect(_px-_r+1, _py-_r, _r*2-2, 1);
+      ctx.fillRect(_px-_r+1, _py+_r-1, _r*2-2, 1);
       ctx.globalAlpha=a*(isExplore?0.28:0.46);
-      ctx.fillStyle= isExplore? 'rgba(180,235,200,1)' : 'rgba(255,232,120,1)'; ctx.beginPath(); ctx.arc(Math.floor(p.x), Math.floor(p.y), isExplore?1.0:1.35, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle= isExplore? 'rgba(180,235,200,1)' : 'rgba(255,232,120,1)';
+      ctx.fillRect(_px-1, _py-1, 2, 2);
       ctx.globalAlpha=1;
     }
   }
@@ -5373,58 +5531,27 @@ function drawFarm(ctx,W,H,isMini=false){
     const facCol = society.factions.find(f=>f.id===queen.faction)?.color || '#b47aff';
     if(!isMini){ctx.fillStyle='rgba(0,0,0,0.2)'; ctx.fillRect(qx-20,qy+12,40,6);}
     ctx.save(); ctx.translate(qx,qy);
-    // respiración experta - volumen constante como Stardew bob 1px, sin salto
-    let qBreath=Math.sin(time*0.019+qi*1.7)*0.035+1; ctx.scale(qBreath, 2-qBreath);
-    // si está vieja, se ve más pálida
-    const ageAlpha = queen.age>6000? 0.7 : 1;
-    ctx.globalAlpha=ageAlpha;
-    // REINA GRAFICA REALISTA - sprite 96x32 2f transparente (idle + poniendo huevo), respira con scale
-    if(queenSpriteReady && queenSprite.width){
-      // frame 1 cuando está a >72% de poner huevo (panza con huevo visible)
-      const qF = (queen.progress>0.72) ? 1 : (Math.floor(time*0.018+qi)%2===0?0:0); // mayormente idle, laying solo cuando grávida
-      const sw=queenSprite.width/2, sh=queenSprite.height;
-      ctx.imageSmoothingEnabled=false;
-      // sombra
-      ctx.fillStyle='rgba(0,0,0,0.22)'; ctx.fillRect(-18,12,36,6);
-      // sprite 48x32 dibujado centrado
-      ctx.drawImage(queenSprite, qF*sw,0,sw,sh, -24,-16,48,32);
-      // barra facción bajo la reina
-      ctx.fillStyle=facCol; ctx.fillRect(-14,16,28,3); ctx.strokeStyle='#000'; ctx.strokeRect(-14,16,28,3);
-    } else if(useAnthro && anthroReady){
-      const cellW=128, cellH=128;
-      const sx=3*cellW;
-      ctx.imageSmoothingEnabled=false;
-      ctx.drawImage(anthroSprite, sx, 0, cellW, cellH, -18, -22, 36, 36);
-      ctx.fillStyle=facCol; ctx.fillRect(-14,16,28,3); ctx.strokeStyle='#000'; ctx.strokeRect(-14,16,28,3);
-    } else {
-      ctx.fillStyle='#3a1f5a'; ctx.strokeStyle=facCol; ctx.lineWidth=2;
-      ctx.fillRect(-18,-8,22,16); ctx.strokeRect(-18,-8,22,16);
-      ctx.fillStyle='#6b3ab4'; ctx.fillRect(-16,-6,18,4);
-      ctx.fillStyle='#fff'; ctx.fillRect(-12,4,10,2);
-      ctx.fillStyle='#2a1740'; ctx.fillRect(-2,-10,10,16); ctx.strokeRect(-2,-10,10,16);
-      ctx.fillStyle='#1a0a2e'; ctx.fillRect(8,-8,12,14); ctx.strokeRect(8,-8,12,14);
-      ctx.fillStyle='#ffcc00'; ctx.fillRect(-4,-18,18,6); ctx.fillStyle='#ffaa00'; ctx.fillRect(-4,-18,18,2); ctx.strokeStyle= queen.faction===0? '#000' : facCol; ctx.strokeRect(-4,-18,18,6);
-      ctx.fillStyle='#000'; ctx.font='8px "Press Start 2P"'; ctx.textAlign='center'; ctx.fillText('♛',5,-14);
-    }
-    // ojos - si está enferma, ojos rojos
-    if(queen.health<40){ ctx.fillStyle='#ff3b30'; } else ctx.fillStyle='#ffcc00';
-    ctx.fillRect(12,-4,4,4); ctx.fillRect(12,4,4,4);
-    ctx.fillStyle='#fff'; ctx.fillRect(13,-3,1,1);
+    // respiracion: sube y baja UN bloque entero. Escalar el cuerpo con decimales (lo que
+    // habia) enturbia todos los bordes de la figura mas mirada de la colonia.
+    const _qb = Math.sin(time*0.006 + qi*1.7) > 0.3 ? -1 : 0;
+    ctx.translate(0, _qb);
+    if(queen.age>6000){ ctx.globalAlpha=0.7; }                     // vieja: se la ve mas palida
+    _hormigaVoxel(ctx, queen, 1.75, isMini, qi);                   // corona aparte, la pinta el pintor
     if(!isMini && queen.progress>0){
-      ctx.fillStyle='#000'; ctx.fillRect(-18,-22,36,6); ctx.strokeStyle=facCol; ctx.strokeRect(-18,-22,36,6);
-      ctx.fillStyle=facCol; ctx.fillRect(-17,-21, Math.floor(queen.progress*0.34),4);
+      // la barra de puesta: un bloque negro con dentro el color de la faccion, sin contorno
+      ctx.fillStyle='#000'; ctx.fillRect(-18,-40,36,5);
+      ctx.fillStyle=facCol; ctx.fillRect(-17,-39, Math.max(1,Math.floor(queen.progress*0.34)),3);
     }
-    // barra de vida/edad
     if(!isMini){
-      ctx.fillStyle='#000'; ctx.fillRect(-18,14,36,3);
+      ctx.fillStyle='#000'; ctx.fillRect(-18,22,36,3);
       const lifePct=Math.max(0, 1 - queen.age/queen.maxAge);
       ctx.fillStyle= lifePct>0.5? '#2de67a' : lifePct>0.2? '#ffcc00' : '#ff3b30';
-      ctx.fillRect(-18,14, Math.floor(36*lifePct),3);
+      ctx.fillRect(-18,22, Math.floor(36*lifePct),3);
     }
     ctx.globalAlpha=1;
     ctx.restore();
     if(!isMini && (queen.selected || workers.length<=8)){   // su placa sigue la norma de las obreras: detalle solo si la colonya es pequena o la tienes pinchada
-      ctx.fillStyle='#000'; ctx.fillRect(qx-38,qy-32,76,14); ctx.strokeStyle=facCol; ctx.lineWidth=2; ctx.strokeRect(qx-38,qy-32,76,14);
+      ctx.fillStyle='#000'; ctx.fillRect(qx-38,qy-34,76,14); ctx.fillStyle=facCol; ctx.fillRect(qx-37,qy-33,74,1);
       ctx.fillStyle='#fff'; ctx.font='7px "Press Start 2P"'; ctx.textAlign='center'; 
       const ageD=(queen.age/DAY_LENGTH).toFixed(1);
       ctx.fillText(`♛ ${queen.name} ${ageD}d`,qx,qy-24);
@@ -5440,17 +5567,43 @@ function drawFarm(ctx,W,H,isMini=false){
     const bx=queen.x+ Math.cos(angle)*(20 + (i%3)*8);
     const by=queen.y+ Math.sin(angle)*(12 + (i%2)*6) + 12;
     if(!isMini) {ctx.fillStyle='rgba(0,0,0,0.15)'; ctx.fillRect(bx-8,by+6,16,4);}
-    if(b.type==='egg'){ctx.fillStyle='#fffef0'; ctx.fillRect(bx-6,by-8,12,14); ctx.strokeStyle='#000'; ctx.lineWidth=2; ctx.strokeRect(bx-6,by-8,12,14); ctx.fillStyle='#ffcc00'; ctx.fillRect(bx-2,by-2,4,4);}
-    else if(b.type==='larva'){ctx.fillStyle='#f5e6c8'; ctx.fillRect(bx-8,by-4,16,8); ctx.strokeStyle='#000'; ctx.strokeRect(bx-8,by-4,16,8); ctx.fillStyle='#8b5a2b'; ctx.fillRect(bx-3,by-1,6,2);}
-    else{ctx.fillStyle='#8b5a2b'; ctx.fillRect(bx-7,by-6,14,12); ctx.strokeStyle='#000'; ctx.strokeRect(bx-7,by-6,14,12); ctx.fillStyle='#ffcc00'; ctx.fillRect(bx-2,by-2,4,4);}
+    // la cria se pinta como lo demas: bulto, cara clara arriba y canto abajo. El borde
+    // negro de 2 px hacia que cada huevo pareciera un icono de interfaz pegado en el nido.
+    if(b.type==='egg'){
+      _bloque(ctx,bx-6,by-8,12,14,'#fffef0');
+      ctx.fillStyle='rgba(0,0,0,0.18)'; ctx.fillRect(bx-6,by-2,2,5);
+    } else if(b.type==='larva'){
+      _bloque(ctx,bx-8,by-4,16,8,'#f5e6c8');
+      ctx.fillStyle='#8b5a2b'; ctx.fillRect(bx-5,by-1,2,1); ctx.fillRect(bx+1,by-1,2,1);
+    } else {
+      _bloque(ctx,bx-7,by-6,14,12,'#8b5a2b');
+      ctx.fillStyle='#ffcc00'; ctx.fillRect(bx-2,by-3,4,2);
+    }
     if(!isMini){
       ctx.fillStyle='#000'; ctx.fillRect(bx-8,by-14,16,5); ctx.fillStyle= b.type==='egg'?'#fffef0':b.type==='larva'?'#f5e6c8':'#b47aff'; ctx.fillRect(bx-7,by-13, Math.floor(b.progress/100*14),3);
     }
   });
   // WORKERS pixel art - BIG
+  // UNA CUENTA POR CUADRO, NO POR HORMIGA. `workers.filter(w=>w.state==='CAVANDO').length`
+  // estaba dentro del bucle de pintado (y tres veces): con 60 obreras eran 10.800 recorridos
+  // por cuadro para saber un numero que no cambia entre relleno y relleno. Lo mismo con el
+  // color de faccion, que se buscaba con .find() hormiga a hormiga.
+  let _cavandoAhora = 0; for(let _w of workers){ if(_w.state==='CAVANDO') _cavandoAhora++; }
+  const _facCol = new Map(); for(let _f of society.factions) _facCol.set(_f.id, _f.color);
   _bubbleOccupied=[];
   workers.forEach((ant, idx)=>{
     const _rx=ant._renderX||ant.x, _ry=ant._renderY||ant.y;
+    // LO QUE NO ESTA A LA VISTA NO SE PINTA. Con x16 la camara ensena una fraccion pequena
+    // del mapa y sin embargo todas las obreras pasaban por el pintor: el recorte deja el
+    // cuadro en lo que cabe. La simulacion no se toca (eso corre en su propio paso) y la
+    // frase pendiente se sigue consumiendo, que su reloj vive aqui dentro (vicio viejo).
+    if(!isMini && useZoom){
+      const _mg = 44, _an = W/view.zoom, _al = H/view.zoom;
+      if(_rx < view.x-_mg || _rx > view.x+_an+_mg || _ry < view.y-_mg || _ry > view.y+_al+_mg){
+        if(ant.phraseTime>0) ant.phraseTime--;
+        return;
+      }
+    }
     // UNA HORMIGA ES UNA HORMIGA (Topo: «tienen muchas cosas encima y cuando hay muchas no se ve que estan
     // haciendo; que solo sean hormigas y al pinchar una muestre el detalle»). La burbuja de accion, la barra
     // de vida, el punto de faccion, la edad, el animo, la herramienta y las barras de progreso se pintan
@@ -5462,314 +5615,66 @@ function drawFarm(ctx,W,H,isMini=false){
     if(showEyes && !isMini && !_solo){
       const isSel=ant.selected;
       const alphaBase = isSel ? 0.22 : 0.07;
+      // EL HAZ, EN BLOQUES. Antes era un abanico con bezier y linea discontinua: en el barro
+      // se convertia en una mancha y cada cuadro costaba un path por hormiga. Ahora se muestrea
+      // el rayo de cuatro en cuatro y se pinta un cuadrito que se ensancha al alejarse: se lee
+      // por donde mira y sale mas barato (cero paths, cero dash).
       const angles=[-Math.PI/4, 0, Math.PI/4];
       const cols=['255,59,48','255,204,0','0,229,255'];
       angles.forEach((da,i)=>{
         const ang=ant.angle+da; const d=rayWallDist(ant.x, ant.y, ang, 40);
         if(d>8){
           ctx.fillStyle=`rgba(${cols[i]},${alphaBase})`;
-          ctx.beginPath(); ctx.moveTo(ant.x, ant.y); ctx.arc(ant.x, ant.y, d, ang-0.2, ang+0.2); ctx.closePath(); ctx.fill();
-          ctx.strokeStyle=`rgba(${cols[i]},${isSel?0.6:0.2})`; ctx.lineWidth=isSel?2:1; ctx.setLineDash(isSel?[6,4]:[]); ctx.beginPath(); ctx.moveTo(ant.x, ant.y); ctx.lineTo(ant.x+Math.cos(ang)*d, ant.y+Math.sin(ang)*d); ctx.stroke(); ctx.setLineDash([]);
+          for(let r=6;r<d;r+=4){
+            const _a = Math.max(1, Math.round(r/26));
+            const _px = Math.floor(ant.x+Math.cos(ang)*r), _py = Math.floor(ant.y+Math.sin(ang)*r);
+            ctx.fillRect(_px-_a, _py-_a, 1+_a*2, 1+_a*2);
+          }
           if(isSel){ctx.fillStyle=`rgba(${cols[i]},0.95)`; ctx.fillRect(Math.floor(ant.x+Math.cos(ang)*d)-2, Math.floor(ant.y+Math.sin(ang)*d)-2,4,4);}
         }
       });
       const neigh=nearestWorker(ant, ant.id);
       if(neigh && dist(ant,neigh)<80 && Math.abs(ant.commOut[0])>0.42){
-        ctx.strokeStyle=`rgba(0,229,255,${isSel?0.5:0.15})`; ctx.setLineDash([6,6]); ctx.lineWidth=isSel?2:1; ctx.beginPath(); ctx.moveTo(ant.x,ant.y); ctx.lineTo(neigh.x,neigh.y); ctx.stroke(); ctx.setLineDash([]);
-        if(isSel){const mx=(ant.x+neigh.x)/2, my=(ant.y+neigh.y)/2; ctx.fillStyle='#000'; ctx.fillRect(mx-12,my-10,24,10); ctx.strokeStyle='#00e5ff'; ctx.strokeRect(mx-12,my-10,24,10); ctx.fillStyle='#00e5ff'; ctx.font='7px "Press Start 2P"'; ctx.textAlign='center'; ctx.fillText(symbolForComms(ant.commOut[0],ant.commOut[1]), mx, my-3);}
-      }
-    }
-    if(!isMini){ctx.fillStyle='rgba(0,0,0,0.18)'; ctx.fillRect(Math.floor(_rx)-5, Math.floor(_ry)+8,11,2);}
-    ctx.save(); ctx.translate(_rx,_ry); if(ant._climbing){ ctx.rotate(ant.angle); } else { const flip=Math.cos(ant.angle)<0?-1:1; ctx.scale(flip,1); }
-    // patas realistas ahora en sprite sheet 6f (si está cargado, no dibujar procedural para no duplicar y ahorrar)
-    if(!isMini && !antWalk6Ready){
-      const _wp = ant._walkPhase||0;
-      const moving = ant.state!=='DESCANSAR' && ant.state!=='CAVANDO';
-      if(useAnthro && anthroReady){
-        for(let side=-1; side<=1; side+=2){
-          const phase = _wp*1.25 + (side<0?0:Math.PI);
-          const swing = Math.sin(phase)*5;
-          const lift = moving ? Math.max(0, Math.sin(phase))*4 : 0;
-          ctx.fillStyle='#1a0a00'; ctx.fillRect(side*3 -1, 6, 2, 6);
-          ctx.fillStyle='#2e1a0a';
-          const kneeX = side*3 + swing*0.35;
-          const kneeY = 12 - lift*0.6;
-          ctx.fillRect(kneeX-1, kneeY, 2, 6);
-          ctx.fillStyle='#3a1a05';
-          ctx.fillRect(kneeX + swing*0.25 -1, kneeY+6, 3, 2);
-        }
-      } else {
-        for(let side=-1; side<=1; side+=2){
-          for(let leg=0; leg<3; leg++){
-            const baseX = (leg-1)*7;
-            const baseY = 2 + (leg===1?1:0);
-            const phase = _wp*2.4 + leg*1.07 + (side<0?0:Math.PI);
-            const swing = Math.sin(phase)*6.5;
-            const lift = moving ? Math.max(0, Math.sin(phase))*3.2 : 0;
-            ctx.fillStyle='#0f0700';
-            ctx.fillRect(baseX + side*4, baseY, 1, 3);
-            ctx.fillStyle='#1e0f00';
-            ctx.fillRect(baseX + side*4 + swing*0.22, baseY+3 - lift*0.3, 1, 4);
-            ctx.fillStyle='#2a1500';
-            ctx.fillRect(baseX + side*4 + swing*0.55, baseY+6 - lift*0.2, 1, 4);
-            if(lift>1.2){
-              ctx.fillStyle='#3d1f00';
-              ctx.fillRect(baseX + side*4 + swing, baseY+9, 2,1);
-            }
-          }
+        // el aviso entre dos olfativas: bloque de dos en dos, con su marco de pixeles la elegida
+        ctx.fillStyle=`rgba(0,229,255,${isSel?0.5:0.15})`;
+        const _vx=neigh.x-ant.x, _vy=neigh.y-ant.y, _n=Math.max(2, Math.round(Math.hypot(_vx,_vy)/5));
+        for(let k=1;k<_n;k++){ ctx.fillRect(Math.floor(ant.x+_vx*k/_n), Math.floor(ant.y+_vy*k/_n), 2, 2); }
+        if(isSel){
+          const mx=Math.floor((ant.x+neigh.x)/2), my=Math.floor((ant.y+neigh.y)/2);
+          ctx.fillStyle='#000'; ctx.fillRect(mx-12,my-10,24,10);
+          ctx.fillStyle='#00e5ff'; ctx.fillRect(mx-11,my-9,22,1); ctx.fillRect(mx-11,my+7,22,1);
         }
       }
     }
-    // sprite realista - hormiga auténtica pixel
-    const animBob = Math.sin(ant._bobPhase||0)*0.7;
-    ctx.translate(0, animBob);
-    if(ant.selected && !isMini){
-      // aura en pies + flechita arriba - estilo Terraria/Stardew, sin recuadro entrelineado
-      const pulse = Math.sin((ant._bobPhase||0)*1.1 + idx*0.7)*0.5 + Math.sin((ant._walkPhase||0)*1.3)*0.2;
-      // aura pulsante bajo pies
-      ctx.save();
-      ctx.fillStyle='rgba(255,204,0,0.22)';
-      ctx.beginPath(); ctx.ellipse(0, 16, 14 + pulse*2, 4.5 + pulse*0.6, 0, 0, Math.PI*2); ctx.fill();
-      ctx.fillStyle='rgba(255,204,0,0.45)';
-      ctx.beginPath(); ctx.ellipse(0, 16, 7 + pulse*1.2, 2.2 + pulse*0.3, 0, 0, Math.PI*2); ctx.fill();
-      ctx.restore();
-      // flechita amarilla pixel arriba
-      ctx.save();
-      const bob = Math.sin((ant._bobPhase||0)*1.6 + idx)*1.2;
-      ctx.translate(0, -20 + bob);
-      ctx.fillStyle='#ffcc00'; ctx.strokeStyle='#000'; ctx.lineWidth=2;
-      // triángulo flecha ▼
-      ctx.beginPath(); ctx.moveTo(-6, -3); ctx.lineTo(6, -3); ctx.lineTo(0, 5); ctx.closePath(); ctx.fill(); ctx.stroke();
-      // brillo interno
-      ctx.fillStyle='#fff8dc'; ctx.fillRect(-2,-2,4,1);
-      ctx.restore();
-    }
-    if(useAnthro && anthroReady && anthroSprite.width){
-      // antropomorfo detallado - 4x2 sheet, pero con poses por estado y animación de 4 fases
-      const cellW=128, cellH=128;
-      let sIdx=0;
-      if(ant.role==='EXCAVADORA') sIdx=1;
-      else if(ant.role==='EXPLORADORA') sIdx=0;
-      else if(ant.role==='NODRIZA') sIdx=2;
-      else if(ant.rank==='LÍDER' || ant.rank==='JEFE') sIdx=3;
-      else sIdx=0;
-      if(ant.isQueen) sIdx=3;
-      // animación 4 fases: walk 0-1, dig 0-1 con swing, idle
-      // FRAME EXPERTO - misma base que hormiga real: walk 6f→2f mapeado @110ms, idle 4f @520ms, dig hold 200ms (Stardew/Shovel)
-      let frame=0;
-      const _wp=ant._walkPhase||0;
-      const _bp=ant._bobPhase||0;
-      // evolución más allá de lo real: GEN≥7 + IQ>148 walk más fluido 90ms (super-hormiga)
-      let walkSpeedMul = (gen>=7 && colonyIQ>148) ? 1.22 : 1.0;
-      let movingAnthro = ant.state!=='DESCANSAR' && ant.state!=='CAVANDO' && (ant.state==='EXPLORAR'||ant.state==='BUSCAR'||ant.state==='VOLVER_COMIDA'||ant.state==='VOLVER_TIERRA'||ant.state==='TANDEM_LEADER'||ant.food);
-      if(ant._onCeiling && !isMini){ ctx.save(); ctx.scale(1,-1); } // techo: boca abajo
-      if(ant.state==='CAVANDO' && (workers.filter(w=>w.state==='CAVANDO').length<=3 || ant.selected)){
-        // DIG 4 fases simuladas con 2 frames: F0 windup, F1 strike doble duración (hold 200ms)
-        let p = _bp*1.65 + idx*0.9;
-        let cycle = p % 5; // 1+2+1+1
-        if(cycle<1) frame=0; else if(cycle<3) frame=1; else if(cycle<4) frame=0; else frame=1;
-      } else if(ant.state==='DESCANSAR'){
-        frame = 0; // duerme en F0 con scale 0.92
-      } else if(movingAnthro){
-        // WALK mapeado 2f @110ms (90ms si super-evo) - distance-based para respetar velocidad
-        let p = _wp*0.88 + idx*0.33;
-        frame = Math.floor((p*1.6*walkSpeedMul) % 2);
-      } else {
-        // IDLE 4 fases @520ms con 2 frames
-        let p = _bp*0.60 + idx*0.35;
-        let cyc = Math.floor(p % 4);
-        frame = cyc % 2;
-      }
-      const sx=sIdx*cellW, sy=frame*cellH;
-      const dw = 30, dh = 30;
-      // animación corporal detallada
-      const walkPhase = (ant._walkPhase||0)*1.05 + idx*0.3;
-      const walkSwing = Math.sin(walkPhase)*0.32;
-      const bob = Math.sin(ant._bobPhase||0)*0.9;
-      const breath = Math.sin((ant._bobPhase||0)*0.32 + idx*0.4)*0.3;
-      // pose según estado
-      let offY = bob;
-      let rot = walkSwing*0.055;
-      let scaleY = 1;
-      if(ant._onCeiling && !isMini){ ctx.save(); ctx.scale(1,-1); } // techo: boca abajo
-      if(ant.state==='CAVANDO' && (workers.filter(w=>w.state==='CAVANDO').length<=3 || ant.selected)){
-        // agachado y picando con hold 200ms - time-based (bobPhase) para que no se freeze si walkPhase stall
-        offY = Math.sin((ant._bobPhase||0)*2.6+idx)*1.4 + 1.2;
-        rot = Math.sin((ant._bobPhase||0)*2.8+idx)*0.22;
-        scaleY = 0.94;
-      } else if(ant.food){
-        offY = Math.sin((ant._bobPhase||0)*0.9+idx)*0.5;
-        rot = walkSwing*0.03;
-      } else if(ant.state==='DESCANSAR'){
-        offY = 2.2; rot=0; scaleY=0.92;
-      }
-      ctx.translate(0, offY);
-      ctx.rotate(rot);
-      ctx.scale(1, scaleY);
-      // respiración sutil
-      ctx.translate(0, breath*0.3);
-      ctx.imageSmoothingEnabled=false;
-      ctx.drawImage(anthroSprite, sx, sy, cellW, cellH, -dw/2, -dh/2+2, dw, dh);
-      // sombra dinámica
-      const shadowW = ant.state==='CAVANDO'? dw-12 : dw-8;
-      ctx.fillStyle='rgba(0,0,0,'+(ant.state==='CAVANDO'?0.22:0.18)+')';
-      ctx.fillRect(-shadowW/2, dh/2+1, shadowW, 2+Math.abs(Math.sin(walkPhase))*1.2);
-      // antenas wiggle (detalle)
-      const antWiggle = Math.sin((ant._bobPhase||0)*1.4+idx*1.7)*1.1;
-      ctx.fillStyle='rgba(0,0,0,0.9)';
-      // se dibujan sobre el sprite, solo si no está en descanso
-      if(ant.state!=='DESCANSAR'){
-        ctx.fillRect(-1+antWiggle, -dh/2-2, 1, 3);
-        ctx.fillRect(3-antWiggle, -dh/2-2, 1, 3);
-      }
-      // herramienta de excavadora: pico que balancea
-      if(ant.role==='EXCAVADORA' && ant.state==='CAVANDO'){
-        ctx.save();
-        ctx.translate(10, -2);
-        const pickSwing = Math.sin((ant._walkPhase||0)*2.0+idx)*0.9;
-        ctx.rotate(pickSwing);
-        ctx.fillStyle='#6b3a1f'; ctx.fillRect(0,-2,14,3);
-        ctx.fillStyle='#8b9bb4'; ctx.fillRect(12,-5,8,6); ctx.strokeStyle='#000'; ctx.strokeRect(12,-5,8,6);
-        ctx.restore();
-      }
-    } else if(antWalk6Ready && antWalk6.width){
-      // SISTEMA EXPERTO 4 SHEETS - walk 6f @110ms (Shovel 6f / Celeste 4f), idle 4f @520ms, dig 4f con hold impacto 200ms, rest 2f @600ms - todo transparente 32x16 grid uniforme
-      const dw=30, dh=14;
-      if(ant.state==='CAVANDO' && antDigReady && antDig4.width){
-        // DIG 4f - cave con hold en golpe (F1 dura 2 unidades de 5) - pesa real como Shovel Knight
-        const nF=4, sw=antDig4.width/4, sh=antDig4.height;
-        let p=(ant._bobPhase||0)*1.65 + idx*0.9; // per-ant desync, time-based (bobPhase 0.052/tick)
-        let cycle=p%5; // 1+2+1+1 =5 - F1 doble duración
-        let fIdx=0; if(cycle<1) fIdx=0; else if(cycle<3) fIdx=1; else if(cycle<4) fIdx=2; else fIdx=3;
-        // vibración de pico contra tierra (0.6px aleatorio) - peso sin salto de frames
-        ctx.translate((Math.random()-0.5)*0.7, (Math.random()-0.5)*0.4);
-        ctx.imageSmoothingEnabled=false;
-        ctx.drawImage(antDig4, fIdx*sw,0,sw,sh, -dw/2, -dh/2, dw, dh);
-      } else if(ant.state==='DESCANSAR' && antRestReady && antRest2.width){
-        // REST 2f @600ms - respira tendida, patas recogidas, ojos cerrados
-        const nF=2, sw=antRest2.width/2, sh=antRest2.height;
-        let p=(ant._bobPhase||0)*0.42 + idx*0.5;
-        let fIdx=Math.floor(p % 2);
-        ctx.imageSmoothingEnabled=false;
-        ctx.scale(1,0.98);
-        ctx.drawImage(antRest2, fIdx*sw,0,sw,sh, -dw/2, -dh/2+1, dw, dh);
-      } else {
-        const moving = ant.state!=='DESCANSAR' && ant.state!=='CAVANDO' && ( (ant._walkPhase||0)>0.08 || ant.state==='BUSCAR' || ant.state==='VOLVER_COMIDA' || ant.state==='VOLVER_TIERRA' || ant.state==='LLEVANDO_BASURA' || ant.state==='EXPLORAR' || ant.state==='TANDEM_LEADER' || ant.state==='TANDEM_FOLLOWER' );
-        if(moving){
-          // WALK 6f - 32x16 tripod 3.2px + bob 1px ya en sheet, distance-based para que x16 no sea hiperveloz
-          // evolución más allá de lo real: GEN≥7 IQ>148 → 90ms super-fluido, GEN6 → 100ms
-          let evoMul = (gen>=7 && colonyIQ>148) ? 1.32 : (gen>=6 && colonyIQ>140) ? 1.15 : 1.0;
-          const nF=6, sw=antWalk6.width/6, sh=antWalk6.height;
-          let phase=(ant._walkPhase||0)*0.88 + idx*0.33;
-          let fIdx=Math.floor((phase*1.6*evoMul) % nF);
-          let walkSwing=Math.sin(phase)*0.12;
-          ctx.rotate(walkSwing*0.025);
-          ctx.imageSmoothingEnabled=false;
-          ctx.drawImage(antWalk6, fIdx*sw,0,sw,sh, -dw/2, -dh/2, dw, dh);
-        } else {
-          // IDLE 4f @520ms - respiración volumen constante, antena 0.5px, bob 0.5px ya en sheet
-          if(antIdleReady && antIdle4.width){
-            const nF=4, sw=antIdle4.width/4, sh=antIdle4.height;
-            let p=(ant._bobPhase||0)*0.60 + idx*0.35;
-            let fIdx=Math.floor(p % nF);
-            ctx.imageSmoothingEnabled=false;
-            ctx.drawImage(antIdle4, fIdx*sw,0,sw,sh, -dw/2, -dh/2, dw, dh);
-          } else {
-            // fallback walk idle 0-1
-            const nF=6, sw=antWalk6.width/6, sh=antWalk6.height;
-            let fIdx=Math.floor(Math.abs(Math.sin((ant._bobPhase||0)*0.6))*1.2)%2;
-            ctx.imageSmoothingEnabled=false;
-            ctx.drawImage(antWalk6, fIdx*sw,0,sw,sh, -dw/2, -dh/2, dw, dh);
-          }
-        }
-      }
-    } else if(antSpriteReady && antSprite.width){
-      const nSprites = 3;
-      const sw = antSprite.width / nSprites;
-      const sh = antSprite.height;
-      let sIdx = 0;
-      if(ant.role==='EXCAVADORA') sIdx=1;
-      else if(ant.role==='EXPLORADORA') sIdx=2;
-      else if(ant.role==='NODRIZA') sIdx=0;
-      else sIdx=0;
-      const sx = sIdx * sw;
-      const dw = 30, dh = 14;
-      const walkPhase = (ant._walkPhase||0)*1.12 + idx*0.4;
-      const walkSwing = Math.sin(walkPhase)*0.45;
-      const bob2 = Math.sin(ant._bobPhase||0)*0.6;
-      ctx.translate(0, bob2);
-      ctx.rotate(walkSwing*0.05);
-      const stepScale = 1 + Math.sin(walkPhase*2)*0.04;
-      ctx.scale(1, stepScale);
-      ctx.imageSmoothingEnabled=false;
-      ctx.drawImage(antSprite, sx, 0, sw, sh, -dw/2, -dh/2, dw, dh);
-      // antenas wiggle para hormiga común
-      if(ant.state!=='DESCANSAR'){
-        const wig = Math.sin((ant._bobPhase||0)*1.6+idx)*0.8;
-        ctx.fillStyle='#1a0a00'; ctx.fillRect(-8+wig, -dh/2-1, 1, 2); ctx.fillRect(6-wig, -dh/2-1, 1, 2);
-      }
-    } else {
-      // fallback procedural simple mientras carga
-      ctx.fillStyle='#c47a0a'; ctx.fillRect(-14,-5,28,10); ctx.strokeStyle='#000'; ctx.strokeRect(-14,-5,28,10);
-      ctx.fillStyle='#000'; ctx.font='8px "Press Start 2P"'; ctx.textAlign='center'; ctx.fillText(ant.role[0],0,2);
-    }
-    // food - gotita pequeña junto a mandíbula - wobble 0.5px experta viscosa
-    if(ant.food){
-      let wobX=Math.sin((ant._bobPhase||0)*1.4+idx)*0.5, wobY=Math.sin((ant._walkPhase||0)*1.7+idx)*0.35;
-      if(ant.food.isSoil){
-        ctx.fillStyle='#6b3a1f'; ctx.fillRect(8+wobX,-10+wobY,8,6); ctx.strokeStyle='#000'; ctx.lineWidth=1; ctx.strokeRect(8+wobX,-10+wobY,8,6);
-        ctx.fillStyle='#8b5a2b'; ctx.fillRect(9+wobX,-9+wobY,2,1);
-      }else{
-        // gotita 6x8
-        const col = ant.food.amount>=3 ? '#ffb700' : ant.food.amount===2 ? '#ffcc33' : '#ffda66';
-        ctx.fillStyle='#000'; ctx.fillRect(8+wobX,-14+wobY,6,8);
-        ctx.fillStyle=col; ctx.fillRect(9+wobX,-13+wobY,4,6);
-        ctx.fillStyle='#fff'; ctx.fillRect(9+wobX,-12+wobY,1,2);
-        ctx.fillStyle='#ff8c00'; ctx.fillRect(9+wobX,-8+wobY,4,1);
-        // la cantidad NO se escribe: en grupo eran veinte numeritos flotando
-      }
-    }
-    // la Z de cansancio: fuera. El bostezo y el paso lento ya lo dicen en la ficha
-    // la barra de progreso de la calada NO va sobre la cabeza de todas: el bloque que esta rompiendo ya se
-    // ve agrietarse y temblar debajo, y eso cuenta lo mismo sin tapar a la de al lado
+    // la sombra al suelo es un bloque duro: una elipse difuminada sobre el barro no se ve
+    if(!isMini){ ctx.fillStyle='rgba(0,0,0,0.18)'; ctx.fillRect(Math.floor(_rx)-6, Math.floor(_ry)+8, 13, 2); }
+    ctx.save(); ctx.translate(Math.floor(_rx),Math.floor(_ry));
+    if(ant._climbing){ ctx.rotate(ant.angle); } else { const flip=Math.cos(ant.angle)<0?-1:1; ctx.scale(flip,1); }
+    if(ant._onCeiling && !isMini){ ctx.scale(1,-1); }   // techo: boca abajo, mismo dibujo
+    // tamano por caste, y en el mapa de bolsillo todo se encoge a la mitad
+    const _esc = ant.isQueen? 1.75 : (ant.caste==='major'? 1.3 : ant.caste==='minim'? 0.82 : 1) * (isMini? 0.6 : 1);
+    _hormigaVoxel(ctx, ant, _esc, isMini, idx);
+    // la carga la pinta el propio pintor de la hormiga (ver _hormigaVoxel): es parte del cuerpo
     ctx.restore();
     if(_solo) return;                     // y hasta aqui llega la hormiga: lo demas es ficha de la elegida
-    // herramienta equipada - realista: mandíbula si no es anthro, mano si ya evolucionó
+    // herramienta equipada: madera y metal con su cara de luz, sin contorno negro de 3 px
     if(ant.tool && !isMini){
-      if(!useAnthro){
-        // fase mandibular: refuerzo en boca, no pala en mano
-        const mx = 9, my = -5;
-        if(ant.tool==='pick'){
-          // mandíbulas reforzadas con piedra
-          ctx.fillStyle='#8b9bb4'; ctx.fillRect(mx,my,5,3); ctx.strokeStyle='#000'; ctx.lineWidth=1; ctx.strokeRect(mx,my,5,3);
-          ctx.fillStyle='#4a2510'; ctx.fillRect(mx-3,my+1,3,2); // mandíbula base
-          ctx.fillStyle='#fff'; ctx.fillRect(mx+1,my+1,1,1);
-        } else if(ant.tool==='basket'){
-          // cesta mandibular pequeña (hoja)
-          ctx.fillStyle='#c2a080'; ctx.fillRect(mx-1,my,6,4); ctx.strokeStyle='#000'; ctx.strokeRect(mx-1,my,6,4);
-          ctx.fillStyle='#8b5a2b'; ctx.fillRect(mx-1,my,6,1);
-        } else if(ant.tool==='trowel'){
-          ctx.fillStyle='#7a7a7a'; ctx.fillRect(mx,my,4,2); ctx.strokeStyle='#000'; ctx.strokeRect(mx,my,4,2);
-          ctx.fillStyle='#6b3a1f'; ctx.fillRect(mx-2,my+1,2,1);
-        }
-      } else {
-        const tx=Math.floor(ant.x)+10, ty=Math.floor(ant.y)-16;
-        ctx.fillStyle='#000'; ctx.fillRect(tx,ty,12,9); ctx.strokeStyle='#000'; ctx.strokeRect(tx,ty,12,9);
-        if(ant.tool==='pick'){
-          ctx.fillStyle='#6b3a1f'; ctx.fillRect(tx+2,ty+4,8,2);
-          ctx.fillStyle='#8b9bb4'; ctx.fillRect(tx+7,ty+2,5,4); ctx.strokeStyle='#000'; ctx.strokeRect(tx+7,ty+2,5,4);
-        } else if(ant.tool==='basket'){
-          ctx.fillStyle='#c2a080'; ctx.fillRect(tx+2,ty+3,8,5); ctx.fillStyle='#8b5a2b'; ctx.fillRect(tx+2,ty+3,8,1); ctx.fillRect(tx+2,ty+6,8,1);
-          ctx.fillStyle='#fff8dc'; ctx.fillRect(tx+4,ty+4,1,1);
-        } else if(ant.tool==='trowel'){
-          ctx.fillStyle='#6b3a1f'; ctx.fillRect(tx+2,ty+5,6,2);
-          ctx.fillStyle='#7a7a7a'; ctx.fillRect(tx+8,ty+2,4,5); ctx.strokeStyle='#000'; ctx.strokeRect(tx+8,ty+2,4,5);
-        }
+      const _tx=Math.floor(ant.x)+(ant._climbing?9:10), _ty=Math.floor(ant.y)-16;
+      if(ant.tool==='pick'){
+        _bloque(ctx,_tx,_ty+4,11,3,'#6b3a1f');
+        _bloque(ctx,_tx+9,_ty+1,6,5,'#8b9bb4');
+      } else if(ant.tool==='basket'){
+        _bloque(ctx,_tx,_ty+2,10,7,'#c2a080');
+        ctx.fillStyle='#8b5a2b'; ctx.fillRect(_tx+1,_ty+5,8,1);
+        ctx.fillStyle='#fff8dc'; ctx.fillRect(_tx+2,_ty+3,1,1);
+      } else if(ant.tool==='trowel'){
+        _bloque(ctx,_tx,_ty+4,7,3,'#6b3a1f');
+        _bloque(ctx,_tx+6,_ty+1,5,6,'#7a7a7a');
       }
     }
     // facción y ánimo - puntito de color y barra de vida
     if(!isMini){
-      const facCol = society.factions.find(f=>f.id===ant.faction)?.color || '#ffcc00';
+      const facCol = _facCol.get(ant.faction) || '#ffcc00';
       // puntito facción arriba-izq
       ctx.fillStyle=facCol; ctx.fillRect(Math.floor(ant.x)-12, Math.floor(ant.y)-17, 5,5); ctx.strokeStyle='#000'; ctx.lineWidth=1; ctx.strokeRect(Math.floor(ant.x)-12, Math.floor(ant.y)-17,5,5);
       // barra de vida si está herida o vieja
@@ -5818,9 +5723,9 @@ function drawFarm(ctx,W,H,isMini=false){
         } else { ant.phraseTime=0; }
       }
       if(!hasLang){
-        if(ant.state==='CAVANDO' && (workers.filter(w=>w.state==='CAVANDO').length<=3 || ant.selected)){ 
+        if(ant.state==='CAVANDO' && (_cavandoAhora<=3 || ant.selected)){ 
           // Topo - si hay >3 cavando, no llover ⛏ individuales; se resume abajo en el strip
-          const digCount = (typeof workers!=='undefined'? workers.filter(w=>w.state==='CAVANDO').length : 0);
+          const digCount = _cavandoAhora;
           if(digCount>3 && !ant.selected){ icon=""; col=''; } else { icon="⛏"; col='#2a0a0a'; tcol='#ff9a6e'; bcol='#ff3b30'; }
         }
         else if(ant.food && !ant.food.isSoil){ icon="🍯"; col='#0a1f0a'; tcol='#86efac'; bcol='#2de67a'; }
@@ -5883,19 +5788,11 @@ function drawFarm(ctx,W,H,isMini=false){
           if(_p2>0.92){ ctx.fillStyle='#fff'; ctx.fillRect(ix+1 + (iconS-2)*_p2 -1, barY, 1, barH); }
         }
       }
-      if(ant.selected){
-        // clamp selected HUD - usa iconito como ancla, no burbuja vieja
-        let sx=ix, sy=iy-18;
-        if(useZoom){
-          const left2=view.x+44+4, right2=view.x+W/view.zoom-44-4;
-          sx = Math.max(left2, Math.min(right2, ix));
-        }
-        ctx.fillStyle='#000'; ctx.fillRect(sx-44, sy, 88, 10); ctx.strokeStyle='#ffcc00'; ctx.lineWidth=2; ctx.strokeRect(sx-44, sy, 88,10);
-        ctx.fillStyle='#ff3b30'; ctx.font='6px "Press Start 2P"'; ctx.fillText(`◉${(ant.sensors?.wallLeft ?? 0).toFixed(1)}`, sx-20, sy+6);
-        ctx.fillStyle='#ffcc00'; ctx.fillText(`◉${(ant.sensors?.wallCenter ?? 0).toFixed(1)}`, sx, sy+6);
-        ctx.fillStyle='#00e5ff'; ctx.fillText(`◉${(ant.sensors?.wallRight ?? 0).toFixed(1)}`, sx+20, sy+6);
-        ctx.fillStyle='#fff'; ctx.font='7px "Press Start 2P"'; ctx.fillText(ant.id, sx, sy-10);
-      }
+      // LOS NUMEROS DE LOS SENSORES YA NO FLotan SOBRE LA HORMIGA. Esto era un
+      // ◉0.5 ◉0.0 ◉0.0 en negro y oro pegado a la elegida: los mismos decimales que ahora
+      // lleva la hoja en 🧠 MENTE (ahi se leen, con nombre y sin tapar el barro). Sobre el
+      // lienzo quedaba un cuadro de interfaz flotando entre las hormigas, que es justo lo que
+      // se pidi6 fuera. La marca de la elegida sigue: su aura en el suelo y su flecha.
     }
   });
   // toasts pixel
@@ -5914,22 +5811,36 @@ function drawFarm(ctx,W,H,isMini=false){
         ty = Math.max(10, Math.min(H-10, ty));
       }
       ctx.fillStyle='#000'; ctx.fillRect(tx-w2/2+2, ty-10+2, w2, 16);
-      ctx.fillStyle=t.color; ctx.fillRect(tx-w2/2, ty-10, w2, 14); ctx.strokeStyle='#000'; ctx.lineWidth=3; ctx.strokeRect(tx-w2/2, ty-10, w2,14);
+      ctx.fillStyle=t.color; ctx.fillRect(tx-w2/2, ty-10, w2, 14);
+      ctx.fillStyle='rgba(255,255,255,0.22)'; ctx.fillRect(tx-w2/2+1, ty-9, w2-2, 1);
+      ctx.fillStyle='rgba(0,0,0,0.35)'; ctx.fillRect(tx-w2/2+1, ty+2, w2-2, 1);
       ctx.fillStyle='#000'; ctx.font='7px "Press Start 2P"'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(t.txt, tx, ty-2);
       ctx.globalAlpha=1;
     }
   }
   for(let p of particles){ctx.globalAlpha=p.life;
-    if(p.bloque){ _bloque(ctx,Math.floor(p.x)-1,Math.floor(p.y)-1,3,3,p.color); }
-    else { ctx.fillStyle=p.color; ctx.fillRect(Math.floor(p.x)-2,Math.floor(p.y)-2,4,4); }
+    // astilla de tierra y migaja de miel: un bloque con su cara de luz arriba y su canto
+    // abajo, exactamente la firma del terreno. Antes habia dos caminos (uno redondo y otro
+    // cuadrado) y los dos se veian de familia distinta; ahora el camino es `_bloque`, el mismo
+    // primitiva que el barro. Cuando el color no es hexadecimal (particulas translucidas, las
+    // de la antorcha) la firma se imita a mano, porque `_tilde16` solo entiende '#rrggbb'.
+    const _x=Math.floor(p.x)-1, _y=Math.floor(p.y)-1, _sz=3;
+    if(/^#[0-9a-fA-F]{6}$/.test(p.color)){
+      _bloque(ctx,_x,_y,_sz,_sz,p.color, p.bloque?1:0.7);
+    } else {
+      ctx.fillStyle=p.color; ctx.fillRect(_x,_y,_sz,_sz);
+      ctx.fillStyle='rgba(255,255,255,0.26)'; ctx.fillRect(_x,_y,_sz,1);
+      ctx.fillStyle='rgba(0,0,0,0.30)'; ctx.fillRect(_x,_y+_sz-1,_sz,1);
+    }
   }
+  
   ctx.globalAlpha=1;
   // clima lluvia/relámpago
   if(!isMini && (weather.type==='rain' || weather.type==='storm' || weather.type==='snow')){
     const _nev = weather.type==='snow';
     // el velo del aguacero, del temporal y de la nevada: una capa, no una textura
     ctx.fillStyle= weather.type==='storm'? 'rgba(30,40,60,0.22)' : _nev? 'rgba(214,230,244,0.15)' : 'rgba(40,50,70,0.12)';
-    ctx.fillRect(0,0,W,H);
+    ctx.fillRect(_cvx,_cvy,_cvw,_cvh);
     for(let rp of weather.rainParticles){
       const rx=Math.floor(rp.x), ry=Math.floor(rp.y);
       if(_nev){
@@ -5945,7 +5856,7 @@ function drawFarm(ctx,W,H,isMini=false){
     }
     if(lightningTimer>0){
       const flashAlpha = lightningTimer>7? 0.45 : lightningTimer>3? 0.22 : 0.08;
-      ctx.fillStyle=`rgba(255,255,220,${flashAlpha})`; ctx.fillRect(0,0,W,H);
+      ctx.fillStyle=`rgba(255,255,220,${flashAlpha})`; ctx.fillRect(_cvx,_cvy,_cvw,_cvh);
       if(lightningTimer>8){
         // el relampago, en cuadritos de tres: y sobre todo CON POSICION FIJA mientras dura el destello.
         // Antes se echaba a suerte cada cuadro y el rayo saltaba de un lado a otro del cielo (parpadeo).
@@ -5961,9 +5872,19 @@ function drawFarm(ctx,W,H,isMini=false){
   }
   if(useZoom) ctx.restore();
   if(!isMini){
-    const grad=ctx.createRadialGradient(W/2,H/2, Math.min(W,H)*0.5, W/2,H/2, Math.max(W,H)*0.9);
-    grad.addColorStop(0,'rgba(0,0,0,0)'); grad.addColorStop(1,'rgba(0,0,0,0.18)');
-    ctx.fillStyle=grad; ctx.fillRect(0,0,W,H);
+    // LA VIÑETA, EN ESCALONES. Un degradado radial sobre todo el lienzo es el peor relleno
+    // posible (tres paradas interpoladas por pixel) y AdemAs redondea el borde del mapa,
+    // que en este juego es un canto. Tres anillos de bloque dan la misma idea de foco por
+    // una fracciOn del coste y dejan la silueta del mundo cuadrada.
+    const _gros = Math.max(12, Math.round(Math.min(W,H)*0.055));
+    for(let an=0; an<3; an++){
+      ctx.fillStyle = 'rgba(0,0,0,' + (0.075 - an*0.024).toFixed(3) + ')';
+      const e = an*_gros;
+      ctx.fillRect(e, e, W-2*e, _gros);
+      ctx.fillRect(e, H-e-_gros, W-2*e, _gros);
+      ctx.fillRect(e, e+_gros, _gros, Math.max(0,H-2*e-2*_gros));
+      ctx.fillRect(W-e-_gros, e+_gros, _gros, Math.max(0,H-2*e-2*_gros));
+    }
   }
   ctx.strokeStyle='#000';ctx.lineWidth=6;ctx.strokeRect(0,0,W,H);
 }
@@ -6317,11 +6238,33 @@ function tickStep(dt){
       try{ localStorage.setItem('antfarm_lastReal', String(Date.now())); localStorage.setItem('antfarm_time', String(time)); }catch(e){}
     }
 }
-function loop(now){ try{
+// ── UN SOLO MOTOR DE CUADRO ────────────────────────────────────────────────
+// El bucle se re-programaba a si mismo con requestAnimationFrame y, encima, habia DOS
+// rescatadores (un setInterval cada 220 ms y un Worker cada 180 ms) que llamaban a loop()
+// cuando sospechaban que el cuadro se habia atrasado. El primer cuadro siempre es lento (carga
+// del mundo), asi que nacia una cadena extra; cada cadena pinta el mundo ENTERO, con lo que
+// el retraso criaba cadenas y las cadenas criaban retraso. Medido en Chrome: DIEZ llamadas a
+// loop por cuadro de pantalla y 68 ms de mediana por cuadro, con la colonia de siempre. Aqui
+// manda un unico programador: si ya hay cuadro pedido no se pide otro, y si alguien llama a
+// loop mientras el bucle esta corriendo, esa llamada se ignora en seco.
+let _cuadroGen=0, _cuadroPendiente=false, _cuadroCorriendo=false;
+function pedirCuadro(){
+  if(_cuadroCorriendo || _cuadroPendiente) return;            // ya hay un cuadro en el aire: no se pinta dos veces
+  const mi = ++_cuadroGen;
+  _cuadroPendiente = true;
+  requestAnimationFrame(function(ts){
+    _cuadroPendiente = false;
+    if(mi !== _cuadroGen) return;                              // una cadena anterior se adelanto: este cuadro sobra y se retira
+    loop(ts);
+  });
+}
+function loop(now){
+  if(_cuadroCorriendo) return;
+  _cuadroCorriendo=true;
+  try{
   if(!_topoHasWorld){ // Topo: nada existe aún, no simular ni renderizar granja
     // solo mantener UI de menú, no avanzar tiempo
-    requestAnimationFrame(loop);
-    return;
+    _cuadroCorriendo=false; pedirCuadro(); return;
   }
   const rawDt=now-last; last=now; const dtMs=Math.min(rawDt, 42); // clamp 42ms evita lag spike
   let dt=dtMs*0.06 * gameSpeed;
@@ -6345,14 +6288,15 @@ function loop(now){ try{
     if(steps>=60 && dt>0){ time+=dt; break; }
   }
   renderLoop();
-  requestAnimationFrame(loop);
-  }catch(e){ console.error('loop',e); requestAnimationFrame(loop); }
+  }catch(e){ console.error('loop',e); }
+  _cuadroCorriendo=false;
+  pedirCuadro();
 }
-requestAnimationFrame(loop);
+pedirCuadro();
 // tick de respaldo cuando el tab está oculto: rAF se throttlea a ~1fps, este interval mantiene vivo aunque sea a 5fps
 setInterval(()=>{ try{ if(!paused){ const now=performance.now(); // forzar un loop extra
   // no llamar directamente a loop para no duplicar last, solo avanzar un poco si hace mucho que no hay frame
-  if(performance.now()-last > 400){ loop(performance.now()); }
+      if(performance.now()-last > 400){ _cuadroPendiente=false; loop(performance.now()); }
 } }catch(e){} }, 220);
 // Worker de respaldo que no se throttlea tanto como rAF en algunos navegadores
 try{
@@ -6363,7 +6307,7 @@ try{
   bgWorker.onmessage=()=>{
     if(document.hidden && !paused){
       const now=performance.now();
-      if(now-last > 350) loop(now);
+      if(now-last > 350){ _cuadroPendiente=false; loop(now); }
     }
   };
   // guardar referencia para no ser GC
@@ -7561,16 +7505,10 @@ function showQueenProfile(q){
     pctx.clearRect(0,0,64,64);
     pctx.fillStyle='#000'; pctx.fillRect(0,0,64,64);
     pctx.fillStyle=facCol; pctx.fillRect(0,0,64,3);
-    // sprite reina - 64 canvas como hormiga, centrado
-    if(typeof queenSprite!=='undefined' && queenSpriteReady){
-      try{
-        const sw=queenSprite.width/2, sh=queenSprite.height;
-        const frame = (q.progress||0)>72?1:0;
-        pctx.drawImage(queenSprite, frame*sw,0,sw,sh, 8,10,48,34);
-      }catch(e){ pctx.fillStyle='#c47a0a'; pctx.fillRect(16,18,32,24); }
-    } else {
-      pctx.fillStyle='#b47aff'; pctx.fillRect(18,20,28,18);
-    }
+    // la reina, con el mismo pintor y su corona (ver el retrato de la obrera)
+    pctx.save(); pctx.translate(32,32);
+    _hormigaVoxel(pctx, q, 1.5, false, q.id|0);
+    pctx.restore();
     pctx.fillStyle='#fff'; pctx.font='bold 6px "Press Start 2P"'; pctx.textAlign='center'; pctx.fillText('REINA',32,56);
     pctx.font='5px "Press Start 2P"'; pctx.fillStyle=facCol; pctx.fillText('F'+q.faction,32,62);
   }
