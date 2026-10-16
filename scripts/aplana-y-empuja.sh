@@ -38,6 +38,12 @@ BASE="$(git rev-parse origin/$RAMA)"
 echo "  remoto: $BASE"
 git reset --hard -q "$BASE"
 git checkout _contenido -- .
+# Ojo con los borrados: `git checkout rama -- .` copia lo que hay en la rama, pero NO quita lo que
+# existe en el base y ya no está en la rama. Sin estas dos lineas, un fichero jubilado (los PNG de
+# hormiga, por ejemplo) se queda colgado en el remoto para siempre aunque aqui lo hayas borrado.
+git diff --name-only --diff-filter=D "$BASE" _contenido | while IFS= read -r muere; do
+  [ -e "$muere" ] && git rm -q --ignore-unmatch "$muere" || true
+done
 git add -A
 if git diff --cached --quiet; then
   echo "  el remoto ya tiene este contenido: no hay nada que empujar"
