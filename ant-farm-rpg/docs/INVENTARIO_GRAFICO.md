@@ -151,4 +151,23 @@ Dibujadas en `broodRow` y como `brood[]` con `x,y`.
 
 **TOTAL conteo tangible único: 73 objetos** (14 superficies + 9 plantas + 6 foods + 5 materiales + 4 estructuras + 3 herramientas + 12 personajes + 4 brood + 2 hongos/basura + 5 señales + 6 clima + 3 ocultos)
 
+## 14) LA ESCALERA (2026-10-16) — lo que hay que dibujar al cavar hondo
+
+Cerrado en código y pintado por bloques de 16 (el mismo `soilType` que pinta el terreno), sin PNG nuevos.
+Diseño completo en **`ant-farm-rpg/docs/PROFUNDIDAD.md`**.
+
+| # | Objeto | Cómo se ve hoy | Estado |
+|---|--------|----------------|--------|
+| 1 | **Nueve bandas de roca** (raíces · barro · arena · piedra · pizarra · cuarcita · mármol · obsidiana · basalto) | color propio por `soilType` 15, 11, 12, 13, 14 en las bandas nuevas, con su luz arriba y su sombra abajo | ✅ |
+| 2 | **Vetas por banda** (cobre 19 en piedra, hierro 20 en pizarra, oro 6 en cuarcita, gema 7 en mármol y obsidiana, sal 18) | dos o tres puntos del tono del metal dentro del bloque, contados por cantidad | ✅ |
+| 3 | **La losa de umbral** (tipo 17) | roca más oscura que su banda, grietas según los puntos de vida y barra de progreso colgada sobre ella; al romperse se convierte en el primer piso nuevo | ✅ |
+| 4 | **Magma** (tipo 15, última banda) | bloque de fuego que parpadea en `drawFarm` sobre el índice `magmaCells`, con su halo cálido en las casillas vecinas | ✅ |
+| 5 | **Reliquias** (9, una por partida) | rombo de cuatro bloques en la casilla donde salieron + tarjeta con grito en el eco del umbral + **VITRINA** en el panel del mundo (con su pedestal) | ✅ en el panel · ⏳ **falta la vitrina física dentro del mundo** |
+| 6 | **Cuevas de banda** | hueco ya abierto al romper la losa, con su botín dentro | ✅ |
+| 7 | **Pantalla de inicio** | lienzo de 176×88 duplicado a 352: madriguera, montículo que tiembla, topo que asoma en dos empujones, polvo con gravedad, parpadeo y respiración | ✅ |
+
+Pendiente de dibujo (lo asume el próximo paso del taller): la **vitrina física** en una cámara de la reina,
+el **nivel freático** con su anegamiento, la **humedad** que oscurece la roca y la **reliquia que cambia
+el genoma** (una marca visible en la cría: dos hijos con patas más largas en el árbol).
+
 Siguiente paso: elige 1 categoría para atacar primero. Recomendación: **Superficies 1-8** (suelo) porque todo lo demás se apoya encima y es lo que más se ve (70% de pantalla es tierra).

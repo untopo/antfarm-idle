@@ -193,7 +193,7 @@ function hasDeco(c,r){ return decoSet.size>0 && decoSet.has(dkey(c,r)); }
 let soilType=[]; // 0 vacío, 1 topsoil, 2 arcilla, 3 arena, 4 piedra
 let fertility=[]; // por columna 0-1
 let plants=[]; // vegetación exterior
-let worldMaterials={stone:0, clay:0, sand:0, fiber:0, wood:0};
+let worldMaterials={stone:0, clay:0, sand:0, fiber:0, wood:0, cobre:0, hierro:0, oro:0, cuarzo:0, gema:0, obsidiana:0, meteorito:0};
 // Lo que la colonia ha HECHO con cada material (minarlo, cargarlo, llevarlo). De aqui saldra el invento:
 // sin arbol de tecnologia escrito, solo costumbre y observacion.
 let antsAtascados=0;
@@ -223,41 +223,267 @@ const TOOL_DEFS={
   trowel:{need:{clay:1, stone:1}, iq:132, gen:4, name:'PALETA', bonusBuild:0.28, icon:'🪝'},
 };
 
+// ===== LA ESCALERA =====
+// Topo pidio que cavar hacia abajo valga la pena: cada capa mas dura, cada capa con su material, y un
+// limite que se ROMPE y destapa la siguiente. Las referencias que hay detras:
+//   - Terraria  los minerales van por piso (cobre arriba, hierro por el medio, oro mas abajo, y lo ultimo
+//               del mundo en el pozo del infierno). La idea que copia esto: la profundidad ES el requisito,
+//               no un numero de generacion. Nadie te regala el oro, llegas o no llegas.
+//   - SteamWorld Dig  bajar cuesta (aqui: fatiga y dureza) y cada capa tiene su color, para saber donde
+//               estas sin leer numeros.
+//   - Motherload y Deep Rock Galactic  hondo hay riesgo ademas de premio: el magma de la ultima banda no
+//               se cava, se sufre.
+//   - Core Keeper / Aground / Dwarf Fortress  las cuevas vacias ya son un premio (sitio donde respirar) y
+//               una ruina contada en bloques vale mas que una cutscene.
+// Ocho bandas, una losa al final de cada una, y reliquias que se quedan en la vitrina de la colonia.
+const BANDAS=[
+  {n:'RAÍCES',         desde:0,  tipo:1,  dureza:0,   veta:null, pinta:'piedras',      color:'#8a5a2b'},
+  {n:'BARRO',          desde:3,  tipo:2,  dureza:4,   veta:null, pinta:'mantas',       color:'#b0673f'},
+  {n:'ARENA MOVEDIZA', desde:8,  tipo:3,  dureza:-4,  veta:null, pinta:'granos',       color:'#d3b473'},
+  {n:'PIEDRA',         desde:14, tipo:4,  dureza:9,   veta:8,    pinta:'grieta',       color:'#8d8d8d'},
+  {n:'PIZARRA',        desde:22, tipo:6,  dureza:14,  veta:9,    pinta:'grietaLarga',  color:'#6b7a8a'},
+  {n:'CUARCITA',       desde:30, tipo:11, dureza:18,  veta:10,   pinta:'veta',         color:'#c9c2d8'},
+  {n:'MÁRMOL NEGRO',   desde:38, tipo:12, dureza:23,  veta:16,   pinta:'veta',         color:'#4a4552'},
+  {n:'OBSIDIANA',      desde:46, tipo:13, dureza:29,  veta:16,   pinta:'brillo',       color:'#241f2e'},
+  {n:'BASALTO ÍGNEO',  desde:55, tipo:14, dureza:34,  veta:10,   pinta:'grietaLarga',  color:'#4a2a20'},
+];
+const PISOS_BANDA=8;                     // grosor de banda que se abre de golpe (la losa se come uno)
+const VETA_P=[0,0,0,0.052,0.040,0.032,0.026,0.022,0.018];   // mas hondo = mas escaso
+// Tipos que no son banda: 5 piedra suelta, 7 roca madre, 8 cobre, 9 hierro, 10 oro, 15 MAGMA (no se
+// cava), 16 veta de gemas, 17 LA LOSA DEL UMBRAL, 18 sal de roca.
+const DUREZA_EXTRA={5:6, 7:38, 8:15, 9:20, 10:26, 15:999, 16:22, 17:999, 18:12};
+function bandaDe(piso){ let b=0; for(let i=0;i<BANDAS.length;i++) if(piso>=BANDAS[i].desde) b=i; return b; }
+function tipoDePiso(piso){ return BANDAS[bandaDe(piso)].tipo; }
+function durezaDe(t){
+  for(let i=0;i<BANDAS.length;i++) if(BANDAS[i].tipo===t) return BANDAS[i].dureza;
+  return DUREZA_EXTRA[t]||0;
+}
+const NOMBRE_BANDA=(b)=>BANDAS[Math.max(0,Math.min(BANDAS.length-1,b|0))].n;
+const COLOR_BANDA=(b)=>BANDAS[Math.max(0,Math.min(BANDAS.length-1,b|0))].color;
+function vetaDeBanda(b){ return BANDAS[Math.max(0,Math.min(BANDAS.length-1,b))].veta; }
+
+// ---- TESOROS DE LA ESCALERA ----
+// Antes este cuadro vivia DENTRO de initSoil y checkRewardDiscovery lo leia desde fuera con un
+// `typeof TREASURE_DEFS!=='undefined'` que mentia: def salia null y ningun tesoro de tier>=2 hacia nada
+// al descubrirse (ni fibra, ni ambar, ni nada). Subirlo a nivel de modulo arregla eso y permite que cada
+// banda tenga lo suyo. `reliquia:` = se queda para siempre en la VITRINA y da un bonus pequeno y visible.
+const TREASURE_DEFS = {
+  // banda 0-1 (raices y barro): lo de siempre, comida y material de relleno
+  semillas:   {food:10, mat:null,      w:22, color:'#ffcc00', msg:'¡SEMILLAS! +10 comida', tier:1},
+  agua:       {food:0,  mat:null, fatigue:30, w:20, color:'#00e5ff', msg:'¡AGUA! fatiga restaurada', tier:1},
+  hongo:      {food:6,  mat:null,      w:18, color:'#2de67a', msg:'¡HONGO! +6 comida', tier:1},
+  // banda 2-3 (arena y piedra): materiales de obra y las primeras cuevas
+  fibra:      {food:2,  mat:'fiber',   matAmt:2, w:14, color:'#c9b896', msg:'¡FIBRA! +2 fibra', tier:2},
+  piedra:     {food:0,  mat:'stone',   matAmt:2, w:12, color:'#8a8a8a', msg:'¡PIEDRA! +2 piedra', tier:2},
+  arcilla:    {food:0,  mat:'clay',    matAmt:1, w:10, color:'#a08060', msg:'¡ARCILLA! +1 arcilla', tier:2},
+  hongoCueva: {food:8,  mat:null,      w:8,  color:'#6b3a1f', msg:'¡HONGO CUEVA! +8 comida', tier:2},
+  anfora:     {food:26, mat:null,      w:5,  color:'#ffb700', msg:'¡ÁNFORA DE MIEL! +26 comida', tier:2},
+  // banda 4-5 (pizarra y cuarcita): aqui empiezan las cosas asombrosas
+  fosil:      {food:0,  mat:null, xp:120, w:5, color:'#e8dcc0', tier:3, msg:'¡FÓSIL! la trampa de un hormiga león', reliquia:'Fósil de hormiga león',
+               lore:'Una trampa de arena de hace mil dias: el cono tallado y la victima dentro.', bonus:0.02},
+  geoda:      {food:0,  mat:'cuarzo', matAmt:3, xp:90, w:5, color:'#c8a6ff', tier:4, msg:'¡GEODA! +3 cuarzo', reliquia:'Geoda de cuarzo',
+               lore:'Dieciseis caras de cristal en un puno de tierra. Alumbran el tunel si las dejas sueltas.', bonus:0.02},
+  ambar:      {food:0,  mat:null, xp:80, w:6, color:'#ffb700', tier:3, msg:'¡ÁMBAR! +80 XP', reliquia:'Ámbar con una hormiga dentro',
+               lore:'Se ve la pata levantada, como si fuera a empezar a correr. Lleva aqui muchisimo tiempo.', bonus:0.02},
+  semillaRara:{food:14, mat:'fiber', matAmt:1, w:7, color:'#b47aff', msg:'¡SEMILLA RARA! +14 comida', tier:3},
+  // banda 6-7 (marmol y obsidiana): luz, sal y vidrio negro
+  lente:      {food:0,  mat:null, xp:150, w:4, color:'#7ad3ff', tier:5, msg:'¡LENTE! alguien talló esto', reliquia:'Lente de cristal de roca',
+               lore:'Algo la tall y lo pulio. No hay nadie aqui para contarlo.', bonus:0.03},
+  sal:        {food:0,  mat:'cuarzo', matAmt:2, w:6, color:'#e9f2fb', msg:'¡SAL DE ROCA! +2 cuarzo', tier:6},
+  hongoLinterna:{food:10, mat:null, xp:130, w:4, color:'#2de67a', tier:6, msg:'¡HONGO LINTERNA! +10 comida y luz', reliquia:'Hongo linterna',
+               lore:'Aguanta encendido tres dias bajo tierra. Donde lo plantas, la colonia trabaja mas rato.', bonus:0.03},
+  lagrima:    {food:0,  mat:'obsidiana', matAmt:2, xp:180, w:3, color:'#9a6bff', tier:7, msg:'¡LÁGRIMA DE OBSIDIANA! +2 vidrio negro', reliquia:'Lágrima de obsidiana',
+               lore:'Vidrio negro, frio, con una gota congelada a media bajada. Cava mas rapido quien la tiene.', bonus:0.04},
+  // banda 8 (basalto igneo): lo que no deberia estar ahi abajo
+  corazon:    {food:20, mat:null, xp:300, w:2, color:'#ff3b30', tier:8, msg:'¡CORAZÓN DE COLINA! late bajo la arena', reliquia:'Corazón de colina',
+               lore:'Late una vez cada cuatro segundos. La camara de la reina lo escucha.', bonus:0.05},
+  meteorito:  {food:0,  mat:'meteorito', matAmt:1, xp:220, w:2, color:'#ff8c00', tier:9, msg:'¡METEORITO! aún quema', reliquia:'Meteorito hundido',
+               lore:'No es de aqui. La roca tiene la corteza de quemarse entrando y aun esta caliente.', bonus:0.05},
+  nidoAntiguo:{food:0,  mat:'obsidiana', matAmt:1, xp:260, w:2, color:'#c9b896', tier:9, msg:'¡NIDO ANTIGUO! otra colonia, otro final', reliquia:'Nido de la colonia vieja',
+               lore:'Camaras pequenas, huevos vacios, y un tunel ciego que no lleva a ninguna parte. Se fue como se van todas.', bonus:0.03},
+};
+// El sorteo: la banda manda (pool por tier) y la prog de la colonia solo pesa, no bloquea. Antes un
+// pool vacio hacia que `type` saliera undefined y se sembraran 200 cofres vacios: el suelo de reserva
+// se queda por eso.
+function pickTreasureType(depthTier){
+  const tier = Math.max(1, Math.min(9, depthTier|0));
+  const prog = (typeof gen!=='undefined'?gen:0) + (typeof colonyIQ!=='undefined'? colonyIQ-100:0)/40;
+  let pool;
+  if(tier===1)      pool=['semillas','agua','hongo'];
+  else if(tier===2) pool=['semillas','hongo','fibra','anfora','piedra'];
+  else if(tier===3) pool=['fibra','arcilla','hongoCueva','fosil','piedra'];
+  else if(tier===4) pool=['piedra','arcilla','geoda','hongoCueva','fibra'];
+  else if(tier===5) pool=['geoda','ambar','arcilla','semillaRara','piedra'];
+  else if(tier===6) pool=['lente','geoda','sal','ambar'];
+  else if(tier===7) pool=['hongoLinterna','lagrima','sal','lente'];
+  else if(tier===8) pool=['lagrima','corazon','hongoLinterna','lente'];
+  else              pool=['meteorito','corazon','nidoAntiguo','lagrima'];
+  if(prog<2) pool=pool.filter(t=> (TREASURE_DEFS[t].tier||1)<4);
+  if(prog<1) pool=pool.filter(t=> (TREASURE_DEFS[t].tier||1)<3);
+  if(!pool.length) pool=['semillas','agua','hongo','fibra'];
+  const weights = pool.map(t=>{
+    let w=TREASURE_DEFS[t].w||1;
+    if((TREASURE_DEFS[t].tier||1) > tier) w*=0.55;      // que se cuele algo mejor de lo que toca, pocas veces
+    return w;
+  });
+  const tot=weights.reduce((a,b)=>a+b,0);
+  let r=Math.random()*tot; for(let i=0;i<pool.length;i++){ r-=weights[i]; if(r<=0) return pool[i]; }
+  return pool[0];
+}
+
+// ---- EL UMBRAL: la losa que cierra la escalera ----
+// No es un muro invisible ni un «ya no hay filas»: es una fila de roca con PUNTOS DE VIDA de la colonia
+// entera. Cada excavadora que llega le arranca una astilla; cuando cede, el mundo crece una banda y la
+// losa se convierte en el primer piso de esa banda. Se ve desde el mapa: los bichos se apiñan abajo.
+let umbral=null;              // {r,c0,c1,hp,hpMax,banda}
+let bandaMax=0;               // banda mas honda que el mapa cubre hoy
+let umbralesRotos=0;          // losas reventadas: lo que se lee en el panel
+let reliquias=[];             // {tipo,nombre,piso,dia,gen,lore,bonus}
+let bonusCava=0;              // +velocidad de excavacion por reliquia (0.02-0.05 cada una, tope 0.30)
+let magmaCells=[];            // indice del magma: la kamera solo mira esto, no el mapa entero
+const UMBRAL_HP=(b)=> 16 + b*13;
+function reindexMagma(){
+  magmaCells=[];
+  if(!Array.isArray(soilType)) return;
+  for(let r=ROWS-1;r>SURFACE_ROW;r--){
+    const row=soilType[r]; if(!row) continue;
+    for(let c=0;c<COLS;c++) if(row[c]===15) magmaCells.push({r,c,x:c*CELL,y:r*CELL});
+  }
+}
+function colocarUmbral(){
+  if(!Array.isArray(soil) || soil.length<8) return;
+  const r=ROWS-1;
+  if(r<=SURFACE_ROW+4) return;
+  for(let c=0;c<COLS;c++){
+    if(soil[r]) soil[r][c]=1;
+    if(soilType[r]) soilType[r][c]=17;
+  }
+  const b=bandaDe(r-SURFACE_ROW);
+  // IMPORTANTE: la losa puede estar clavada en medio de una banda (en el mapa pequeno el ultimo piso
+  // es PIEDRA y la losa es PIEDRA). Lo que interesa para el juego es lo que HAY DETRAS, asi que la
+  // losa lleva los dos numeros: `banda` donde esta y `guarda` la que se abre al romperla.
+  const guarda=Math.min(BANDAS.length-1, bandaDe(r+1-SURFACE_ROW));
+  umbral={r, c0:2, c1:COLS-3, hp:UMBRAL_HP(guarda), hpMax:UMBRAL_HP(guarda), banda:b, guarda:guarda};
+  bandaMax=Math.max(bandaMax, bandaDe(Math.max(SURFACE_ROW+1, ROWS-2)-SURFACE_ROW));
+  markSoilDirty();
+  tlog('[UMBRAL] losa en fila '+r+' ('+NOMBRE_BANDA(b)+') guarda '+NOMBRE_BANDA(guarda)+' · hp '+umbral.hp);
+}
+function puedeGolpearUmbral(){
+  if(!umbral) return false;
+  if(workers.length<3) return false;
+  if(umbral.guarda>=5 && !inventions.masonry) return false;  // del marmol en adelante hace falta canteria
+  return true;
+}
+function golpearUmbral(ant){
+  const u=umbral; if(!u) return false;
+  const exc = (ant && ant.role==='EXCAVADORA')? 0.55 : 0;
+  const golpe = 1 + exc + (inventions.masonry?0.6:0) + Math.min(1.4, (typeof gen!=='undefined'?gen:0)*0.07)
+              + Math.max(0,((typeof colonyIQ!=='undefined'?colonyIQ:100)-100))/200 + bonusCava;
+  u.hp = Math.max(0, u.hp - golpe);
+  const c = (ant && Number.isFinite(ant.x))? Math.floor(ant.x/CELL) : u.c0;
+  try{
+    for(let i=0;i<4;i++) particles.push({x:c*CELL+6, y:u.r*CELL+8, vx:(Math.random()-0.5)*2.4, vy:-Math.random()*1.8, life:1, decay:0.035, color:'#c8c8d8', bloque:true});
+    if(ant && Math.random()<0.35) pushToast(c*CELL+8, u.r*CELL-4, '⛏', '#c8c8d8', 0.8);
+    markSoilDirty(c, u.r);
+    if(ant) logAntHistory(ant, 'muerde la losa ('+Math.round(u.hp)+' por aguantar)');
+  }catch(e){}
+  if(u.hp<=0){ abrirUmbral(); return true; }
+  return false;
+}
+function abrirUmbral(){
+  const u=umbral; if(!u) return false;
+  const nuevo=Math.min(BANDAS.length-1, bandaDe(u.r - SURFACE_ROW + 1));   // lo que hay DETRAS de la losa
+  umbral=null;
+  for(let c=0;c<COLS;c++){                                  // la losa se disuelve: primer piso de la banda
+    if(soil[u.r]) soil[u.r][c]=1;
+    if(soilType[u.r]) soilType[u.r][c]=tipoDePiso(u.r-SURFACE_ROW);
+  }
+  const suelo=SURFACE_ROW + BANDAS[nuevo].desde + PISOS_BANDA;
+  const add=Math.max(6, suelo-(ROWS-1));
+  // expandWorld en modo silencioso: el aviso de «mundo expandido» lo da esta funcion, que sabe el nombre
+  // de la banda. Sin el flag salian dos tarjetas diciendo lo mismo (el dueno lo dijo: una cifra, un sitio).
+  try{ expandWorld(add, true); }catch(e){ console.warn('expandWorld tras umbral', e); }
+  bandaMax=Math.max(bandaMax, Math.min(nuevo, bandaDe(Math.max(SURFACE_ROW+1, ROWS-2)-SURFACE_ROW))); umbralesRotos++;
+  stats.xp += 90 + 30*nuevo; colonyFitness += 2.2;
+  markSoilDirty(); reindexMagma();
+  pushEvent('evo', '🕳️ UMBRAL ROTO · '+NOMBRE_BANDA(nuevo), 'el mapa llega a '+ROWS+' filas - '+reliquias.length+' reliquias en la vitrina');
+  notifyCanon('🕳️ ¡NUEVA PROFUNDIDAD!', NOMBRE_BANDA(nuevo)+' - la colonia huele piedra mojada y algo mas duro', 6400);
+  pushImportant('invention', '🕳️ SE ABRIÓ '+NOMBRE_BANDA(nuevo), 'la losa de la fila '+u.r+' cedio · piso '+(suelo-SURFACE_ROW)+' disponible');
+  tlog('[UMBRAL] roto en fila '+u.r+' · banda '+nuevo+' ('+NOMBRE_BANDA(nuevo)+') · ROWS='+ROWS);
+  return true;
+}
+function anotarReliquia(def, c, r){
+  if(!def || !def.reliquia) return false;
+  if(reliquias.some(x=>x.tipo===def.reliquia)) return false;      // cada maravilla, una sola vez
+  reliquias.push({tipo:def.reliquia, nombre:def.reliquia, piso:r-SURFACE_ROW, dia:Math.floor(day||0),
+                  gen:(typeof gen!=='undefined'?gen:0), lore:def.lore||'', bonus:def.bonus||0.02});
+  bonusCava = Math.min(0.30, reliquias.reduce((a,x)=>a+(x.bonus||0),0));
+  return true;
+}
+
+// ---- sembrador de botin, a nivel de modulo ----
+// Subido desde dentro de initSoil: expandWorld y checkRewardDiscovery lo llamaban con
+// `typeof spawnSmartTreasure==='function'`, que en el ambito de modulo era mentira -> los dos caminos
+// nunca hicieron nada. Ahora la banda nueva sale con su botin puesto y al descubrir algo puede nacer
+// otra cosa mas hondo.
+function isValidTreasurePos(c,r){
+  if(c<4||c>=COLS-4||r<SURFACE_ROW+4||r>=ROWS-3) return false;
+  if(!soil[r]||soil[r][c]!==1) return false;
+  // no muy cerca de otro tesoro - la separacion minima sigue la escala del mapa
+  const _minD=Math.max(3, Math.min(7, Math.round(5*Math.sqrt(worldAreaRatio()))));
+  for(let tr of hiddenRewards){ if(Math.hypot(tr.c-c,tr.r-r)<_minD) return false; }
+  if(Math.hypot(c-CENTER_COL, r-(SURFACE_ROW+3))<6) return false;
+  return true;
+}
+function spawnSmartTreasure(c,r,forcedType){
+  if(!isValidTreasurePos(c,r)) return null;
+  const depth=r-SURFACE_ROW;
+  const tier = 1+bandaDe(depth);                 // el suelo manda: la banda ES el requisito
+  const type=forcedType||pickTreasureType(tier);
+  hiddenRewards.push({c,r,type,found:false,x:c*CELL+8,y:r*CELL+8, depthTier:tier});
+  return true; // siempre truthy: el contador debe subir aunque el tipo caiga raro
+}
+
 function initSoil(){
   soil=Array.from({length:ROWS},(_,r)=>Array.from({length:COLS},(_,c)=> r<SURFACE_ROW?0:1));
   water=Array.from({length:ROWS},()=>Array(COLS).fill(0));
   soilType=Array.from({length:ROWS},(_,r)=>Array.from({length:COLS},(_,c)=>{
     if(r<SURFACE_ROW) return 0;
-    const depth=r-SURFACE_ROW;
-    // progresivo strata: cuanto más profundo, más duro (pickaxe power)
-    if(depth<3) return 1; // 1 topsoil fértil - pico cobre, 1 hit
-    if(depth<8) return 2; // 2 arcilla - 2 hits, necesita excavadora
-    if(depth<14) return 3; // 3 arena clara - 1 hit pero GRAVEDAD: cae si sin apoyo (arena inestable)
-    if(depth<22) return 4; // 4 piedra - 3 hits, necesita IQ/tools
-    if(depth<30) return 4; // 4 piedra profunda - 4 hits
-    if(depth<38) return 6; // 6 pizarra - 5 hits, requiere piedra+arcilla tools
-    return 7; // 7 bedrock - casi irrompible (solo GEN10+IQ150+masonry)
+    // La Escalera: el tipo sale de la banda (BANDAS arriba). Raices, barro, arena movediza, piedra,
+    // pizarra, cuarcita, marmol negro, obsidiana y basalto igneo. Mas hondo = mas duro y mas raro.
+    return tipoDePiso(r-SURFACE_ROW);
   }));
-  // YACIMIENTOS. El subsuelo no puede ser solo tierra, arcilla y piedra: en su banda de profundidad
-  // aparecen cobre, hierro y oro, en nidos de 2-4 celdas (una celda suelta no se ve y no se recuerda).
-  // Cuestan mas de cavar que la piedra y hay que llegar: el pequeno empieza a ver cobre a 10 pisos, el
-  // hierro a 16 y el oro asoma cuando el nido ya bajo hondo o el mapa se expandio.
-  for(let r=SURFACE_ROW+10; r<ROWS-1; r++){
+  // Vetas: cada banda escupe su metal dentro de su franja y nada mas arriba ni nada mas abajo, con la
+  // probabilidad cayendo a medida que baja (VETA_P). Que un filon de oro sea raro es lo que lo hace oro.
+  for(let r=SURFACE_ROW+1; r<ROWS-1; r++){
+    const _b=bandaDe(r-SURFACE_ROW), _vb=vetaDeBanda(_b);
+    if(_vb===null) continue;
+    const _vt=BANDAS[_b].tipo, _p=VETA_P[_b]||0.03;
     for(let c=1;c<COLS-1;c++){
-      const _t0=soilType[r][c], _d=r-SURFACE_ROW;
-      if(_t0!==4 && _t0!==6) continue;
-      const tipo = _d>=26 && _t0===6 ? 10 : _d>=16 ? 9 : 8;
-      const p = tipo===10? 0.030 : tipo===9? 0.038 : 0.052;
-      if(Math.random()>p) continue;
-      soilType[r][c]=tipo;
-      for(let k=0;k<1+Math.floor(Math.random()*3);k++){
+      if(soilType[r][c]!==_vt) continue;
+      if(Math.random()>_p) continue;
+      soilType[r][c]=_vb;
+      for(let k=0;k<1+Math.floor(Math.random()*3);k++){        // nido de 2-4: una celda suelta no se ve
         const rr=r+Math.floor(Math.random()*2), cc2=c+Math.floor(Math.random()*3)-1;
         if(rr>ROWS-2||cc2<1||cc2>=COLS-1) continue;
-        const _t=soilType[rr][cc2];
-        if(_t===4||_t===6) soilType[rr][cc2]=tipo;
+        if(soilType[rr][cc2]===_vt || soilType[rr][cc2]===BANDAS[_b].tipo) soilType[rr][cc2]=_vb;
       }
     }
   }
+  // Y el fuego: en la ultima banda el magma asoma entre el basalto. No se cava, calienta y gasta fatiga.
+  const _FUEGO=BANDAS.length-1;
+  for(let r=SURFACE_ROW+BANDAS[_FUEGO].desde; r<ROWS-1; r++){
+    for(let c=1;c<COLS-1;c++){
+      if(soilType[r][c]!==BANDAS[_FUEGO].tipo) continue;
+      if(Math.random()>0.055) continue;
+      soilType[r][c]=15;
+      for(let k=0;k<2;k++){ const cc2=c+(Math.random()<0.5?-1:1); if(cc2>0&&cc2<COLS-1&&soilType[r][cc2]===14&&Math.random()<0.6) soilType[r][cc2]=15; }
+    }
+  }
+  reindexMagma();
+  colocarUmbral();
+  // (antes los metales se sembraban aqui con umbrales de piso a mano; ahora la pasada por bandas de
+  //  arriba, con VETA_P, deja el cobre en PIEDRA, el hierro en PIZARRA y el oro en CUARCITA)
   const cc=CENTER_COL; entradaCol=cc;
   // pozo inicial - la UNICA boca del nido: tres columnas de cesped, el resto queda blindado
   carveRect(cc-1,SURFACE_ROW,3,7);
@@ -278,61 +504,11 @@ function initSoil(){
     }
   }
   hiddenRewards=[];
-  // === TESOROS INTELIGENTES - Topo pidió más y random ===
-  const TREASURE_DEFS = {
-    semillas: {food:10, mat:null, w:22, color:'#ffcc00', msg:'¡SEMILLAS! +10 comida', tier:1},
-    agua: {food:0, mat:null, fatigue:30, w:20, color:'#00e5ff', msg:'¡AGUA! fatiga restaurada', tier:1},
-    hongo: {food:6, mat:null, w:18, color:'#2de67a', msg:'¡HONGO! +6 comida', tier:1},
-    fibra: {food:2, mat:'fiber', matAmt:2, w:14, color:'#c9b896', msg:'¡FIBRA! +2 fibra', tier:2},
-    piedra: {food:0, mat:'stone', matAmt:2, w:12, color:'#8a8a8a', msg:'¡PIEDRA! +2 piedra', tier:2},
-    arcilla: {food:0, mat:'clay', matAmt:1, w:10, color:'#a08060', msg:'¡ARCILLA! +1 arcilla', tier:2},
-    ambar: {food:0, mat:null, xp:80, w:6, color:'#ffb700', msg:'¡ÁMBAR! +80 XP', tier:3},
-    semillaRara: {food:14, mat:'fiber', matAmt:1, w:7, color:'#b47aff', msg:'¡SEMILLA RARA! +14 comida', tier:3},
-    hongoCueva: {food:8, mat:null, w:8, color:'#6b3a1f', msg:'¡HONGO CUEVA! +8 comida', tier:2},
-  };
-  function pickTreasureType(depthTier){
-    // depthTier 0-2 (0 shallow <10, 1 mid 10-20, 2 deep >20)
-    // pesos por gen/IQ
-    const prog = (typeof gen!=='undefined'?gen:0) + (typeof colonyIQ!=='undefined'? colonyIQ-100:0)/40;
-    let pool=[];
-    if(depthTier===0) pool=['semillas','agua','hongo','fibra'];
-    else if(depthTier===1) pool=['semillas','hongo','fibra','piedra','arcilla','hongoCueva'];
-    else pool=['piedra','arcilla','ambar','semillaRara','hongoCueva','fibra'];
-    // tier 3 solo si prog >=3
-    if(prog<2) pool=pool.filter(t=> TREASURE_DEFS[t].tier<3);
-    if(prog<1) pool=pool.filter(t=> TREASURE_DEFS[t].tier<2);
-    // FIX 2026-10-15: con colonia novata el pool profundo quedaba VACIO -> type undefined ->
-    // spawnSmartTreasure no contaba el acierto y sembraba hasta 200 cofres vacíos.
-    if(!pool.length) pool=['semillas','agua','hongo','fibra'];
-    // pesos
-    const weights = pool.map(t=>{
-      let w=TREASURE_DEFS[t].w;
-      if(t==='ambar' && depthTier===2) w*=1.6;
-      if(t==='semillaRara' && depthTier===2) w*=1.4;
-      return w;
-    });
-    const tot=weights.reduce((a,b)=>a+b,0);
-    let r=Math.random()*tot; for(let i=0;i<pool.length;i++){ r-=weights[i]; if(r<=0) return pool[i]; }
-    return pool[0];
-  }
-  function isValidTreasurePos(c,r){
-    if(c<4||c>=COLS-4||r<SURFACE_ROW+4||r>=ROWS-3) return false;
-    if(!soil[r]||soil[r][c]!==1) return false;
-    // no muy cerca de otro tesoro - Topo: la separación mínima sigue la escala del mapa
-    const _minD=Math.max(3, Math.min(7, Math.round(5*Math.sqrt(worldAreaRatio()))));
-    for(let tr of hiddenRewards){ if(Math.hypot(tr.c-c,tr.r-r)<_minD) return false; }
-    // no en cámara inicial (centro)
-    if(Math.hypot(c-CENTER_COL, r-(SURFACE_ROW+3))<6) return false;
-    return true;
-  }
-  function spawnSmartTreasure(c,r,forcedType){
-    if(!isValidTreasurePos(c,r)) return null;
-    const depth=r-SURFACE_ROW;
-    const tier = depth<10?0 : depth<20?1 : 2;
-    const type=forcedType||pickTreasureType(tier);
-    hiddenRewards.push({c,r,type,found:false,x:c*CELL+8,y:r*CELL+8, depthTier:tier});
-    return true; // siempre truthy: el contador de colocados debe subir aunque el tipo caiga raro
-  }
+  // Los tesoros y su sorteo subieron a nivel de modulo (TESOROS DE LA ESCALERA, arriba), porque
+  // checkRewardDiscovery los leia desde fuera y no los veia.
+  // (isValidTreasurePos y spawnSmartTreasure subieron a nivel de modulo: expandWorld y el respawn tras
+  //  descubrir un tesoro los llamaban desde fuera y el guardaNulo de `typeof spawnSmartTreasure` hacia
+  //  que no pasaran nada - ni cofres nuevos al cavar, ni botin en las bandas que se abrian)
   function spawnInitialTreasures(){
     hiddenRewards=[];
     let attempts=0, placed=0;
@@ -356,6 +532,25 @@ function initSoil(){
   spawnInitialTreasures();
   // exponer para debug
   window._spawnTreasure=(c,r,t)=>spawnSmartTreasure(c,r,t);
+  // huecos de prueba de la Escalera (test/profundidad.js): leer y forzar el estado sin depender del azar
+  window._escalera=()=>({umbral: umbral? {r:umbral.r,hp:Math.round(umbral.hp*10)/10,hpMax:umbral.hpMax,banda:umbral.banda,guarda:umbral.guarda} : null,
+                         bandaMax, umbralesRotos, filas:ROWS, pisos:ROWS-SURFACE_ROW,
+                         losa: (soilType[ROWS-1]? soilType[ROWS-1][3] : -1),
+                         losaSuelo: (soil[ROWS-1]? soil[ROWS-1][3] : -1), magma:magmaCells.length,
+                         bandaFondo: bandaDe(Math.max(0,ROWS-2-SURFACE_ROW)),
+                         vetas:{cobre:worldMaterials.cobre||0, hierro:worldMaterials.hierro||0, oro:worldMaterials.oro||0,
+                                cuarzo:worldMaterials.cuarzo||0, gema:worldMaterials.gema||0, obsidiana:worldMaterials.obsidiana||0},
+                         reliquias:reliquias.length, bonusCava});
+  window._morderUmbral=(n)=>{ for(let i=0;i<(n||1);i++) golpearUmbral({id:'TEST',role:'EXCAVADORA',x:umbral?umbral.r*0+ (umbral.c0*CELL):0, y:umbral?umbral.r*CELL:0}); return window._escalera(); };
+  window._irABanda=(b)=>{   // deja la losa a un mordisco y la revienta: el test quiere ver la banda, no esperar
+    for(let i=0;i<14 && bandaMax < b; i++){
+      if(!umbral) colocarUmbral();
+      if(!umbral) break;
+      umbral.hp = Math.min(umbral.hp, 1);
+      if(!abrirUmbral()) break;
+    }
+    return window._escalera();
+  };
   window._treasures=()=>hiddenRewards.map(t=>({c:t.c,r:t.r,type:t.type,found:t.found}));
   // gancho de prueba: pega obreras de mentira repartidas por el nido para ver como se lee una colonia grande
   // sin esperar diez dias de simulacion. Vive solo en consola; el juego no lo llama nunca.
@@ -410,6 +605,7 @@ function excavateChamber(centerC, centerR, w, h, ant){
       // dureza según tipo, si es muy duro y no tienen pico, no puede
       const t=soilType[nr][nc];
       if(t===7 && gen<7) continue;
+      if(t===15 || t===17) continue;              // el fuego y la losa no se allanan: hay que ganarselos
       soil[nr][nc]=0; soilType[nr][nc]=0; carved++;
     }
   }
@@ -432,26 +628,59 @@ function excavateChamber(centerC, centerR, w, h, ant){
 function carveOval(cx,cy,rx,ry){for(let y=cy-ry;y<=cy+ry;y++)for(let x=cx-rx;x<=cx+rx;x++){if(y<0||y>=ROWS||x<0||x>=COLS)continue;const dx=(x-cx)/rx,dy=(y-cy)/ry;if(dx*dx+dy*dy<=1){soil[y][x]=0; if(soilType[y]) soilType[y][x]=0; markSoilDirty();}}}
 // === EXPANSIÓN DE MUNDO TERRARIA/STARBOUND - mapa más profundo si la colonia puede ===
 // Como Terraria Small 4200x1200 → Large 8400x2400, tu granja empieza 64x36 y puede crecer 96x120 si cavan profundo
-function expandWorld(addRows){
+function expandWorld(addRows, silencioso){
   const oldRows=ROWS;
   const newRows=ROWS+addRows;
-  // expandir soil y soilType
+  // expandir soil y soilType - ya no con una tabla a mano: la Escalera decide el tipo por piso
   for(let r=oldRows;r<newRows;r++){
     const depth=r-SURFACE_ROW;
-    let type=4;
-    if(depth<30) type=4;
-    else if(depth<38) type=6;
-    else if(depth<50) type=6;
-    else type=7; // bedrock muy profundo
     soil.push(Array(COLS).fill(1));
-    soilType.push(Array.from({length:COLS},()=>type));
-    // vetas aleatorias de arcilla/piedra dura
-    for(let c=0;c<COLS;c++) if(Math.random()<0.04) soilType[r][c]= (Math.random()<0.5?2:6);
-    // y vetas nuevas: cuanto mas hondo, mas duro y mas interesante (oro por debajo del hierro)
-    if(depth>=16) for(let c=1;c<COLS-1;c++){
-      if(soilType[r][c]!==4 && soilType[r][c]!==6) continue;
-      const _t = depth>=40 ? 10 : depth>=26 ? 9 : 8;
-      if(Math.random()< (_t===10?0.030:_t===9?0.036:0.02)) soilType[r][c]=_t;
+    soilType.push(Array.from({length:COLS},()=>tipoDePiso(depth)));
+  }
+  // vetas de la banda nueva (la misma VETA_P del mapa inicial, un pelin mas generosa: lo recien abierto
+  // tiene que notarse en la colonia, si no la recompensa es invisible)
+  for(let r=oldRows;r<newRows;r++){
+    const _b=bandaDe(r-SURFACE_ROW), _vb=vetaDeBanda(_b);
+    if(_vb===null) continue;
+    const _vt=BANDAS[_b].tipo, _p=(VETA_P[_b]||0.03)*1.5;
+    for(let c=1;c<COLS-1;c++){
+      if(soilType[r][c]!==_vt) continue;
+      if(Math.random()>_p) continue;
+      soilType[r][c]=_vb;
+      for(let k=0;k<2;k++){
+        const rr=r+Math.floor(Math.random()*2), cc2=c+Math.floor(Math.random()*3)-1;
+        if(rr>ROWS-2||cc2<1||cc2>=COLS-1) continue;
+        if(soilType[rr][cc2]===_vt) soilType[rr][cc2]=_vb;
+      }
+    }
+  }
+  // y si la banda que se abre es la ultima, su fuego
+  if(bandaDe((newRows-1)-SURFACE_ROW)>=BANDAS.length-1){
+    for(let r=Math.max(oldRows,SURFACE_ROW+BANDAS[BANDAS.length-1].desde); r<newRows-1; r++){
+      for(let c=1;c<COLS-1;c++){
+        if(soilType[r][c]!==BANDAS[BANDAS.length-1].tipo || Math.random()>0.06) continue;
+        soilType[r][c]=15;
+      }
+    }
+  }
+  // LA CUEVA: el hueco vacio ya es premio (Core Keeper, Dwarf Fortress). Una o dos camaras grandes en la
+  // banda nueva, con botin dentro - asi «bajar» se ve como un sitio, no como un numero.
+  const _nc=1+((Math.random()*2)|0);
+  for(let i=0;i<_nc;i++){
+    const rx=5+Math.floor(Math.random()*Math.max(1,COLS-10));
+    const ry=Math.min(newRows-3, oldRows+1+Math.floor(Math.random()*Math.max(1,newRows-oldRows-2)));
+    const rxr=3+Math.floor(Math.random()*3), ryr=2+Math.floor(Math.random()*2);
+    for(let y=ry-ryr;y<=ry+ryr;y++){
+      if(y<=SURFACE_ROW+1||y>=newRows-1) continue;
+      for(let x=rx-rxr;x<=rx+rxr;x++){
+        if(x<1||x>=COLS-1||!soil[y]) continue;
+        const dx=(x-rx)/rxr, dy=(y-ry)/ryr;
+        if(dx*dx+dy*dy<=1 && soil[y][x]===1){ soil[y][x]=0; if(soilType[y]) soilType[y][x]=0; markSoilDirty(x,y); }
+      }
+    }
+    for(let a=0;a<6;a++){
+      const cc=rx-3+Math.floor(Math.random()*7), rr=ry+1+Math.floor(Math.random()*3);
+      if(spawnSmartTreasure(cc,rr)) break;
     }
   }
   ROWS=newRows;
@@ -468,9 +697,14 @@ function expandWorld(addRows){
     soilDirtyCells=null; soilCacheDirty=true; _soilRev++;
   }catch(e){}
   // worldH es ROWS*CELL implícito, no tocar H (canvas) - la cámara usa ROWS*CELL directamente
-  pushEvent('evo',`🌍 Mundo expandido +`+addRows+` filas → `+ROWS+` profundidad`, `progresivo: más profundo = más duro y más recompensas`);
-  notifyCanon('🌍 MAPA MÁS PROFUNDO', `El mundo crece a `+ROWS+` filas - las excavadoras llegaron al fondo`, 5200);
-  // revelar recompensas más profundas si hay
+  if(!silencioso){
+    pushEvent('evo',`🌍 Mundo expandido +`+addRows+` filas → `+ROWS+` profundidad`, `progresivo: más profundo = más duro y más recompensas`);
+    notifyCanon('🌍 MAPA MÁS PROFUNDO', `El mundo crece a `+ROWS+` filas - las excavadoras llegaron al fondo`, 5200);
+  }
+  // y el nuevo techo: otra losa, otra banda que ganarse. Sin esto la escalera se acaba y vuelven a
+  // estar cavando en el vacio.
+  colocarUmbral(); reindexMagma();
+  try{ for(let i=0;i<4;i++){ const c=4+Math.floor(Math.random()*(COLS-8)), r=oldRows+Math.floor(Math.random()*Math.max(2,newRows-oldRows)); spawnSmartTreasure(c,r); } }catch(e){}
 }
 
 function isSoilSupported(r,c){
@@ -593,7 +827,8 @@ function updateDepthRuler(){
     // el 0 (la raya del cesped) es la referencia: si no cabe, la camara se queda arriba del todo y se ve igual,
     // asi que ese no se avisa - el aviso es para los pisos hondo que la pantalla no puede centrar.
     const _pisoProfundo = (d)=> d>0 && d>_maxCentrable;
-    const NOMBRE_SUELO={0:'AIRE',1:'TIERRA',2:'ARCILLA',3:'ARENA',4:'PIEDRA',5:'PIEDRA',6:'PIZARRA',7:'ROCAMA',8:'COBRE',9:'HIERRO',10:'ORO'};
+    const NOMBRE_SUELO={0:'AIRE',1:'TIERRA',2:'ARCILLA',3:'ARENA',4:'PIEDRA',5:'PIEDRA',6:'PIZARRA',7:'ROCAMA',8:'COBRE',9:'HIERRO',10:'ORO',
+                       11:'CUARCITA',12:'MARMOL',13:'OBSIDIANA',14:'BASALTO',15:'MAGMA',16:'GEMAS',17:'LOSA',18:'SAL'};
     const _materialEn = (d)=>{
       const r = Math.min(ROWS-1, SURFACE_ROW + d);
       let cuenta={};
@@ -605,6 +840,8 @@ function updateDepthRuler(){
     const names = levels.map(d=> (d===0? 'EL PISO' : d+' · ' + _materialEn(d)) );
     const cols = levels.map(d=> d===0? '#7ec8e3' : (function(){ const m=_materialEn(d);
       return m==='ARENA'?'#e8cf8a': m==='ARCILLA'?'#c47a52': m==='PIEDRA'?'#9a9a9a': m==='PIZARRA'?'#6b7a8a': m==='ROCAMA'?'#3a3a44':
+             m==='CUARCITA'?'#c9c2d8': m==='MARMOL'?'#8a7fa0': m==='OBSIDIANA'?'#5a3a8a': m==='BASALTO'?'#7a4030': m==='MAGMA'?'#ff6a1e':
+             m==='GEMAS'?'#7ad3ff': m==='LOSA'?'#c8c8d8': m==='SAL'?'#dfe8ee':
              m==='COBRE'?'#c8703a': m==='HIERRO'?'#b9bcc6': m==='ORO'?'#e8c14b':'#ffcc00'; })());
     // asegurar marcas existen
     levels.forEach((d,i)=>{
@@ -661,6 +898,7 @@ function updateDepthRuler(){
 
 let _lastExpand=0;
 function checkWorldExpansion(){
+  if(umbral) return;   // con la Escalera montada el mundo NO crece solo: crece cuando la colonia revienta la losa
   if(Date.now()-_lastExpand < 5200) return; // debounce 5.2s
   // si algún túnel está a 4 filas del fondo y la colonia es capaz, expande
   let deepest=0; outer: for(let r=ROWS-1;r>=SURFACE_ROW;r--) for(let c=0;c<COLS;c++) if(soil[r][c]===0){ deepest=r; break outer; }
@@ -2111,7 +2349,7 @@ function checkRewardDiscovery(c,r){
   hiddenRewards.forEach(rew=>{
     if(!rew.found && Math.abs(rew.c-c)<=1 && Math.abs(rew.r-r)<=1){
       rew.found=true; rewardsFound++;
-      const def = (typeof TREASURE_DEFS!=='undefined' && TREASURE_DEFS[rew.type]) ? TREASURE_DEFS[rew.type] : null;
+      const def = TREASURE_DEFS[rew.type] || null;   // antes el typeof mentia y def salia null: ni fibra, ni ambar
       let handled=false;
       if(rew.type==='semillas'){ colonyFood+=10; pushEvent('discover','¡SEMILLAS!','+10 comida'); notifyCanon('🌾 SEMILLAS', 'Descubriste semillas - +10 comida', 5000); for(let i=0;i<16;i++) particles.push({x:rew.x,y:rew.y,vx:(Math.random()-0.5)*3,vy:-Math.random()*2.5,life:1,decay:0.02,color:'#ffcc00'}); pushToast(rew.x,rew.y-20,'🌾 +10 SEMILLAS','#ffcc00'); }
       else if(rew.type==='agua'){ workers.forEach(w=> w.fatigue=Math.max(0,w.fatigue-30)); pushEvent('discover','¡AGUA!','Energía para todas'); notifyCanon('💧 AGUA', 'Fuente de agua - fatiga restaurada', 5000); for(let i=0;i<14;i++) particles.push({x:rew.x,y:rew.y,vx:(Math.random()-0.5)*2,vy:(Math.random()-0.5)*2,life:1,decay:0.025,color:'#00e5ff'}); pushToast(rew.x,rew.y-20,'💧 AGUA','#00e5ff'); }
@@ -2121,10 +2359,17 @@ function checkRewardDiscovery(c,r){
         if(def.mat && typeof worldMaterials!=='undefined'){ worldMaterials[def.mat]=(worldMaterials[def.mat]||0)+(def.matAmt||1); }
         if(def.xp) stats.xp+=def.xp; else stats.xp+=45;
         if(def.fatigue) workers.forEach(w=> w.fatigue=Math.max(0,w.fatigue-def.fatigue));
-        pushEvent('discover', def.msg, '['+rew.c+','+rew.r+'] tier'+def.tier);
-        notifyCanon(def.msg.split(' ')[0], def.msg, 4000);
+        const _grito = def.msg || ('¡'+String(def.reliquia||rew.type||'TESORO').toUpperCase()+'!');
+        if(def.reliquia && anotarReliquia(def, rew.c, rew.r)){
+          const _pis=(rew.r-SURFACE_ROW);
+          pushEvent('evo', `🏺 RELIQUIA A LA VITRINA · ${def.reliquia}`, `piso ${_pis} · +${Math.round((def.bonus||0.02)*100)}% de excavacion para siempre (ahora ${Math.round(bonusCava*100)}%)`);
+          notifyCanon('🏺 '+def.reliquia.toUpperCase(), def.lore||'la colonia la sube a la vitrina', 6400);
+          for(let i=0;i<10;i++) particles.push({x:rew.x,y:rew.y,vx:(Math.random()-0.5)*1.6,vy:-Math.random()*2.2,life:1,decay:0.02,color:def.color, bloque:true});
+        }
+        pushEvent('discover', _grito, '['+rew.c+','+rew.r+'] '+NOMBRE_BANDA(def.tier-1));
+        notifyCanon(_grito.split(' ')[0], _grito, 4000);
         for(let i=0;i<12;i++) particles.push({x:rew.x,y:rew.y,vx:(Math.random()-0.5)*2,vy:-Math.random()*1.6,life:1,decay:0.025,color:def.color});
-        pushToast(rew.x,rew.y-18, def.msg.split(' ')[0], def.color);
+        pushToast(rew.x,rew.y-18, _grito.split(' ')[0], def.color);
         handled=true;
       }
       if(!handled && def){ /* already handled */ }
@@ -3207,7 +3452,7 @@ function updateAnt(ant, dt){
         const r=_yoR+dr, c=_yoC+dc;
         if(r<SURFACE_ROW || r>=ROWS || c<0 || c>=COLS) continue;
         if(!soil[r] || soil[r][c]!==1) continue;                       // solo tierra suelta
-        if(soilType[r] && soilType[r][c]===7) continue;                // la roca madre no se cava
+        if(soilType[r] && (soilType[r][c]===7 || soilType[r][c]===15 || soilType[r][c]===17)) continue;   // roca madre, fuego y LOSA: no son una salida de atasco
         const haciaAire = Math.abs(r-_aire.r) + Math.abs(c-_aire.c);
         if(haciaAire > _da+1) continue;                                // que el golpe abra hacia el hueco
         const coste = haciaAire + (dr>0? 0.5:0) + Math.random()*0.3;
@@ -3502,6 +3747,28 @@ function updateAnt(ant, dt){
     if(canMove(nx,ny)){ant.x=nx;ant.y=ny;}
     return;
   }
+  // El magma no se cava: se patea al lado. Si hay fuego a un bloque de distancia la fatiga sube y, si
+  // se pasa de la raya, la obrera suelta lo que lleva y sube a la superficie. Es el peaje honesto de la
+  // ultima banda - sin peaje no hay tension, y sin tension 'bajar al fuego' es solo leer un numero.
+  if(magmaCells.length && Array.isArray(soilType)){
+    const _ar=(ant.y/CELL)|0, _ac=(ant.x/CELL)|0;
+    let _fuego=false;
+    for(let dr=-1;dr<=1 && !_fuego;dr++){
+      const _rr=_ar+dr; if(_rr<0||_rr>=ROWS||!soilType[_rr]||!soil[_rr]) continue;
+      for(let dc=-1;dc<=1;dc++){
+        const _cc=_ac+dc; if(_cc<0||_cc>=COLS) continue;
+        if(soil[_rr][_cc]===1 && soilType[_rr][_cc]===15){ _fuego=true; break; }
+      }
+    }
+    if(_fuego){
+      ant.fatigue=Math.min(100, ant.fatigue+2.3); ant._quemando=time;
+      if(ant.fatigue>84){
+        ant.digTarget=null; ant.digProgress=0; ant.state='VOLVER_TIERRA';
+        if(Math.random()<0.06) pushToast(ant.x,ant.y-12,'🔥','#ff6a1e');
+        if(!ant._fuegoAviso || time-ant._fuegoAviso>600){ ant._fuegoAviso=time; pushEvent('accident', `🔥 ${ant.id} sale escaldada del basalto`, `piso ${_ar-SURFACE_ROW} - fatiga ${Math.round(ant.fatigue)}`); }
+      }
+    }
+  }
   ant.fatigue=Math.max(0,Math.min(100,ant.fatigue));
   if(ant.state==='TANDEM_LEADER'){
     const follower = workers.find(w=>w.id===ant.tandemPartner);
@@ -3594,6 +3861,13 @@ function updateAnt(ant, dt){
           pushEvent('discover', `\u26CF ${ant.id} saca ${_mat} x${_amt} de la roca`, `veta en [${ant.digTarget.c},${ant.digTarget.r}] - la colonia atesora ${worldMaterials[_mat]}`);
           logAntHistory(ant, `extrajo ${_mat} x${_amt}`);
           colonyFitness += _mat==='oro'?0.9:0.55;
+        } if(_mt===17){                                  // la losa: el bloque NO se quita, se agrieta
+          ant.digTarget=null; ant.digProgress=0; ant.food=null; ant.state='CAVANDO';
+          golpearUmbral(ant);
+          return;
+        } if(_mt===15){                                   // el magma no se cava: achicharra y ya esta
+          ant.digTarget=null; ant.digProgress=0; ant.state='VOLVER_TIERRA'; ant.fatigue=Math.min(100,ant.fatigue+9);
+          pushToast(ant.x,ant.y-10,'🔥 QUEMA','#ff6a1e'); return;
         } if(_mt===7 && (gen<8 || !inventions.masonry)){ ant.digTarget=null; ant.digProgress=0; ant.state='EXPLORAR'; pushToast(ant.x,ant.y-10,'⛔ BEDROCK','#555'); return; }
         soil[ant.digTarget.r][ant.digTarget.c]=0; if(soilType[ant.digTarget.r]) soilType[ant.digTarget.r][ant.digTarget.c]=0; markSoilDirty(ant.digTarget.c,ant.digTarget.r); ant.digsDone++; digs++; colonyFitness+=0.35; if(digs%6===0) pushImportant('invention', `⛏ ${digs} bloques cavados`, `GEN${typeof gen!=='undefined'?gen:0} - ${workers.filter(w=>w.state==='CAVANDO').length} activas en [${ant.digTarget?ant.digTarget.c:''},${ant.digTarget?ant.digTarget.r:''}]`);
         // residuo real: la tierra excavada va a basurero, no desaparece
@@ -3886,21 +4160,54 @@ function updateAnt(ant, dt){
             const _f=frontier[(Math.random()*_fn)|0];
             const _row=soil[_f.r]; if(!_row || _row[_f.c]!==1) continue;
             if(!puedeAbrirSuperficie(_f.c, _f.r)) continue; // cesped blindado: no es un frente valido
-            const _d=Math.hypot((_f.c+0.5)*CELL-ant.x,(_f.r+0.5)*CELL-ant.y);
+            const _d=Math.hypot((_f.c+0.5)*CELL-ant.x,(_f.r+0.5)*CELL-ant.y) - (_f.r-SURFACE_ROW)*1.35;   // EL POZO TIRA: a igualdad de pasos, gana el frente mas hondo
             if(_d<90){ if(!_cands) _cands=[]; _cands.push(_f); }
             else if(_d<_bestD){ _bestD=_d; _far=_f; }
           }
-          const pick=_cands&&_cands.length ? _cands[(Math.random()*_cands.length)|0] : (_far || frontier[(Math.random()*_fn)|0]);
+          let pick=_cands&&_cands.length ? _cands[(Math.random()*_cands.length)|0] : (_far || frontier[(Math.random()*_fn)|0]);
+          // Las obras del umbral: si la losa esta a tiro y la colonia ya puede morderla, parte de las
+          // excavadoras dejan el frente y van a ella. Sin esto el avance depende de que el azar ponga
+          // una hormiga encima de la losa, y eso no es una decision de la colonia, es una ruleta.
+          if(umbral && puedeGolpearUmbral() && (ant.role==='EXCAVADORA'||(ant.traits&&ant.traits.construccion>52)) && Math.random()<0.5){
+            // para morder la losa hay que tener donde pararse: una casilla de aire justo encima. Se busca la
+            // columna con hueco MAS CERCANA a la hormiga (antes se usaba la columna de la propia hormiga y,
+            // si ahi arriba aun no habian cavado, la obra de la losa no empezaba nunca).
+            const _cAnt=Math.max(umbral.c0, Math.min(umbral.c1, Math.round(ant.x/CELL)));
+            let _cLos=-1, _cd=1e9;
+            for(let off=0; off<=COLS; off++){
+              for(const sgn of (off===0?[0]:[-1,1])){
+                const cc=_cAnt+sgn*off;
+                if(cc<umbral.c0||cc>umbral.c1) continue;
+                if(!soil[umbral.r]||soil[umbral.r][cc]!==1||!soilType[umbral.r]||soilType[umbral.r][cc]!==17) continue;
+                if(!soil[umbral.r-1]||soil[umbral.r-1][cc]!==0) continue;              // sin hueco encima, no hay obra
+                const d=Math.abs(cc-_cAnt);
+                if(d<_cd){ _cd=d; _cLos=cc; }
+                break;
+              }
+              if(_cLos>=0) break;
+            }
+            // solo se les encarga la losa a las que YA estan al lado: una obrera en la fila 21 no puede
+            // bajar volando a la 27, y darle el objetivo lejos era ponerla a rebotar contra la pared
+            // (blocked subiendo y cero picoteos). Bajar hasta la losa lo hace el sesgo de profundidad del
+            // frente, que es el mecanismo normal de la colonia.
+            if(_cLos>=0 && Math.abs(((ant.y/CELL)|0) - umbral.r)<=1) pick={r:umbral.r, c:_cLos};
+          }
           if(pick){
           // cavado más rápido si es excavadora, tiene rasgo alto o colonia evolucionada
           const bonus = (ant.role==='EXCAVADORA'? 8:0) + Math.floor(ant.traits.construccion/18) + Math.floor(colonyIQ/45) + Math.min(6, gen);
           ant.digTarget=pick; ant.digProgress=0;
-          const _type=soilType[pick.r]&&soilType[pick.r][pick.c]; const _hard = _type===7? 38 : _type===10? 26 : _type===9? 20 : _type===8? 15 : _type===6? 14 : _type===4? 9 : _type===2? 4 : _type===3? -4 : 0; // Terraria: bedrock 38, pizarra 14, piedra 9, arcilla 4, arena -4 (blanda pero cae)
+          const _type=soilType[pick.r]&&soilType[pick.r][pick.c]; const _hard = durezaDe(_type); // la tabla vive en BANDAS/DUREZA_EXTRA: bedrock 38, magma 999, y cada banda lo suyo
           // LEY REAL: piedra necesita herramienta/poder. Sin pico, 3x más lento y con chance de fallar
-          const needPower = (_type===4? 1.2 : _type===8? 1.9 : _type===9? 2.6 : _type===10? 3.0 : _type===6? 2.2 : _type===7? 3.5 : 0);
+          const _np={4:1.2, 6:2.2, 8:1.9, 9:2.6, 10:3.0, 7:3.5, 11:2.8, 12:3.2, 13:3.6, 14:3.9, 16:3.1, 18:2.0};
+          const needPower = _np[_type]||0;
           const hasPower = (ant.tool==='pick' || (colonyIQ>124 && gen>=3) || inventions.stone) ? 1.0 : 0.55;
           const hardMult = needPower>0 && hasPower<0.9 ? (1.6 + needPower*0.8) : 1;
-          ant.digNeeded= (_type===7 && (gen<8 || colonyIQ<148 || !inventions.masonry))? 999 : Math.max(9, Math.floor((26 - bonus + _hard)*hardMult)); ant.state='CAVANDO'; 
+          // La LOSA (17) no se cava: se muerde. digNeeded corto a proposito, para que la obrera vuelva
+          // una y otra vez al mismo sitio y el umbral baje entre todas - que es lo que da la sensacion de
+          // haza colectiva, no de un numero que sube solo. Magma (15) y roca madre (7) siguen cerrados.
+          ant.digNeeded= _type===17 ? Math.max(5, 11 - Math.min(6,gen*0.5))
+                       : (_type===15 || (_type===7 && (gen<8 || colonyIQ<148 || !inventions.masonry)))? 999
+                       : Math.max(9, Math.floor((26 - bonus + _hard)*hardMult)/(1+bonusCava)); ant.state='CAVANDO'; 
           // Topo - solo icono ⛏ en la hormiga, texto va al strip inferior (no lluvia de texto)
           pushToast(pick.c*CELL+8,pick.r*CELL+8,'⛏',_hard>5?'#8a8a8a':'#ff7a00',0.9);
           try{ const lab=_hard>5?'PIEDRA DURA':_hard>2?'ARCILLA':'VA A CAVAR'; pushImportant('invention', `⛏ ${lab} [${pick.c},${pick.r}]`, `${ant.id} [${ant.role}] → ${lab.toLowerCase()} - ${workers.filter(w=>w.state==='CAVANDO').length} activas`); }catch(e){}
@@ -3940,8 +4247,8 @@ function updateAnt(ant, dt){
       for(let dr=-1; dr<=1; dr++) for(let dc=-1; dc<=1; dc++){
         const r=_yoR+dr, c=_yoC+dc;
         if(r<0||c<0||r>=ROWS||c>=COLS) continue;
-        if(!soil[r] || soil[r][c]!==1) continue;              // solo tierra suelta, no roca ni vacio
-        if(soilType[r] && soilType[r][c]===7) continue;        // bedrock no se cava
+        if(soil[r][c]!==1) continue;                              // solo tierra suelta, no roca ni vacio
+        if(soilType[r] && (soilType[r][c]===7 || soilType[r][c]===15 || soilType[r][c]===17)) continue;   // bedrock, magma y la losa no se cavan para abrir paso
         if(r <= SURFACE_ROW) continue;                         // no abrir el cielo por arriba
         const d = Math.hypot((c-_tC)*CELL, (r-_tR)*CELL) - (dr*0.6+dc*0.2);
         if(d < _bestD){ _bestD=d; _abrir={r, c}; }
@@ -4254,7 +4561,16 @@ const _VOX = {
   7:{col:'#3a3a44', pinta:'ninguna'},
   8:{col:'#8d8d8d', pinta:'veta', punto:'#e0884a'},
   9:{col:'#847f86', pinta:'veta', punto:'#d7dce8'},
-  10:{col:'#8d8d8d', pinta:'veta', punto:'#f0cf5e'}
+  10:{col:'#8d8d8d', pinta:'veta', punto:'#f0cf5e'},
+  // y lo que hay por debajo, que es la razon de cavar:
+  11:{col:'#c9c2d8', pinta:'veta', punto:'#f4f0ff'},   // cuarcita: clara, chispeante
+  12:{col:'#4a4552', pinta:'veta', punto:'#c8a6ff'},   // marmol negro con veta de gemas
+  13:{col:'#241f2e', pinta:'brillo'},                    // obsidiana
+  14:{col:'#4a2a20', pinta:'grietaLarga'},               // basalto
+  15:{col:'#ff6a1e', pinta:'lumbre'},                     // MAGMA (no se cava)
+  16:{col:'#8d8d8d', pinta:'veta', punto:'#7ad3ff'},     // veta de gemas
+  17:{col:'#2b2b33', pinta:'cincel'},                     // LA LOSA DEL UMBRAL
+  18:{col:'#dfe8ee', pinta:'granos'}                       // sal de roca
 };
 // El pasto cambia con la estacion y con la humedad, como antes, pero son 4 px de color: nada de losas
 // reescaladas que salian con costuras entre celda y celda.
@@ -4486,6 +4802,27 @@ function paintCacheCellTextured(c,r){
     g.fillStyle=d.punto;
     g.fillRect(x+_px(1),y+4+_px(2)%7,2,2); g.fillRect(x+_px(4),y+_px(5)%8+3,2,2);
     if(((c*7+r*5)%3)!==0) g.fillRect(x+_px(7),y+11,2,2);
+  } else if(d.pinta==='brillo'){
+    // obsidiana: negro con dos caras de vidrio. Se lee «corte» sin necesidad de degradado.
+    g.fillStyle='rgba(255,255,255,0.11)'; g.fillRect(x+2,y+3,5,2); g.fillRect(x+8,y+9,5,2);
+    g.fillStyle='rgba(122,211,255,0.10)'; g.fillRect(x+3,y+11,3,1);
+  } else if(d.pinta==='lumbre'){
+    // magma: nucleo claro, costra oscura alrededor. El resplandor que lo acompana se pinta en drawFarm,
+    // porque aqui dentro (el cache del suelo) un parpadeo quedaria congelado hasta el proximo repintado.
+    g.fillStyle='#2a1208'; g.fillRect(x,y,CELL,CELL);
+    g.fillStyle='#ff8c1a'; g.fillRect(x+2,y+4,CELL-4,CELL-8);
+    g.fillStyle='#ffe08a'; g.fillRect(x+4,y+6,CELL-8,3);
+    g.fillStyle='#8a2a08'; g.fillRect(x,y+CELL-3,CELL,3);
+  } else if(d.pinta==='cincel'){
+    // LA LOSA: siempre igual de maciza, pero con las mordeduras puestas. El progreso del umbral se ve en
+    // el propio bloque (astillas quitadas = grietas), no solo en la barra de arriba.
+    const _rot = umbral? Math.max(0, Math.min(1, 1-(umbral.hp/umbral.hpMax))) : 0;
+    g.fillStyle=sombra;
+    g.fillRect(x+2,y+3,3,1); g.fillRect(x+5,y+6,2,1); g.fillRect(x+9,y+2,2,1);
+    if(_rot>0.12){ g.fillStyle='#0d0704'; g.fillRect(x+3,y+2,1,7); g.fillRect(x+4,y+9,2,1); }
+    if(_rot>0.34){ g.fillRect(x+8,y+3,1,8); g.fillRect(x+9,y+11,3,1); }
+    if(_rot>0.58){ g.fillRect(x+12,y+2,1,9); }
+    if(_rot>0.80){ g.fillStyle='#ffcc00'; g.fillRect(x+2,y+13,CELL-4,1); }   // a un mordisco de ceder
   }
   // el pasto: encima del bloque, 4 px de color de estacion y dos o tres pixeles de hoja que asoman
   if(exp && (r===SURFACE_ROW || t===1)){
@@ -5186,9 +5523,16 @@ function drawFarm(ctx,W,H,isMini=false){
         else if(t==='semillaRara') bg='#b47aff';
         else if(t==='hongo' || t==='hongoCueva') bg='#8b5a2b';
         else if(t==='semillas') bg='#ffcc00';
+        else if(TREASURE_DEFS[t]) bg=TREASURE_DEFS[t].color;   // y lo demas sale del propio cuadro: nada de olvidar tipos nuevos
         _bloque(ctx,x+2,y+2,12,12,bg);
         // icono pixel 8x8 centrado
         const cx=x+8, cy=y+8;
+        if(TREASURE_DEFS[t] && TREASURE_DEFS[t].reliquia){
+          // rombo de cuatro bloques: «esto es una maravilla», legible a x1 sin leer el cartel.
+          // OJO: despues de declarar cx/cy - pintarlo antes era un ReferenceError que cortaba el cuadro.
+          ctx.fillStyle='#fff8dc';
+          ctx.fillRect(cx-1,cy-4,2,2); ctx.fillRect(cx-4,cy-1,2,2); ctx.fillRect(cx+2,cy-1,2,2); ctx.fillRect(cx-1,cy+2,2,2);
+        }
         ctx.imageSmoothingEnabled=false;
         if(t==='semillas'){
           ctx.fillStyle='#fff8dc'; ctx.fillRect(cx-3,cy-2,6,4); ctx.fillStyle='#ffcc00'; ctx.fillRect(cx-2,cy-1,2,2); ctx.fillRect(cx+1,cy,1,1); ctx.fillStyle='#8a6a00'; ctx.fillRect(cx-1,cy+1,2,1);
@@ -5834,6 +6178,29 @@ function drawFarm(ctx,W,H,isMini=false){
     }
   }
   
+  // === LO QUE ARDE ABAJO Y LA LOSA QUE LOS TAPA ===
+  // El magma se pinta en el cache del suelo (es estable) pero aqui va el RESPLANDOR, que parpadea: si se
+  // congelara en el cache dejaria de ser lumbre. Solo se recorre la lista de casillas de fuego, no el mapa.
+  if(!isMini && magmaCells.length){
+    const _lat = 1 + Math.floor(time*0.06)%2;
+    for(const mc of magmaCells){
+      const mx=mc.x, my=mc.y;
+      if(mx+CELL < _cvx || mx > _cvx+_cvw || my+CELL < _cvy || my > _cvy+_cvh) continue;
+      ctx.fillStyle='rgba(255,120,30,0.13)'; ctx.fillRect(mx-CELL,my-CELL,CELL*3,CELL*3);
+      ctx.fillStyle='rgba(255,190,90,0.16)'; ctx.fillRect(mx-2,my-2-_lat,CELL+4,CELL+4);
+    }
+  }
+  // Y la losa lleva encima su barra: la colonia entera muerde la misma piedra y eso tiene que verse sin
+  // abrir el panel. Dos rectangulos, ni un trazo.
+  if(!isMini && umbral){
+    const _uy=umbral.r*CELL-6;
+    if(_uy > _cvy-12 && _uy < _cvy+_cvh){
+      const _w0=Math.min(_cvw-8, COLS*CELL-8), _x0=Math.max(_cvx+4, 4);
+      const _p0=Math.max(0, Math.min(1, 1-(umbral.hp/umbral.hpMax)));
+      _bloque(ctx,_x0,_uy,_w0,4,'#1a140f');
+      if(_p0>0.01) _bloque(ctx,_x0+1,_uy+1,Math.max(1,Math.floor((_w0-2)*_p0)),2, _p0>0.8?'#ffcc00':'#c8c8d8');
+    }
+  }
   ctx.globalAlpha=1;
   // clima lluvia/relámpago
   if(!isMini && (weather.type==='rain' || weather.type==='storm' || weather.type==='snow')){
@@ -6507,6 +6874,41 @@ function updateColonyUIInner(){
       const top=Object.entries(types).sort((a,b)=>b[1]-a[1]).slice(0,2).map(k=>k[0]).join(', ')||'-';
       typEl.textContent=top;
     }
+    // === LA VITRINA y el estado de la LOSA ===
+    // Dos lineas del panel del mundo que antes no existian: cuantas losas lleva rotas la colonia y que
+    // maravillas sac abajo. Se reconstruye solo si cambia algo (el panel se refresca a 7 fps y una lista
+    // de nodos por cuadro en cada refresco es DOM gratis que nadie pide).
+    try{
+      const _uEl=document.getElementById('ecoUmbral');
+      if(_uEl){
+        if(umbral){
+          const _p=Math.max(0, Math.min(100, Math.round((1-umbral.hp/umbral.hpMax)*100)));
+          _uEl.innerHTML=`<b style="color:#c8c8d8">🕳️ LOSA · ${NOMBRE_BANDA(umbral.guarda)}</b> · mordida ${_p}%`+
+                         (puedeGolpearUmbral()? '' : `<span style="color:#8a5a3a"> · falta ${umbral.guarda>=5?'cantería (GEN6+IQ145)':'más boca que alimentar'}</span>`);
+        } else {
+          _uEl.innerHTML=`<b style="color:#ffcc00">🕳️ ${umbralesRotos} losas rotas</b> · ${NOMBRE_BANDA(bandaMax)} · el fondo ya es minable`;
+        }
+      }
+      const _vEl=document.getElementById('ecoRelics'), _vh=document.getElementById('ecoRelicHint');
+      const _sig=reliquias.length+'|'+(umbral?Math.round(umbral.hp):'x');
+      if(_vh) _vh.textContent=reliquias.length? reliquias.length+' en la vitrina' : 'vacia';
+      if(_vEl && _vEl.dataset.sig!==_sig){
+        _vEl.dataset.sig=_sig;
+        if(!reliquias.length){
+          _vEl.innerHTML='<span style="color:#5a4a6a">Nada asombroso todavia. Hay que bajar a la PIZARRA o mas hondo para encontrar reliquias.</span>';
+        } else {
+          _vEl.innerHTML=reliquias.map(x=>{
+            const _d=TREASURE_DEFS[Object.keys(TREASURE_DEFS).find(k=>TREASURE_DEFS[k].reliquia===x.tipo)||'']||{};
+            const _col=_d.color||'#c8a6ff';
+            return '<div style="display:flex;gap:6px;align-items:center;line-height:1.15;margin-bottom:3px" title="'+(x.lore||'')+'">'+
+                   '<span style="width:9px;height:9px;flex:0 0 9px;background:'+_col+';box-shadow:1px 1px 0 #000,inset 0 1px 0 rgba(255,255,255,.4)"></span>'+
+                   '<span style="color:#e9dcc0;flex:1 1 auto">'+x.tipo+'</span>'+
+                   '<span style="color:#8a7a5a">piso '+x.piso+' · D'+x.dia+'</span></div>';
+          }).join('')+'<div style="color:#2de67a;margin-top:2px">+'+Math.round(bonusCava*100)+'% excavación por reliquias</div>';
+        }
+      }
+    }catch(e){}
+
     const mS=document.getElementById('matStone'); if(mS) mS.textContent=worldMaterials.stone;
     const mC=document.getElementById('matClay'); if(mC) mC.textContent=worldMaterials.clay;
     const mSa=document.getElementById('matSand'); if(mSa) mSa.textContent=worldMaterials.sand;
@@ -8164,6 +8566,10 @@ function serializeSave(force){
       fertility: Array.isArray(fertility)? fertility.map(v=>Math.round((v||0)*100)) : [],
       plants: Array.isArray(plants)? plants.slice(0,160).map(p=>({c:p.c,x:p.x,y:p.y,type:p.type,growth:p.growth,age:p.age,fc:p.fruitCooldown,v:p.variant})) : [],
       hiddenRewards: Array.isArray(hiddenRewards)? hiddenRewards.map(h=>({c:h.c,r:h.r,type:h.type,found:!!h.found,x:h.x,y:h.y,tier:h.depthTier})) : [],
+      // la escalera: que banda tiene abierta la colonia, que hay en la vitrina y cuanto aguanta la losa
+      bandaMax, umbralesRotos, bonusCava,
+      reliquias: Array.isArray(reliquias)? reliquias.map(x=>({tipo:x.tipo,piso:x.piso,dia:x.dia,gen:x.gen,lore:x.lore,bonus:x.bonus})) : [],
+      umbral: umbral? {r:umbral.r, hp:Math.round(umbral.hp*10)/10, hpMax:umbral.hpMax, banda:umbral.banda} : null,
       foods: Array.isArray(foods)? foods.slice(0,90).map(f=>({x:f.x,y:f.y,amount:f.amount,max:f.max,ftype:f.ftype,grounded:!!f.grounded})) : [],
       mound: Array.isArray(mound)? mound.filter(m=>m && !m.isPuddle).slice(0,300).map(m=>({x:m.x,y:m.y,h:m.h})) : [],
       // Topo: JSON.stringify ya serializa profundo; los spreads ({...w}) copiaban cada hormiga DOS veces
@@ -8233,6 +8639,21 @@ function deserializeSave(){
     foods = Array.isArray(data.foods)? data.foods.map(f=>({...f, r:5+(f.amount||1)*2, pulse:Math.random()*3, rot:0, fresh:1, spawnDay:f.spawnDay||1, vy:0, grounded:f.grounded!==false})) : [];
     plants = Array.isArray(data.plants)? data.plants.map(p=>({c:p.c,x:p.x,y:p.y,type:p.type,growth:p.growth,maxGrowth:1,age:p.age||0,fruitCooldown:p.fc||0,variant:p.v||0})) : [];
     hiddenRewards = Array.isArray(data.hiddenRewards)? data.hiddenRewards.map(h=>({c:h.c,r:h.r,type:h.type,found:h.found,x:h.x,y:h.y,depthTier:h.tier||1})) : [];
+    // --- la escalera vuelve como estaba (o se repone la losa: un guardado viejo no la tiene y sin losa
+    //     el mundo se queda sin techo, que es justo lo que el umbral evita) ---
+    bandaMax = Math.max(0, data.bandaMax|0); umbralesRotos = Math.max(0, data.umbralesRotos|0);
+    reliquias = Array.isArray(data.reliquias)? data.reliquias.map(x=>({tipo:x.tipo,nombre:x.tipo,piso:x.piso|0,dia:x.dia|0,gen:x.gen|0,lore:x.lore||'',bonus:x.bonus||0.02})) : [];
+    bonusCava = Math.min(0.30, Number(data.bonusCava)||reliquias.reduce((a,x)=>a+(x.bonus||0),0));
+    umbral = null;
+    try{
+      if(data.umbral && soil[data.umbral.r] && soilType[data.umbral.r] && soilType[data.umbral.r][2]===17){
+        umbral={r:data.umbral.r|0, c0:2, c1:COLS-3, hp:Number(data.umbral.hp)||UMBRAL_HP(data.umbral.banda|0),
+                hpMax:Number(data.umbral.hpMax)||UMBRAL_HP(data.umbral.banda|0), banda:data.umbral.banda|0};
+      } else if(Array.isArray(soilType) && soilType.length && soilType[soilType.length-1] && soilType[soilType.length-1][2]!==17){
+        colocarUmbral();
+      }
+      reindexMagma();
+    }catch(e){ console.warn('escalera al cargar', e); }
     mound = Array.isArray(data.mound)? data.mound.map(m=>({x:m.x,y:m.y,h:m.h})) : [];
     worldMaterials = data.worldMaterials||worldMaterials; inventions = data.inventions||inventions;
     society = data.society||society; pantryPos = data.pantryPos||{x:CENTER_COL*CELL+8,y:(SURFACE_ROW+8)*CELL+8};
@@ -8428,7 +8849,7 @@ setTimeout(_updateBothAntCounts, 1800);
         }
         topoShowMainMenu();
       }, 820);
-    }, 1100);
+    }, 1500);   // 1,5 + 0,82 = 2,3 s de logo: lo que dura la animacion de la pantalla de inicio
   }
   // Main buttons
   const btnCreate=document.getElementById('btnMainCreate');

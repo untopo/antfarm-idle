@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ANT FARM — Pixel Real v4 · 16-BIT</title>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache">
-<link rel="stylesheet" href="css/style.css?v=20261016b">
+<link rel="stylesheet" href="css/style.css?v=20261016c">
 
 <style id="topoHideUntilStart">
   #appRoot{display:none !important}
@@ -23,11 +23,16 @@
 <!-- FLOW TOPO: Splash -> MainMenu -> CreateSize / Load / Settings / Credits -->
 <div id="splashScreen" style="position:fixed;inset:0;z-index:10000;background:#0a0a0a;display:flex;align-items:center;justify-content:center;transition:opacity 0.82s">
   <div style="text-align:center">
+    <!-- el topo sale de su madriguera aqui arriba: cuadro de bloques de 8 px, 176x88 duplicado a 352
+         con image-rendering:pixelated (vease js/splash-topo.js). Es decoracion: si el navegador no pinta
+         canvas, se ve igualmente el logo y la barra, que es lo que hace falta para entrar. -->
+    <canvas id="splashTopo" width="176" height="88" style="width:min(352px,86vw);height:auto;display:block;margin:0 auto 16px auto;image-rendering:pixelated;border:0"></canvas>
     <div style="font-family:'Press Start 2P',monospace;font-size:22px;color:#ffcc00;text-shadow:4px 4px 0 #000;letter-spacing:2px">TOPO STUDIOS</div>
     <div style="font-family:'VT323',monospace;font-size:22px;color:#8a7a5a;margin-top:10px;letter-spacing:1px">🐜 ANT FARM RPG</div>
-    <div style="margin-top:18px;width:120px;height:4px;background:#1a140f;border:2px solid #000;margin-left:auto;margin-right:auto;box-shadow:2px 2px 0 #000"><div style="height:100%;width:0%;background:#ffcc00;animation: splashLoad 1.1s linear forwards"></div></div>
+    <div style="margin-top:18px;width:120px;height:4px;background:#1a140f;border:2px solid #000;margin-left:auto;margin-right:auto;box-shadow:2px 2px 0 #000"><div style="height:100%;width:0%;background:#ffcc00;animation: splashLoad 2.3s linear forwards"></div></div>
   </div>
   <style>@keyframes splashLoad{from{width:0%}to{width:100%}}</style>
+    <!-- la barra y el topo miden lo mismo: 2,3 s (app.js entra al menu a los 2,32 s) -->
 </div>
 
 
@@ -358,6 +363,11 @@
               <span style="background:#1a1a1a;border:2px solid #000;padding:6px 2px;text-align:center;color:#8a8a8a">🪵<br><b id="matWood">0</b></span>
             </div>
             <div style="font-family:'VT323',monospace;font-size:12px;color:#8a7a5a;margin-top:6px" id="ecoInv">— aún cavan tierra común —</div>
+          </div>
+          <div style="margin-top:8px;background:#120d1a;border:2px solid #000;padding:8px">
+            <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#c8a6ff;display:flex;justify-content:space-between">🏺 VITRINA <span id="ecoRelicHint" style="color:#5a4a6a">vacía</span></div>
+            <div id="ecoRelics" style="margin-top:6px;max-height:86px;overflow-y:auto;font-family:'VT323',monospace;font-size:12px;color:#c9b896"><span style="color:#5a4a6a">nada asombroso todavía</span></div>
+            <div id="ecoUmbral" style="margin-top:6px;background:#0a0a12;border:2px solid #000;padding:4px 6px;font-family:'VT323',monospace;font-size:12px;color:#c9b896">la losa del fondo aguanta</div>
           </div>
           <div style="margin-top:8px;background:#0f1f0a;border:2px solid #1a3a1a;padding:6px;font-family:'VT323',monospace;font-size:12px;color:#2de67a" id="ecoLog">La pradera respira. El pasto crece poco a poco.</div>
         </div>
@@ -798,7 +808,8 @@
   <!-- Motor del juego — núcleo profesional modular -->
   
 
-<script src="js/app.js?v=20261016b"></script>
+<script src="js/app.js?v=20261016c"></script>
+<script src="js/splash-topo.js?v=20261016c"></script>
 <script>
 // Vigia del arranque: si js/app.js no termino de cargar, decirlo en pantalla en vez de dejar
 // botones sordos. Es lo unico que vive en el HTML; el juego entero esta en js/app.js.
