@@ -110,7 +110,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       return { rc: g('rcTime'), label: g('timeLabel'), t: window._topoDbg ? window._topoDbg().time : 0 };
     });
     await page.evaluate(() => { const b = document.getElementById('btnOnboardingStart'); if (b) b.click(); });
-    await page.evaluate(() => setGameSpeed(64));
+    // La pantalla no ofrece x64 desde que el tope de la casa es x16; para mover el reloj deprisa se pone la
+    // velocidad por dentro, como en las suites de simulacion (por setGameSpeed(64) hoy caeria en x16, que es
+    // valido pero deja la prueba al ritmo de Chrome).
+    await page.evaluate(() => { gameSpeed = 64; turbo = true; });
     const c0 = await domClock();
     // seleccionar una hormiga: antes esto reventaba el HUD y congelaba la placa
     await page.evaluate(() => {
@@ -128,11 +131,15 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       const before = gameSpeed;
       let err = null;
       try { setGameSpeed(32); } catch (e) { err = e.message; }
-      return { present: ids.filter(i => document.getElementById(i)).length, err, after: gameSpeed, before };
+      const v32 = gameSpeed;
+      try { setGameSpeed(3); } catch (e) { err = err || e.message; }
+      return { present: ids.filter(i => document.getElementById(i)).length, err, after: v32, tres: gameSpeed, before };
     });
-    ok(spd.present === 4, 'x32 y x64 existen en las dos filas de velocidad (' + spd.present + '/4)');
-    ok(!spd.err, 'setGameSpeed(32) no lanza' + (spd.err ? ' :: ' + spd.err : ''));
-    ok(spd.after === 32, 'y el juego acepta x32 (gameSpeed=' + spd.after + ')');
+    const al32 = spd.after;
+    // Antes esta prueba exigia lo contrario: que x32 y x64 EXISTIERAN y que el juego los aceptara. El dueño
+    // los quito (2026-10-15: «lo de velocidad 32 y 64, bórralo»); aqui queda el contrato nuevo, medido.
+    ok(spd.present === 0, 'x32 y x64 ya no estan en ninguna fila de velocidad (' + spd.present + '/4 botones)');
+    ok((!spd.err || spd.tres === 2) && al32 === 16, 'y pedir x32 no lanza: cae en el tope de la casa, x16 - no congela en x1 · x3 cae en x' + spd.tres + (spd.err ? ' :: ' + spd.err : ''));
     await page.evaluate(() => setGameSpeed(1));
 
     // --- el atajo incremental del cache del suelo tiene que dar los MISMOS pixeles que pintar todo ---
@@ -278,7 +285,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       }).catch(() => ({}));
       ok(!tiras.corner && !tiras.day && !tiras.hud && !tiras.sel && tiras.tirasVisibles === 0,
         'y no hay tiras duplicadas sobre el calendario (cornerControls/dayControls/mainHud/hudSel ausentes, tiras visibles: ' + tiras.tirasVisibles + ')');
-      ok(tiras.vel === 7, 'la barra de velocidades es la de siempre y solo hay una (' + tiras.vel + ' botones x1..x64)');
+      ok(tiras.vel === 5, 'la tira vieja se quedo en x1..x16 y la barra nueva es la unica a la vista (' + tiras.vel + ' botones en las filas selladas)');
 
       // El salto de dia se mide en una pagina NUEVA y limpia: en la pagina principal los tests
       // anteriores ensucian el lote del suelo (el conjunto sucio pasa del umbral y cada calada
@@ -327,7 +334,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       // x64 y ventana amplia: con la maquina cargada, medir a x16 en 30 s daba 60/40 de veces
       // segun cuanto le tocase a Chrome. Lo que se comprueba es que la colonia trabaja de dia,
       // no la puntualidad del reloj del test.
-      await page3.evaluate(() => { time = DAY_LENGTH * 0.30; setGameSpeed(64); });
+      await page3.evaluate(() => { time = DAY_LENGTH * 0.30; gameSpeed = 64; turbo = true; });
       const t1 = Date.now(); const cava_antes = await estado();
       let cava_ahora = cava_antes;
       while (Date.now() - t1 < 75000) { await sleep(1500); cava_ahora = await estado(); if (cava_ahora.digs > cava_antes.digs && cava_ahora.cavadas > cava_antes.cavadas) break; }

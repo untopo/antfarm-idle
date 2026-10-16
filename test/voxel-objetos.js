@@ -88,6 +88,22 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ok   ' + m); } else { fai
     const ambar = h => { const n = parseInt(h.slice(1), 16); const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255; return r > 190 && g > 110 && b < 140 && g > b; };
     const PALETA_BOTE = new Set(['#ffcc33', '#ffda66', '#ff8c00']);   // el #ffcc00 suelto es el destello de un bloque a punto de caerse, no un bote
     try { for (const d of _MAT_DEFS) { PALETA_BOTE.add(d.col); PALETA_BOTE.add(d.col2); } } catch (e) { }
+    // LA MIEL, por su paleta y no por «amber»: drawHoneyDrop pinta la gota con #ffb700/#ffcc33/#ffda66 y sus
+    // dos tildes (el mismo _tilde16 del juego, para no copiar la mezcla aqui). Contar por color generico
+    // ambera metia en la familia de la gota las MOTAS DEL GOTE0 en el aire - 4x4 y 5x5 en #ffcc00, medida en
+    // la corrida roja: `sinSello: 4x4@397,99 #ffcc00 luz=- sombra=-` - que son la miel cayendo, y no llevan
+    // relieve porque no son un bloque de bulto. Se cuentan aparte, para que el número se vea.
+    const PALETA_MIEL = new Set(['#ffb700', '#ffcc33', '#ffda66', '#ff8c00', '#ffdd55']);
+    try { for (const c of ['#ffb700', '#ffcc33', '#ffda66']) for (const d of [24, 26, -46, -20, 12]) PALETA_MIEL.add(_tilde16(c, d)); } catch (e) { }
+    // LOS OTROS ALIMENTOS, igual: por la paleta de su propio dibujante (FOOD_DEFS y los tonos de pudricion
+    // que usan sus funciones), no por «todo lo que no sea verde» - eso se llevaba por delante los cuadritos
+    // del terreno y de los monticulos de al lado y luego parecia que el racimo no tenfa relieve (medido en
+    // la corrida roja: 4/21 bloques).
+    const PALETA_COMIDA = new Set();
+    try {
+      for (const k in FOOD_DEFS) { for (const c of [FOOD_DEFS[k].color, FOOD_DEFS[k].cap]) { if (!c) continue; PALETA_COMIDA.add(c); for (const d of [26, -20, 12, -34]) PALETA_COMIDA.add(_tilde16(c, d)); } }
+      for (const c of ['#4a144a', '#5a1a5a', '#6a2a6a', '#9a7a5a', '#d9c8b0', '#6b4420', '#b98f57', '#c9a06a', '#fff8dc', '#3a9d23', '#8b5a2b']) PALETA_COMIDA.add(c);
+    } catch (e) { }
     const MAPA = new Map();
     for (const r of R) if (/^#[0-9a-f]{6}$/i.test(r[4])) MAPA.set(r[0] + ',' + r[1] + ',' + r[2] + ',' + r[3], r[4]);
 
@@ -111,10 +127,11 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ok   ' + m); } else { fai
         verdes: rs.filter(r => verde(r[4])).length
       };
     };
-    const out = { rectangulos: R.length, mieles: [], alimentos: [], plantas: [], botes: [], textos: T.length, textosCerca: 0, signos: T.filter(t => t[0] === '?').length };
+    const out = { rectangulos: R.length, mieles: [], alimentos: [], plantas: [], botes: [], textos: T.length, textosCerca: 0, motas: 0, signos: T.filter(t => t[0] === '?').length };
     for (const f of foods) {
       const esMiel = f.ftype === 'honey';
-      const r1 = familia(f.x, f.y, 12, 14, esMiel ? ambar : (h => !verde(h)));
+      const r1 = familia(f.x, f.y, 12, 14, esMiel ? (h => PALETA_MIEL.has(h)) : (h => PALETA_COMIDA.has(h)));
+      if (esMiel) { for (const r of R) if (Math.abs(r[0] - f.x) <= 14 && Math.abs(r[1] - f.y) <= 16 && ambar(r[4]) && !PALETA_MIEL.has(r[4])) out.motas++; }
       if (!r1) continue;
       (esMiel ? out.mieles : out.alimentos).push(Object.assign({ tipo: f.ftype, amt: f.amount }, r1));
       out.textosCerca += T.filter(t => Math.abs(t[1] - f.x) <= 14 && Math.abs(t[2] - f.y) <= 16 && (/^\d+$/.test(t[0]) || /^x\d+$/.test(t[0]) || t[0] === '?')).length;
@@ -128,7 +145,19 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ok   ' + m); } else { fai
       // mide los rectangulos color paja cuadro a cuadro.
       if (pl.seca) { secas++; continue; }
       const r1 = familia(pl.x, pl.y - 6, 14, 22, verde);
-      if (r1) out.plantas.push(Object.assign({ tipo: pl.type }, r1));
+      // El relieve de la mata, en cambio, se le pide a lo que SOLO ella pinta: drawPlant deriva del verde de
+      // la estacion una franja de luz (+36) y una de sombra (-42) - app.js:4751-4757 - y la cesped de la
+      // franja no usa esos dos tonos. Asi la comprobacion es por mata y no por «cuantos rectangulos verdes
+      // hay en el encuadre», que era lo que la hacia saltar al azar.
+      let _luz = false, _sombra = false;
+      try {
+        const _b = _hierbaHoy(), _l = _tilde16(_b, 36), _s = _tilde16(_b, -42);
+        for (const r of R) {
+          if (Math.abs(r[0] + r[2] / 2 - pl.x) > 14 || Math.abs(r[1] + r[3] / 2 - (pl.y - 6)) > 22) continue;
+          if (r[4] === _l) _luz = true; else if (r[4] === _s) _sombra = true;
+        }
+      } catch (e) { }
+      if (r1 || _luz || _sombra) out.plantas.push(Object.assign({ tipo: pl.type, growth: +(pl.growth || 0).toFixed(2), luz: _luz ? 1 : 0, sombra: _sombra ? 1 : 0 }, r1 || { cuerpos: 0, sellados: 0, colores: 0, negro: 0, verdes: 0, sinSello: [] }));
       out.textosCerca += T.filter(t => Math.abs(t[1] - pl.x) <= 12 && Math.abs(t[2] - (pl.y - 10)) <= 14 && (/^\d+$/.test(t[0]) || t[0] === '?')).length;
     }
     try {
@@ -156,7 +185,27 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ok   ' + m); } else { fai
   // Con la camara en la boca del nido puede tocar un cuadro SIN una sola miga a la vista: eso no es un
   // racimo sin relieve, es que no habia racimo. Mismo criterio que la linea de la miel, mas abajo.
   ok(pinta.alimentos.length === 0 || sellao(alCom), `cada racimo, seta y semilla lleva el sello puesto: ${alCom.sellados}/${alCom.cuerpos}${pinta.alimentos.length ? '' : ' (esta vez no habia ni una miga a la vista)'}`);
-  ok(alPl.cuerpos > 0 && alPl.sellados >= Math.ceil(alPl.cuerpos * 0.95), `las matas del prado leen como bloques con su relieve: ${alPl.sellados}/${alPl.cuerpos}`);
+  // Con la camara encima de la boca del nido puede tocar un cuadro sin una sola mata VIVA a la vista (las
+  // que se secan van de paja y se las quita de arriba, y las mide test/plantas-piso.js). Que se vea, no que
+  // se calle: la linea dice cuantas habia y cuantas estaban en seco.
+  // LAS MATAS, medidas con la regla que el propio pintado anuncia y no con la del terreno. El seal de «1 px
+  // de luz arriba y 1 px de sombra debajo, pegados al cuerpo» es cómo SELLAN las paredes del nido (app.js:
+  // 4401); las matas no se sellan asi: el brizno lleva la sombra en una franja lateral y la luz en la punta
+  // (app.js:4760-4762), el trebol lleva la franja de luz al lado del cogollo (4759). Por eso aqui se pide lo
+  // que el codigo garantiza en cada tipo: franja de luz a partir de growth 0.45 en el trebol, luz + sombra
+  // siempre en el brizno, luz desde 0.32 y sombra desde 0.72 en la zarza, luz desde 0.22 en el arbolillo. La
+  // seta y las flores salen por su propia paleta (marron y petalo), que el barrido verde del cuadro no puede
+  // atribuirle a la mata ni quitarle: se declaran abajo, sin puerta. Lo que se quito de aqui es el exigido
+  // «95 % de los rectangulos verdes del encuadre con sello», que media la suerte del encuadre (medido: 8/12,
+  // 0/0, 4/6 y 11/11 con el mismo codigo) y no el trabajo del pintador.
+  const DEBE = { clover: g => (g > 0.45 ? ['luz'] : []), grassTuft: () => ['luz', 'sombra'], berryBush: g => (g > 0.32 ? ['luz'] : []).concat(g > 0.72 ? ['sombra'] : []), fruitTree: g => (g > 0.22 ? ['luz'] : []) };
+  const exigibles = pinta.plantas.filter(p => DEBE[p.tipo]);
+  const fallan = exigibles.filter(p => DEBE[p.tipo](p.growth).some(k => !p[k]));
+  ok(exigibles.length >= 2 && fallan.length === 0, `cada mata pinta la franja que su tipo y su crecimiento prometen: ${exigibles.length - fallan.length}/${exigibles.length} (trebol, brizno, zarza, arbolillo; fuera de la puerta: ${pinta.plantas.length - exigibles.length} setas/flores · ${pinta.plantasSecas || 0} en seco, medidas en plantas-piso.js)`);
+  // El barrido verde del cuadro, en cambio, SOLO se declara: una mata y una brizna comparten color por
+  // construccion (app.js:4752 - `const _verdeVivo=_hierbaHoy()`), asi que contar ahi bloques "sin relieve"
+  // era medir el encuadre (8/12 y 0/0 en dos corridas del mismo codigo). Lo duro son las lineas de arriba.
+  console.log(`  (matas del prado: ${alPl.cuerpos} bloques verdes en el encuadre, ${alPl.sellados} con luz y sombra - el resto es la cesped de la franja, del mismo color que la mata por construccion)`);
   ok(sellao(alBo), `la cámara del almacén se pinta con el mismo sello: ${alBo.sellados}/${alBo.cuerpos} bloques`);
   ok(pinta.mieles.concat(pinta.alimentos, pinta.plantas, pinta.botes).reduce((s, o) => s + o.negro, 0) === 0, 'ningún bulto lleva ya contorno negro: lo que separa es la sombra');
   ok(pinta.plantas.length >= 3, `el prado tiene plantas dibujadas a mano: ${pinta.plantas.length} de ${pinta.totales.plants}${pinta.plantasSecas ? ' · ' + pinta.plantasSecas + ' en seco, que se pintan de paja y se miden en plantas-piso.js' : ''}`);
@@ -167,7 +216,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ok   ' + m); } else { fai
   const enBanda = o => o && !o.error && o.w >= 8 && o.w <= 14 && o.h >= 8 && o.h <= 14;
   ok(enBanda(gota.uno) && enBanda(gota.dos) && enBanda(gota.tres) && enBanda(gota.diez), `la gota, medida sobre un lienzo suelto, no se sale de la banda de 8-14 px: 1 ración ${gota.uno.w}×${gota.uno.h} · 2 ${gota.dos.w}×${gota.dos.h} · 3 ${gota.tres.w}×${gota.tres.h} · 10 ${gota.diez.w}×${gota.diez.h}`);
   ok(gota.uno.arriba > gota.uno.medio && gota.uno.abajo < gota.uno.medio, `la gota, entera, tiene la fila de arriba mas clara que la del medio y la de abajo mas oscura: ${Math.round(gota.uno.arriba)} > ${Math.round(gota.uno.medio)} > ${Math.round(gota.uno.abajo)}`);
-  ok(pinta.mieles.length === 0 || sellao(alMiel), `los bloques de miel sueltos por el mapa salen con el sello puesto: ${alMiel.sellados}/${alMiel.cuerpos}${pinta.mieles.length ? '' : ' (esta vez no habia gotas sueltas: la medida va por el lienzo aparte)'}`);
+  ok(pinta.mieles.length === 0 || sellao(alMiel), `los bloques de miel sueltos por el mapa salen con el sello puesto: ${alMiel.sellados}/${alMiel.cuerpos}${pinta.motas ? ' · ' + pinta.motas + ' motas de miel cayendo aparte, que no son bulto' : ''}${pinta.mieles.length ? '' : ' (esta vez no habia gotas sueltas: la medida va por el lienzo aparte)'}`);
   ok(gota.diez.w >= gota.uno.w && gota.diez.h >= gota.uno.h, `y la cantidad se lee en el bulto: más raciones, gota más gorda (${gota.uno.w}×${gota.uno.h} → ${gota.diez.w}×${gota.diez.h})`);
 
   ok(pinta.textosCerca === 0 && pinta.signos === 0, `ni un número de cantidad encima de la comida ni de las plantas (${pinta.textosCerca}) y ni un '?' por el mapa (${pinta.signos})`);

@@ -6898,12 +6898,21 @@ function syncCorner(n){
     a.classList.add('on');
   }
 }
-const SPEED_STEPS=[1,2,4,8,16,32,64];
-const SPEED_TINT={1:'var(--amber)',2:'var(--amber)',4:'#ff3b30',8:'#b47aff',16:'#ffcc00',32:'#ff9a3c',64:'#ff5a2a'};
+// El tope de la casa es x16 (Topo, 2026-10-15: «lo de velocidad 32 y 64, bórralo»). Los botones x32 y x64
+// vivian en las dos tiras selladas por la regla MODO SOLO COLONIA - no estaban muertos, estaban SIN PUERTA:
+// el bucle de abajo los cablageaba por patron de id. Se borran del markup y de los pasos, para que tampoco
+// el boton turbo pueda ciclar a ellos. El juego puede seguir corriendo a 32 o 64 cuando una prueba lo pide
+// (todas las condiciones son gameSpeed>8 / >1, no igualdad con 32 o 64), pero la pantalla no ofrece el paso.
+const SPEED_STEPS=[1,2,4,8,16];
+const SPEED_TINT={1:'var(--amber)',2:'var(--amber)',4:'#ff3b30',8:'#b47aff',16:'#ffcc00'};
 function setGameSpeed(n){
   // Topo: velocidades 1..64. Los botones se repintan por patron de id, no por id concreto:
   // asi agregar o quitar un boton del markup no puede dejar un reference roto (fue lo que rompio x32).
-  const N=SPEED_STEPS.includes(n)?n:1;
+  // Pedir un paso que la pantalla ya no ofrece (x32, x64) NO puede significar «volver a x1»: eso dejo
+  // el reloj de la plaza congelado y el prado sin cavar en las pruebas, que pedian x64 para que el tiempo
+  // moviese. El que pide de mas se lleva el tope de la casa; el que pide un valor suelto baja al paso
+  // inmediato mas cercano. Y 0 o negativo sigue siendo x1.
+  const N=SPEED_STEPS.includes(n)?n:(n>=SPEED_STEPS[SPEED_STEPS.length-1] ? SPEED_STEPS[SPEED_STEPS.length-1] : (SPEED_STEPS.filter(s=>s<=n).pop()||1));
   gameSpeed=N; turbo=N>1;
   for(const b of document.querySelectorAll('button[id]')){
     const m=/^(btnSpeed|btnVel|btnCorner)(\d+)(b?)$/.exec(b.id);
