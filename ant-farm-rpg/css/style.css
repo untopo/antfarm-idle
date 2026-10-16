@@ -519,3 +519,19 @@ body{ font-size:19px; }
 .hoja-cuerpo::-webkit-scrollbar-thumb{background:#3a2a1a;border:2px solid #000}
 .hoja-cuerpo::-webkit-scrollbar-thumb:hover{background:#5a4326}
 .hoja-cuerpo:focus-visible{outline:2px solid #ffcc00;outline-offset:-2px}
+
+/* === PUERTA DE LA LISTA DE HORMIGAS Y HOJA DE ELENCO (Topo, 2026-10-16) ===
+   El numero de obreras de la tira viva es el boton que abre la lista; mientras la hoja esta abierta el boton
+   queda encendido, para que se vea de donde salio. La hoja es la unica puerta al elenco: la vieja #antList de
+   la barra lateral sigue sellada y no se duplica. */
+#btnAntList{cursor:pointer;transition:background .12s, box-shadow .12s;border-radius:0}
+#btnAntList:hover{background:rgba(255,204,0,.14)}
+#btnAntList:active{background:rgba(255,204,0,.26)}
+#btnAntList[data-open="1"]{background:rgba(255,204,0,.22);box-shadow:inset 0 -3px 0 #ffcc00}
+#btnAntList:focus-visible{outline:2px solid #ffcc00;outline-offset:-3px}
+.ant-row{display:flex;flex-direction:column;gap:0;width:100%;text-align:left;background:#000;border:2px solid #1a140f;padding:5px 6px;cursor:pointer;font:inherit;color:inherit;box-shadow:2px 2px 0 #000;min-width:0}
+.ant-row:hover{border-color:#ffcc00;background:#150d05}
+.ant-row-sel{border-color:#ffcc00;background:#2a0f00}
+.ant-row:focus-visible{outline:2px solid #ffcc00;outline-offset:1px}
+.prof-fila{min-width:0}
+.prof-fila span{min-width:0}

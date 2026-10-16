@@ -11,7 +11,7 @@
 const canvas=document.getElementById('farmCanvas'), ctx=canvas.getContext('2d');
 const wrap=document.getElementById('canvasWrap');
 const tbCanvas=document.getElementById('taskbarCanvas'), tbCtx=tbCanvas.getContext('2d');
-const nnCanvas=document.getElementById('nnCanvas'), nctx=nnCanvas.getContext('2d');
+let nnCanvas=document.getElementById('nnCanvas'), nctx=nnCanvas.getContext('2d');   // let, no const: el mismo dibujante sirve la caja lateral y la pestaña CEREBRO de la hoja de perfil (ver _pintarNNen)
 const chartCanvas=document.getElementById('chartCanvas'), cctx=chartCanvas.getContext('2d');
 let W=canvas.width, H=canvas.height;
 // ===== PERFORMANCE - capas cacheadas =====
@@ -3068,7 +3068,7 @@ function showAntProfile(ant){
   // tabs
   try{
     const tabs=modal.querySelectorAll('#profileTabs [data-ptab]');
-    const panes={rasgos:document.getElementById('profileTab_rasgos'), estado:document.getElementById('profileTab_estado'), arbol:document.getElementById('profileTab_arbol'), hist:document.getElementById('profileTab_hist')};
+    const panes={rasgos:document.getElementById('profileTab_rasgos'), estado:document.getElementById('profileTab_estado'), arbol:document.getElementById('profileTab_arbol'), hist:document.getElementById('profileTab_hist'), cerebro:document.getElementById('profileTab_cerebro')};
     tabs.forEach(btn=>{
       btn.onclick=(e)=>{
         e.stopPropagation();
@@ -3076,6 +3076,10 @@ function showAntProfile(ant){
         btn.style.background='var(--amber)'; btn.style.color='#000';
         const tab=btn.dataset.ptab;
         for(let k in panes){ if(panes[k]) panes[k].style.display = (k===tab?'block':'none'); }
+        // se recuerda la pestaña en el propio nodo: el reloj de _panelsMaybeDraw mira eso para saber si le toca
+        // repintar el cerebro, y así tapar la pestaña cuesta cero cuadros (igual que tapar la barra lateral)
+        modal.dataset.ptab=tab;
+        if(tab==='cerebro'){ try{ pintarCerebroPerfil(); }catch(e){} }
       };
     });
     // default to rasgos
@@ -3083,6 +3087,7 @@ function showAntProfile(ant){
     const first=modal.querySelector('#profileTabs [data-ptab="rasgos"]');
     if(first){ first.style.background='var(--amber)'; first.style.color='#000'; }
     for(let k in panes){ if(panes[k]) panes[k].style.display = (k==='rasgos'?'block':'none'); }
+    modal.dataset.ptab='rasgos';   // y se borra el recuerdo: si la última vez quedó en CEREBRO, el reloj no sigue pintando
   }catch(e){}
   // no empuja el mapa - overlay limpio, el reloj ya no tapa porque el pan tiene margen extra
   clampView(); updateZoomLabel();
@@ -6621,13 +6626,127 @@ function _panelVisible(){
   }catch(e){ return true; }
 }
 function _panelsMaybeDraw(){
-  if(!_panelVisible()) return;
+  // Dos puertas para el mismo cerebro: la caja de la barra lateral (hoy sellada por el modo solo-colonia) y
+  // la pestaña CEREBRO de la hoja de perfil (Topo, 2026-10-16). Lo que no se ve no se pinta: con las dos
+  // cerradas esta función sale sin tocar un pixel.
+  const lateral=_panelVisible(), enPerfil=_cerebroPerfilVisible();
+  if(!lateral && !enPerfil) return;
   const now=performance.now();
-  const sig=selectedAntIndex+'|'+((workers[selectedAntIndex]&&workers[selectedAntIndex].id)||'')+'|'+workers.length;
+  const sig=selectedAntIndex+'|'+((workers[selectedAntIndex]&&workers[selectedAntIndex].id)||'')+'|'+workers.length+'|'+(enPerfil?'c':'');
   if(now-_panelsAt<140 && sig===_panelsSig) return;
   _panelsAt=now; _panelsSig=sig;
-  drawNN(); drawSensors(); drawChart();
+  if(lateral){ drawNN(); drawSensors(); drawChart(); }
+  if(enPerfil){ try{ pintarCerebroPerfil(); }catch(e){} }
 }
+// === CEREBRO DENTRO DE LA HOJA DE PERFIL (Topo: «dentro de la hoja de perfil es mejor, con la misma
+// estética; asegúrate de que todo quepa bonito y ordenado y que la información se entienda») ===
+// La barra lateral sellada ya tenía la caja de neuronas y los 11 sensores, pero en crudo: `OJO IZQ -45°`
+// con un 0.52 al lado. Aquí lo mismo se traduce a una frase, y el grafo se pinta en el ancho de la hoja
+// (196 px) con el mismo dibujante - no hay un segundo cerebro que se pueda desincronizar.
+function _cerebroPerfilVisible(){
+  try{
+    const pf=document.getElementById('antProfile');
+    if(!pf || pf.style.display==='none' || pf.dataset.ptab!=='cerebro') return false;
+    const cv=document.getElementById('profNnCanvas');
+    if(!cv || cv.offsetParent===null) return false;
+    return true;
+  }catch(e){ return false; }
+}
+function _pintarNNen(cv){
+  // El dibujante trabaja sobre los globales nnCanvas/nctx (así estaba para la barra lateral); para pintar en
+  // otro lienzo se le prestan y se devuelven en el mismo cuadro, sin await en el medio.
+  const _cv=nnCanvas, _cx=nctx;
+  try{ nnCanvas=cv; nctx=cv.getContext('2d'); drawNN(); }
+  finally{ nnCanvas=_cv; nctx=_cx; }
+}
+function _pct(v){ return Math.max(0, Math.min(100, Math.round(v*100))); }
+function _filaFrase(icono, etiqueta, frase, v, col, crudo){
+  const pct=_pct(v);
+  // el `title` del raton no admite comillas ni etiquetas, y alguna frase lleva su <b> de color: se limpia
+  const paraTitulo=(s)=>String(s).replace(/<[^>]*>/g,'').replace(/"/g,'');
+  return '<div class="prof-fila"'+(crudo!==undefined? ' title="'+paraTitulo(crudo)+'"' : '')+'>'
+    + '<div style="display:flex;align-items:baseline;gap:6px;min-width:0">'
+    + '<span style="font-size:11px;line-height:1;flex-shrink:0">'+icono+'</span>'
+    + '<span style="flex:1;min-width:0;font-family:\'VT323\',monospace;font-size:12px;color:#e8dcc0;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+paraTitulo(frase)+'">'+frase+'</span>'
+    + '</div>'
+    + '<div style="display:flex;align-items:center;gap:5px;margin-top:2px">'
+    + '<span style="font-family:\'Press Start 2P\',monospace;font-size:5px;color:#8a7a5a;letter-spacing:.3px;flex-shrink:0;white-space:nowrap">'+etiqueta+'</span>'
+    + '<span style="flex:1;min-width:0;height:4px;background:#1a140f;border:1px solid #000;display:block"><span style="display:block;height:100%;width:'+pct+'%;background:'+col+'"></span></span>'
+    + '</div></div>';
+}
+const _SENS_FRASES=[
+  {k:'foodAngle',  icono:'🍯', et:'COMIDA',   col:'#ffcc00'},
+  {k:'foodDist',   icono:'📏', et:'DISTANCIA',col:'#2de67a'},
+  {k:'pheroStr',   icono:'🧪', et:'FEROMONA', col:'#b47aff'},
+  {k:'pheroAng',   icono:'↗️', et:'RUMBO RASTRO', col:'#b47aff'},
+  {k:'wallLeft',   icono:'◀️', et:'OJO IZQUIERDO', col:'#ff3b30'},
+  {k:'wallCenter', icono:'⬆️', et:'OJO DE FRENTE', col:'#ffcc00'},
+  {k:'wallRight',  icono:'▶️', et:'OJO DERECHO',  col:'#00e5ff'},
+  {k:'fatigue',    icono:'🔋', et:'CANSANCIO',col:'#ff8c00'},
+  {k:'carrying',   icono:'🦍', et:'CARGA',    col:'#ffcc00'},
+  {k:'commIn1',    icono:'💬', et:'VOZ 1',    col:'#00e5ff'},
+  {k:'commIn2',    icono:'💬', et:'VOZ 2',    col:'#b47aff'},
+];
+function _lado(v){
+  // compacto a proposito: una linea de 180 px con fuente de 12px son ~33 caracteres. Y «a 179° a la derecha»
+  // es, para cualquiera, DETRAS - escribirlo con rodeos cortaba la frase en dos lineas
+  const g=Math.round(Math.abs(v)*180);
+  if(g>150) return 'justo detr\u00e1s';
+  if(g<18) return 'justo delante';
+  return g+'\u00b0 a la '+(v>0?'derecha':'izquierda');
+}
+function _fraseOjo(v){ const px=Math.round((1-v)*40); if(v>0.92) return 'pared pegada, roza'; if(v>0.55) return 'pared cerca, a '+px+' px'; if(v>0.12) return 'pared lejos, a '+px+' px'; return 'aire libre, no toca nada'; }
+function _fraseSensor(s, sel){
+  const v=(sel.sensors && sel.sensors[s.k]!==undefined)? sel.sensors[s.k] : 0;
+  switch(s.k){
+    case 'foodAngle': return [ (sel.sensors&&sel.sensors.foodDist>0.001)? 'huele comida '+_lado(v) : 'no ve comida en el olfato', Math.abs(v) ];
+    case 'foodDist':  { const px=Math.round((1-v)*280); return [ v>0.001? (v>0.72?'la tiene encima, a '+px+' px':(v>0.3?'comida a media distancia, '+px+' px':'apenas la intuye, a '+px+' px')) : 'nada de comida en 280 px', v]; }
+    case 'pheroStr':  return [ v>0.6? 'rastro fuerte: van y vienen' : (v>0.15? 'un rastro flojo, de hace poco' : 'ningún rastro por aquí'), v];
+    case 'pheroAng':  return [ (sel.sensors&&sel.sensors.pheroStr>0.05)? 'le tira '+_lado(v) : 'el rastro no la llama', Math.abs(v)];
+    case 'wallLeft': case 'wallCenter': case 'wallRight': return [ _fraseOjo(v), Math.max(0,Math.min(1,v)) ];
+    case 'fatigue':   return [ v<0.2? 'descansada, le queda día' : (v<0.6? 'cansada: busca dónde parar' : 'agotada, se cae de sueño'), v];
+    case 'carrying':  { let q=''; try{ if(sel.food) q = sel.food.isSoil? 'TIERRA' : ((FOOD_DEFS[sel.food.type]&&FOOD_DEFS[sel.food.type].name)||'COMIDA'); }catch(e){} return [ v>=0.5? ('lleva '+q+' en las mandíbulas') : 'va con las manos vacías', v>=0.5?1:0]; }
+    case 'commIn1': case 'commIn2': return [ Math.abs(v)<0.05? 'nadie le está hablando' : (v>0? 'le habla otra hormiga' : 'otra hormiga la avisa'), Math.abs(v)];
+  }
+  return [s.k, Math.abs(v)];
+}
+function pintarCerebroPerfil(sel){
+  const pf=document.getElementById('antProfile');
+  if(!pf || pf.style.display==='none') return;
+  const ant = sel || workers[selectedAntIndex] || workers[0];
+  if(!ant) return;
+  const cv=document.getElementById('profNnCanvas');
+  if(cv && cv.offsetParent!==null){ try{ _pintarNNen(cv); }catch(e){} }
+  const cont=document.getElementById('profSensors');
+  if(cont){
+    let html='', sig='';
+    for(const s of _SENS_FRASES){
+      const [frase, v]=_fraseSensor(s, ant);
+      sig+=s.k+Math.round(v*50)+frase.length;
+      html+=_filaFrase(s.icono, s.et, frase, v, s.col, s.k+' = '+(ant.sensors&&ant.sensors[s.k]!==undefined? (ant.sensors[s.k]).toFixed(3) : '0'));
+    }
+    if(cont.dataset.sig!==sig){ cont.innerHTML=html; cont.dataset.sig=sig; }
+  }
+  const outs=document.getElementById('profOuts');
+  if(outs){
+    const o=ant.nnOut||[0,0,0,0,0];
+    const vel=(o[1]+1)/2, dig=(o[2]+1)/2;
+    const gi=Math.abs(o[0]);
+    const giro = gi<0.08? 'sigue recta, no tuerce' : (gi>0.62? 'gira en seco ' : (gi>0.28? 'gira ' : 'corrige apenas ')) + (o[0]>0?'a la derecha':'a la izquierda');
+    const cava = dig>0.6? 'está cavando ahora mismo' : (dig>0.35? 'aranea el suelo, probando' : 'no cava');
+    let grito='no chismea nada', gs=0;
+    try{ const sym=symbolForComms(o[3],o[4]); gs=Math.max(Math.abs(o[3]),Math.abs(o[4])); if(sym!=='⬡') grito='escribe <b style="color:#00e5ff">'+sym+'</b> para las demás'; }catch(e){}
+    let sig2=giro+cava+grito+Math.round(vel*20);
+    const html2 = _filaFrase('🧭','GIRO', giro, Math.abs(o[0]), '#ffcc00', 'nnOut[0] = '+o[0].toFixed(3))
+      + _filaFrase('👟','VELOCIDAD', vel<0.06? 'está plantada' : 'camina al '+_pct(vel)+' % de su punta', vel, '#2de67a', 'nnOut[1] = '+o[1].toFixed(3))
+      + _filaFrase('⛏','CAVA', cava, dig, '#ff3b30', 'nnOut[2] = '+o[2].toFixed(3))
+      + _filaFrase('💬','CHARLA', grito, gs, '#b47aff', 'nnOut[3] = '+o[3].toFixed(3)+' · nnOut[4] = '+o[4].toFixed(3));
+    if(outs.dataset.sig!==sig2){ outs.innerHTML=html2; outs.dataset.sig=sig2; }
+  }
+  const quien=document.getElementById('profCerebroQuien');
+  if(quien) quien.textContent = antDisplayName(ant)+' · '+ant.role;
+}
+window.pintarCerebroPerfil=pintarCerebroPerfil;
 function drawNN(){
   const sel=workers[selectedAntIndex] || workers[0];
   if(!sel) return;
@@ -8538,6 +8657,7 @@ function updateEcoHud(){
     _ecoTxt('velMatSand',  Math.max(0, Math.floor(worldMaterials.sand||0)));
     _ecoTxt('velMatRooms', storageCells().length);
     if(_invAbierto) pintarInventario();
+    if(_antListAbierta) pintarListaHormigas();
   }catch(e){ /* un nodo que falte no puede parar el bucle */ }
 }
 function _filaInv(icono, nombre, valor, nota, color){
@@ -8606,8 +8726,27 @@ function asentarHoja(el){
     return alto;
   }catch(e){ return 0; }
 }
+// El calendario (z-index 999, medido) vive en la misma esquina superior derecha que las hojas, y las hojas
+// nacen en top:62px: la del almacén y la del elenco se quedaban con sus primeros 162 px DETRAS del calendario
+// (medido en Chrome: calendario 60..224, hoja desde 62). Es la otra mitad de la queja del dueño - «hay muchos
+// items y algunos no se pueden ver»: aunque la lista scrolleara, las primeras filas no se veian. Se sientan
+// por debajo del calendario, el mismo gesto que ya usa la hoja de perfil, y asentarHoja mide el alto contra ese
+// borde nuevo.
+function _bajoCalendario(el){
+  if(!el) return 0;
+  try{
+    const cal=document.getElementById('calendarWidget');
+    let top=62;
+    if(cal){ const r=cal.getBoundingClientRect(); if(r.height>10 && r.bottom>top) top=Math.round(r.bottom)+4; }
+    const piso=Math.max(180, Math.min(420, (window.innerHeight||800)-200));
+    if(top>piso) top=piso;
+    el.style.setProperty('top', top+'px', 'important');
+    return top;
+  }catch(e){ return 0; }
+}
 function abrirInventario(){
   const sh=document.getElementById('invSheet'); if(!sh) return;
+  _bajoCalendario(sh);
   try{ closeAntProfile(); }catch(e){}
   try{ closeQueenProfile(); }catch(e){}
   _invAbierto=true; sh.setAttribute('data-open','1'); sh.style.display='flex';
@@ -8643,4 +8782,149 @@ function initInventarioHud(){
 }
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', initInventarioHud);
 else initInventarioHud();
+
+// === LISTA DE HORMIGAS ACTIVAS (Topo: «una lista fácil de acceder de todas las hormigas activas, tal vez
+// haciendo click al número de hormigas activas; ahí te aparece la lista») ===
+// La lista ya existía pero sin puerta: era el #antList de la barra lateral, sepultado por la regla «MODO
+// SOLO COLONIA». En vez de destapar la barra entera (340 px menos de terrario), la puerta pasa a ser el
+// número de la tira viva, y la hoja es la única que enseña el elenco - mismo sitio, mismo gesto y misma
+// caja de scroll que el inventario, con su pie anclado para que la última hormiga no quede nunca cortada.
+let _antListAbierta=false;
+const _ROL_ICONO={OBRERA:'🐜',EXCAVADORA:'⛏',EXPLORADORA:'🔍',NODRIZA:'🍼',RECOLECTORA:'🍯',REINA:'👑'};
+const _ROL_COL={OBRERA:'#ffcc00',EXCAVADORA:'#ff3b30',EXPLORADORA:'#00e5ff',NODRIZA:'#b47aff',RECOLECTORA:'#ffcc00',REINA:'#ffdd55'};
+// Ordenadas por lo que estan haciendo, no por el carnet: al principio de la colonia todo el mundo es OBRERA
+// (role='OBRERA' en app.js:1879, el oficio llega despues) y agrupar por oficio habria dejado un unico bloque
+// de 14 filas sin informacion. Agrupar por tarea si la da, y el oficio sale como etiqueta en la fila.
+const _GRUPOS=[
+  {k:'CAVANDO', n:'CAVANDO', i:'⛏', col:'#ff3b30', est:['CAVANDO']},
+  {k:'COMIDA', n:'BUSCAN O TRAEN COMIDA', i:'🍯', col:'#ffcc00', est:['VOLVER_COMIDA','BUSCAR']},
+  {k:'EXPLORA', n:'EXPLORANDO', i:'🔍', col:'#00e5ff', est:['EXPLORAR']},
+  {k:'OBRAS', n:'SACAN TIERRA Y BASURA', i:'🪨', col:'#e08a5a', est:['VOLVER_TIERRA','LLEVANDO_BASURA']},
+  {k:'TANDEM', n:'EN TANDEM', i:'🤝', col:'#b47aff', est:['TANDEM_LEADER','TANDEM_FOLLOWER']},
+  {k:'DESCANSO', n:'DESCANSANDO', i:'💤', col:'#6b7cff', est:['DESCANSAR']},
+  {k:'SUELTA', n:'SUELTAS, SIN TAREA', i:'·', col:'#8a7a5a', est:['IDLE']},
+];
+const _HACE_PRIOR={}; _GRUPOS.forEach((g,gi)=>g.est.forEach(s=>{ _HACE_PRIOR[s]=gi; }));
+function _haceAhora(w){
+  // una frase, no un enum: el dueño quiere entender la fila sin leer el codigo
+  try{
+    // breves a proposito: caben en UNA linea de 200 px, que es lo que hace la lista escaneable de un vistazo
+    if(w.state==='CAVANDO') return 'cava la pared del tunel';
+    if(w.state==='VOLVER_COMIDA') return 'lleva '+((w.food&&FOOD_DEFS[w.food.type]&&FOOD_DEFS[w.food.type].name)||'comida')+' al almacen';
+    if(w.state==='BUSCAR') return 'busca comida en el nido';
+    if(w.state==='EXPLORAR') return 'explora y abre camino';
+    if(w.state==='VOLVER_TIERRA') return 'saca tierra al vertedero';
+    if(w.state==='LLEVANDO_BASURA') return 'saca basura del nido';
+    if(w.state==='TANDEM_LEADER') return 'jala a una companera';
+    if(w.state==='TANDEM_FOLLOWER') return 'se deja jalar, cargada';
+    if(w.state==='DESCANSAR') return 'descansa en la camara';
+    if(w.state==='IDLE') return 'anda suelta, sin tarea';
+    return (w.state||'?').toLowerCase().replace(/_/g,' ');
+  }catch(e){ return '—'; }
+}
+function pintarListaHormigas(){
+  const body=document.getElementById('antListBody'); if(!body) return;
+  const activa=workers.filter(w=>w && !w.dead);
+  const porRol={};
+  for(const w of activa) porRol[w.role]=(porRol[w.role]||0)+1;
+  let html='';
+  html += '<div style="background:#2a0f00;border:3px solid #000;padding:7px 8px">'
+    + '<div style="display:flex;align-items:baseline;gap:6px"><span style="font-size:16px">🐜</span>'
+    + '<b style="font-family:\'Press Start 2P\',monospace;font-size:16px;color:#ffcc00;text-shadow:1px 1px 0 #000">'+activa.length+'</b>'
+    + '<span style="font-family:\'VT323\',monospace;font-size:13px;color:#c9b896">hormigas activas</span></div>'
+    + '<div style="font-family:\'VT323\',monospace;font-size:12px;color:#8a7a5a;line-height:1.15;margin-top:4px">'
+    + Object.keys(porRol).sort().map(r=>(_ROL_ICONO[r]||'🐜')+' '+r+' ×'+porRol[r]).join(' · ')
+    + (brood&&brood.length? ' · cría en camino: '+brood.length : '')
+    + '</div></div>';
+  if(!activa.length){
+    html += '<div style="background:#000;border:2px solid #000;padding:8px;font-family:\'VT323\',monospace;font-size:13px;color:#c9b896;line-height:1.2">No queda ninguna obrera en pie. Hay que esperar a que eclosione la cr&iacute;a de la c&aacute;mara.</div>';
+  } else {
+    const cubiertos=new Set();
+    for(const g of _GRUPOS){
+      const arr=[];
+      activa.forEach((w)=>{ const i=workers.indexOf(w); if(g.est.indexOf(w.state)>=0){ arr.push([w,i]); cubiertos.add(i); } });
+      if(!arr.length) continue;
+      arr.sort((a,b)=>String(antDisplayName(a[0])).localeCompare(String(antDisplayName(b[0]))));
+      html += '<div style="font-family:\'Press Start 2P\',monospace;font-size:6px;color:'+g.col+';letter-spacing:.3px;margin-top:4px;display:flex;align-items:center;gap:5px">'
+        + '<span style="font-size:11px">'+g.i+'</span>'+g.n+' · '+arr.length+'</div>';
+      for(const [w,i] of arr) html += _filaHormiga(w,i);
+    }
+    const resto=activa.map(w=>[w,workers.indexOf(w)]).filter(p=>!cubiertos.has(p[1]));
+    if(resto.length){
+      html += '<div style="font-family:\'Press Start 2P\',monospace;font-size:6px;color:#8a7a5a;letter-spacing:.3px;margin-top:4px">· EN OTRA TAREA · '+resto.length+'</div>';
+      for(const [w,i] of resto) html += _filaHormiga(w,i);
+    }
+  }
+  if(body.dataset.stamp!==html){ body.innerHTML=html; body.dataset.stamp=html; }
+  for(const b2 of body.querySelectorAll('.ant-row')){
+    if(b2.dataset.wired) continue; b2.dataset.wired='1';
+    b2.onclick=(ev)=>{ ev.stopPropagation(); const i=parseInt(b2.dataset.antI,10); const w=workers[i]; if(!w) return;
+      try{ workers.forEach(a=>a.selected=false); w.selected=true; selectedAntIndex=i; }catch(e){}
+      cerrarListaHormigas();
+      try{ showAntProfile(w); }catch(e){}
+    };
+  }
+}
+function _filaHormiga(w,i){
+  const facCol=((society&&society.factions||[]).find(f=>f.id===w.faction)||{}).color || (_ROL_COL[w.role]||'#ffcc00');
+  const col=_ROL_COL[w.role]||'#ffcc00';
+  let mood='😐';
+  if(w.mood){ if(w.mood.anger>0.62) mood='😠'; else if(w.mood.sadness>0.62) mood='😢'; else if(w.mood.fear>0.55) mood='😨'; else if(w.mood.joy>0.72) mood='😊'; else if(w.mood.stress>0.65) mood='😓'; }
+  const herra={pick:'⛏',basket:'🧺',trowel:'🪝'}[w.tool]||'';
+  const ageD=(w.age/DAY_LENGTH).toFixed(1), maxD=Math.max(1,Math.round(w.maxAge/DAY_LENGTH));
+  // Dos lineas por hormiga, siempre: arriba el nombre con su oficio, su vida y su edad; abajo, entero y en una
+  // linea, lo que esta haciendo. Como estaba al principio, el bloque de vida/edad enmedio-partia la frase en dos
+  // lineas y cada fila media 90 px: en una ventana de 760 solo se veian 4 hormigas de las 14. Asi, 60 px por
+  // fila y 7-8 a la vista. Si la frase no cupiera, se corta con puntos suspensivos y la frase entera esta en el
+  // `title` de la fila... y sobre todo, en el perfil, que es para lo que se pincha la fila.
+
+  return '<button class="ant-row'+(w.selected?' ant-row-sel':'')+'" data-ant-i="'+i+'"'+(w.selected?' data-sel="1"':'')+' title="Ver el perfil de '+antDisplayName(w)+'\nOficio: '+w.role+' · gen '+(w.genome&&w.genome.gen||'?')+'">'
+    + '<span style="display:flex;align-items:center;gap:5px;min-width:0;width:100%">'
+    + '<span style="width:16px;height:16px;flex-shrink:0;display:grid;place-items:center;background:#000;border:2px solid '+facCol+';font-family:\'Press Start 2P\',monospace;font-size:6px;color:'+col+'">'+((w.role||'?')[0])+'</span>'
+    + '<b style="flex:1;min-width:0;font-family:\'Press Start 2P\',monospace;font-size:7px;color:#fff8dc;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+antDisplayName(w)+'</b>'
+    + (w.role&&w.role!=='OBRERA'? '<span style="font-family:\'Press Start 2P\',monospace;font-size:5px;color:'+col+';line-height:1;flex-shrink:0">'+w.role+'</span>' : '')
+    + '<span style="flex-shrink:0;font-family:\'Press Start 2P\',monospace;font-size:5px;color:'+(w.health<40?'#ff3b30':'#7a6a4e')+';line-height:1;text-align:right;white-space:nowrap">❤'+Math.floor(w.health)+'% · '+ageD+'/'+maxD+'d</span>'
+    + '<span style="font-size:12px;line-height:1;flex-shrink:0;width:14px;text-align:center">'+mood+'</span>'
+    + '</span>'
+    + '<span style="display:flex;align-items:baseline;gap:5px;margin-top:4px;width:100%">'
+    + '<span style="flex:1;min-width:0;font-family:\'VT323\',monospace;font-size:13px;color:#c9b896;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+_haceAhora(w)+'</span>'
+    + (herra? '<span style="font-size:11px;line-height:1;flex-shrink:0">'+herra+'</span>' : '')
+    + '</span></button>';
+}
+function abrirListaHormigas(){
+  const sh=document.getElementById('antListSheet'); if(!sh) return;
+  try{ cerrarInventario(); }catch(e){}
+  try{ closeAntProfile(); }catch(e){}
+  try{ closeQueenProfile(); }catch(e){}
+  _antListAbierta=true; sh.setAttribute('data-open','1'); sh.style.display='flex';
+  _bajoCalendario(sh);
+  pintarListaHormigas();
+  const b=document.getElementById('btnAntList'); if(b) b.setAttribute('data-open','1');
+  requestAnimationFrame(()=>{ sh.style.transform='translateY(0) scaleY(1)'; sh.style.opacity='1'; asentarHoja(sh); });
+}
+function cerrarListaHormigas(){
+  const sh=document.getElementById('antListSheet'); if(!sh) return;
+  _antListAbierta=false; sh.removeAttribute('data-open');
+  const b=document.getElementById('btnAntList'); if(b) b.removeAttribute('data-open');
+  sh.style.transform='translateY(-12px) scaleY(0)'; sh.style.opacity='0';
+  setTimeout(()=>{ if(!_antListAbierta) sh.style.display='none'; }, 240);
+}
+window.abrirListaHormigas=abrirListaHormigas; window.cerrarListaHormigas=cerrarListaHormigas;
+function initListaHormigas(){
+  const b=document.getElementById('btnAntList');
+  if(b && !b.dataset.wired){ b.dataset.wired='1'; b.setAttribute('aria-expanded','false'); b.onclick=(e)=>{ if(e) e.stopPropagation(); if(_antListAbierta){ cerrarListaHormigas(); } else { abrirListaHormigas(); } b.setAttribute('aria-expanded', String(_antListAbierta)); }; }
+  const c=document.getElementById('btnCloseAntList');
+  if(c && !c.dataset.wired){ c.dataset.wired='1'; c.onclick=cerrarListaHormigas; }
+  const sh=document.getElementById('antListSheet');
+  if(sh && !sh.dataset.wired){ sh.dataset.wired='1'; sh.onclick=(e)=>{ if(e.target===sh) cerrarListaHormigas(); }; }
+  window.addEventListener('keydown', e=>{
+    if(e.key==='Escape' && _antListAbierta){ cerrarListaHormigas(); return; }
+    if((e.key==='l'||e.key==='L') && _topoHasWorld && !e.ctrlKey && !e.metaKey && !e.altKey){
+      const t=e.target; if(t && (t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable)) return;
+      e.preventDefault(); if(_antListAbierta) cerrarListaHormigas(); else abrirListaHormigas();
+    }
+  });
+}
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', initListaHormigas);
+else initListaHormigas();
 setTimeout(initInventarioHud, 600);
