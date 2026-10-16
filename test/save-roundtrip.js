@@ -6,7 +6,7 @@
 const fs = require('fs');
 const vm = require('vm');
 
-const code = fs.readFileSync('/home/user/ant-farm-rpg/js/app.js', 'utf8');
+const code = require('./core-carga.js').conCore(fs.readFileSync('/home/user/ant-farm-rpg/js/app.js', 'utf8'));
 
 // ---- localStorage en memoria ----
 const store = new Map();

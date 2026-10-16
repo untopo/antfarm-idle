@@ -12,7 +12,7 @@ const fs = require('fs');
 const vm = require('vm');
 const appPath = __dirname + '/../ant-farm-rpg/js/app.js';
 const htmlPath = __dirname + '/../ant-farm-rpg/index.html';
-const code = fs.readFileSync(appPath, 'utf8');
+const code = require('./core-carga.js').conCore(fs.readFileSync(appPath, 'utf8'));
 const html = fs.readFileSync(htmlPath, 'utf8');
 
 /* ================= 1) revision estatica: nada de dialogos nativos ================= */

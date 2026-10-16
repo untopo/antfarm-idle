@@ -1141,7 +1141,7 @@ function tryBuildComplexStructure(ant, site){
     if(rr<0||rr>=ROWS||cc<0||cc>=COLS||soil[rr][cc]===1) return false;
   }
   // consume materiales
-  for(let k in def.need) worldMaterials[k]-=def.need[k];
+  pagar(worldMaterials, def.need);
   // ocupa celdas como suelo especial pero marca estructura
   for(let dy=0; dy<def.h; dy++) for(let dx=0; dx<def.w; dx++){
     const cc=site.c+dx, rr=site.r+dy;
@@ -1167,7 +1167,7 @@ function tryCraftTool(ant){
   if(!opts.length) return false;
   const t=opts[Math.floor(Math.random()*opts.length)];
   const def=TOOL_DEFS[t];
-  for(let k in def.need) worldMaterials[k]-=def.need[k];
+  pagar(worldMaterials, def.need);
   ant.tool=t; ant.toolBonus=def;
   pushEvent('evo',`🔧 ${ant.id} forja ${def.name} ${def.icon}`,`Herramienta - ${t}`);
   pushToast(ant.x, ant.y-14, def.icon+' '+def.name, '#ffcc00', 1.8);
@@ -1696,9 +1696,10 @@ function enforceQueenCap(motivo){
   }
   return salidas;
 }
-function startReserveFood(){ return Math.max(5, Math.min(20, Math.round(12*worldAreaRatio()))); }
-function startSurfaceFood(){ return Math.max(2, Math.min(10, Math.round(5*worldAreaRatio()))); }
-function surfaceFoodCap(){ return Math.max(3, Math.min(14, Math.round(5*worldAreaRatio()*1.6))); }
+// Las formulas de reservas viven en core/economia.js; aqui solo se les pasa el tamano del mapa.
+function startReserveFood(){ return reservaInicialComida(worldAreaRatio()); }
+function startSurfaceFood(){ return reservaSuperficie(worldAreaRatio()); }
+function surfaceFoodCap(){ return topeSuperficie(worldAreaRatio()); }
 function findLargestChamber(){
   const visited=Array.from({length:ROWS},()=>Array(COLS).fill(false));
   let best=null, bestSize=0, bestCx=0, bestCy=0;
