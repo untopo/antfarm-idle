@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ANT FARM — Pixel Real v4 · 16-BIT</title>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache">
-<link rel="stylesheet" href="css/style.css?v=20261015y">
+<link rel="stylesheet" href="css/style.css?v=20261016a">
 
 <style id="topoHideUntilStart">
   #appRoot{display:none !important}
@@ -454,114 +454,112 @@
 </div>
 
 <!-- INVENTARIO DEL NIDO — mismo hueco que el perfil: uno u otro, nunca los dos -->
-<div id="invSheet" style="display:none;flex-direction:column;position:fixed;top:62px;right:14px;width:236px;max-width:236px;max-height:calc(100vh - 78px);background:#fff8dc;border:4px solid #000;border-top:none;box-shadow:6px 6px 0 #000;z-index:91;overflow:hidden;transform:translateY(-12px) scaleY(0);opacity:0;transition:transform 0.22s cubic-bezier(.2,.8,.2,1), opacity 0.22s;transform-origin:top">
+<div id="invSheet" style="display:none;flex-direction:column;position:fixed;top:76px;right:14px;width:330px;max-width:330px;max-height:calc(100vh - 92px);background:#fff8dc;border:4px solid #000;border-top:none;box-shadow:6px 6px 0 #000;z-index:91;overflow:hidden;transform:translateY(-12px) scaleY(0);opacity:0;transition:transform 0.22s cubic-bezier(.2,.8,.2,1), opacity 0.22s;transform-origin:top">
   <div style="background:#1a140f;flex:1 1 auto;min-height:0;display:flex;flex-direction:column">
     <div style="background:#000;padding:8px 10px;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #000">
-      <span style="font-family:'Press Start 2P',monospace;font-size:8px;color:#ffcc00;letter-spacing:0.3px">☰ ALMACÉN</span>
-      <button id="btnCloseInv" style="background:#ff3b30;color:#fff;border:2px solid #000;padding:4px 8px;font-family:'Press Start 2P',monospace;font-size:7px;cursor:pointer;box-shadow:2px 2px 0 #000">✕</button>
+      <span style="font-family:'Press Start 2P',monospace;font-size:12px;color:#ffcc00;letter-spacing:0.3px">☰ ALMACÉN</span>
+      <button id="btnCloseInv" style="background:#ff3b30;color:#fff;border:2px solid #000;padding:4px 8px;font-family:'Press Start 2P',monospace;font-size:10px;cursor:pointer;box-shadow:2px 2px 0 #000">✕</button>
     </div>
     <div id="invBody" class="hoja-cuerpo" style="padding:8px 10px;display:flex;flex-direction:column;gap:7px;overflow-y:auto;flex:1 1 auto;min-height:0"></div>
     <div style="padding:8px 10px;border-top:3px solid #000;background:#000">
-      <button id="btnInvGo" class="pixel-btn small" style="width:100%;padding:6px 4px;font-size:7px;background:#2a0f00;color:#ffcc00;border:2px solid #000;cursor:pointer">▶ IR AL ALMACÉN</button>
+      <button id="btnInvGo" class="pixel-btn small" style="width:100%;padding:6px 4px;font-size:10px;background:#2a0f00;color:#ffcc00;border:2px solid #000;cursor:pointer">▶ IR AL ALMACÉN</button>
     </div>
   </div>
 </div>
 
-<!-- LISTA DE HORMIGAS ACTIVAS — la puerta es el numero de la tira viva (2026-10-16). Misma caja, mismo
-     pie anclado y mismo cuerpo scrolleable que la hoja del almacen, para que la ultima hormiga se vea entera. -->
-<div id="antListSheet" style="display:none;flex-direction:column;position:fixed;top:62px;right:14px;width:236px;max-width:236px;max-height:calc(100vh - 78px);background:#fff8dc;border:4px solid #000;border-top:none;box-shadow:6px 6px 0 #000;z-index:91;overflow:hidden;transform:translateY(-12px) scaleY(0);opacity:0;transition:transform 0.22s cubic-bezier(.2,.8,.2,1), opacity 0.22s;transform-origin:top">
-  <div style="background:#1a140f;flex:1 1 auto;min-height:0;display:flex;flex-direction:column">
-    <div style="background:#000;padding:8px 10px;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #000">
-      <span style="font-family:'Press Start 2P',monospace;font-size:8px;color:#ffcc00;letter-spacing:0.3px">🐜 HORMIGAS</span>
-      <button id="btnCloseAntList" style="background:#ff3b30;color:#fff;border:2px solid #000;padding:4px 8px;font-family:'Press Start 2P',monospace;font-size:7px;cursor:pointer;box-shadow:2px 2px 0 #000">✕</button>
+<!-- LISTA DE HORMIGAS ACTIVAS — la puerta es el numero de la barra de arriba (Topo: «que al pinchar
+     cuantas hormigas hay aparezca la lista»). Misma piel que las demas hojas: caja crema, marco negro,
+     el cuerpo scrollea y el pie no se mueve. -->
+<div id="rosterSheet" style="display:none;flex-direction:column;position:fixed;top:76px;right:14px;width:330px;max-width:330px;max-height:calc(100vh - 92px);background:#fff8dc;border:4px solid #000;border-top:none;box-shadow:6px 6px 0 #000;z-index:91;overflow:hidden;transform:translateY(-12px) scaleY(0);opacity:0;transition:transform 0.22s cubic-bezier(.2,.8,.2,1), opacity 0.22s;transform-origin:top">
+  <div style="flex:1 1 auto;min-height:0;display:flex;flex-direction:column;background:#1a140f">
+    <div style="background:#000;padding:9px 10px;display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:3px solid #000">
+      <span style="font-family:'Press Start 2P',monospace;font-size:11px;color:#ffcc00;letter-spacing:0.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span id="rosterTitle">🐜 HORMIGAS ACTIVAS</span></span>
+      <button id="btnCloseRoster" style="background:#ff3b30;color:#fff;border:2px solid #000;padding:6px 9px;font-family:'Press Start 2P',monospace;font-size:10px;cursor:pointer;box-shadow:2px 2px 0 #000;line-height:1">✕</button>
     </div>
-    <div id="antListBody" class="hoja-cuerpo" style="padding:8px 10px;display:flex;flex-direction:column;gap:6px;overflow-y:auto;flex:1 1 auto;min-height:0"></div>
-    <div style="padding:7px 10px;border-top:3px solid #000;background:#000;font-family:'VT323',monospace;font-size:11px;color:#8a7a5a;line-height:1.1">clic en una hormiga → su perfil · ESC cierra · tecla L abre y cierra</div>
+    <div id="rosterFiltros" style="display:flex;gap:4px;padding:8px 10px;background:#0a0a0a;border-bottom:3px solid #000;flex-wrap:wrap"></div>
+    <div id="rosterCuerpo" class="hoja-cuerpo" style="padding:8px 10px 10px;display:flex;flex-direction:column;gap:6px;overflow-y:auto;flex:1 1 auto;min-height:0"></div>
+    <div style="padding:8px 10px;border-top:3px solid #000;background:#000;font-family:'VT323',monospace;font-size:14px;color:#8a7a5a;line-height:1.15">Pincha una fila para abrir su perfil y su cerebro.</div>
   </div>
 </div>
+
 <!-- PERFIL DE HORMIGA — compacto sin scroll, cabe completo 220x~420 -->
-<div id="antProfile" class="hoja-cuerpo" style="display:none;position:fixed;top:0;right:14px;width:220px;max-width:220px;max-height:calc(100vh - 220px);background:#fff8dc;border:4px solid #000;border-top:none;box-shadow:6px 6px 0 #000;z-index:90;overflow:hidden;transform:translateY(-12px) scaleY(0);opacity:0;transition:transform 0.22s cubic-bezier(.2,.8,.2,1), opacity 0.22s;transform-origin:top">
+<div id="antProfile" class="hoja-cuerpo" style="display:none;position:fixed;top:0;right:14px;width:326px;max-width:326px;max-height:calc(100vh - 240px);background:#fff8dc;border:4px solid #000;border-top:none;box-shadow:6px 6px 0 #000;z-index:90;overflow:hidden;transform:translateY(-12px) scaleY(0);opacity:0;transition:transform 0.22s cubic-bezier(.2,.8,.2,1), opacity 0.22s;transform-origin:top">
   <div style="background:#1a140f;min-height:100%;display:flex;flex-direction:column">
     <div style="background:#000;padding:8px 10px;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #000">
-      <span style="font-family:'Press Start 2P',monospace;font-size:8px;color:#ffcc00;letter-spacing:0.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px" id="profileTitle">A3X9 [RECOLECTORA]</span>
-      <button id="btnCloseProfile" style="background:#ff3b30;color:#fff;border:2px solid #000;padding:4px 8px;font-family:'Press Start 2P',monospace;font-size:7px;cursor:pointer;box-shadow:2px 2px 0 #000">✕</button>
+      <span style="font-family:'Press Start 2P',monospace;font-size:12px;color:#ffcc00;letter-spacing:0.3px;line-height:1.25;overflow-wrap:break-word;max-width:230px" id="profileTitle">A3X9 [RECOLECTORA]</span>
+      <button id="btnVolver" title="Volver a la lista de hormigas" style="display:none;background:#1a140f;color:#ffcc00;border:2px solid #000;padding:6px 7px;font-family:'Press Start 2P',monospace;font-size:10px;cursor:pointer;box-shadow:2px 2px 0 #000;line-height:1">◂ LISTA</button><button id="btnCloseProfile" style="background:#ff3b30;color:#fff;border:2px solid #000;padding:4px 8px;font-family:'Press Start 2P',monospace;font-size:10px;cursor:pointer;box-shadow:2px 2px 0 #000">✕</button>
     </div>
     <div style="padding:8px 10px;display:flex;flex-direction:column;gap:8px">
       <div style="display:flex;gap:8px;align-items:flex-start">
-        <div style="width:64px;height:64px;min-width:64px;background:#000;border:2px solid #000;display:grid;place-items:center;position:relative;overflow:hidden;box-shadow:2px 2px 0 #000">
-          <canvas id="profileCanvas" width="64" height="64" style="image-rendering:pixelated;width:64px;height:64px"></canvas>
+        <div style="width:88px;height:88px;min-width:88px;background:#000;border:2px solid #000;display:grid;place-items:center;position:relative;overflow:hidden;box-shadow:2px 2px 0 #000">
+          <canvas id="profileCanvas" width="88" height="88" style="image-rendering:pixelated;width:88px;height:88px"></canvas>
           <span id="profileFactionDot" style="position:absolute;top:3px;right:3px;width:10px;height:10px;background:#ffcc00;border:2px solid #000;box-shadow:1px 1px 0 #000"></span>
         </div>
         <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
-          <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#8a7a5a;letter-spacing:0.4px">ID • EDAD • VIDA</div>
-          <div style="font-family:'Press Start 2P',monospace;font-size:8px;color:#fff;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="profileId">A3X9 — 4d / 12d • ❤ 87%</div>
-          <div style="font-family:'VT323',monospace;font-size:12px;color:#c9b896;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="profileRole">RECOLECTORA • F0 • GEN-3</div>
-          <div style="font-family:'Press Start 2P',monospace;font-size:5px;color:#5a4a3a;margin-top:2px">ÁNIMO</div>
+          <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#8a7a5a;letter-spacing:0.4px">ID • EDAD • VIDA</div>
+          <div style="font-family:'Press Start 2P',monospace;font-size:11px;color:#fff;line-height:1.4" id="profileId">A3X9 — 4d / 12d • ❤ 87%</div>
+          <div style="font-family:'VT323',monospace;font-size:17px;color:#c9b896;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="profileRole">RECOLECTORA • F0 • GEN-3</div>
+          <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#5a4a3a;margin-top:2px">ÁNIMO</div>
         </div>
       </div>
       <div id="profileMoodIcons" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px"></div>
-      <div style="display:flex;flex-wrap:wrap;gap:3px" id="profileTabs">
-        <button class="pixel-btn small" data-ptab="rasgos" style="flex:1 1 31%;min-width:0;background:var(--amber);color:#000;padding:5px 0;font-size:6px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">RASGOS</button>
-        <button class="pixel-btn small" data-ptab="estado" style="flex:1 1 31%;min-width:0;background:#1a140f;color:#8a7a5a;padding:5px 0;font-size:6px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">ESTADO</button>
-        <button class="pixel-btn small" data-ptab="arbol" style="flex:1 1 31%;min-width:0;background:#1a140f;color:#8a7a5a;padding:5px 0;font-size:6px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">ÁRBOL</button>
-        <button class="pixel-btn small" data-ptab="hist" style="flex:1 1 31%;min-width:0;background:#1a140f;color:#8a7a5a;padding:5px 0;font-size:6px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">HIST</button>
-        <button class="pixel-btn small" data-ptab="cerebro" title="Qué está notando y qué decide, en palabras" style="flex:1 1 31%;min-width:0;background:#1a140f;color:#8a7a5a;padding:5px 0;font-size:6px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">CEREBRO</button>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px" id="profileTabs">
+        <button class="pixel-btn small" data-ptab="rasgos" style="min-width:0;width:auto;background:var(--amber);color:#000;padding:5px 0;font-size:9px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">RASGOS</button>
+        <button class="pixel-btn small" data-ptab="estado" style="min-width:0;width:auto;background:#1a140f;color:#8a7a5a;padding:5px 0;font-size:9px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">ESTADO</button>
+        <button class="pixel-btn small" data-ptab="arbol" style="min-width:0;width:auto;background:#1a140f;color:#8a7a5a;padding:5px 0;font-size:9px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">ÁRBOL</button>
+        <button class="pixel-btn small" data-ptab="cerebro" style="min-width:0;width:auto;background:#1a140f;color:#8a7a5a;padding:6px 0;font-size:10px;min-height:26px;letter-spacing:0;white-space:nowrap">🧠 MENTE</button>
+        <button class="pixel-btn small" data-ptab="hist" style="min-width:0;width:auto;background:#1a140f;color:#8a7a5a;padding:5px 0;font-size:9px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">HIST</button>
       </div>
       <div id="profileTab_rasgos">
         <div style="background:#000;border:2px solid #000;padding:6px">
-          <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#8a7a5a;letter-spacing:0.3px">RASGOS 0-100 — legibles</div>
+          <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#8a7a5a;letter-spacing:0.3px">RASGOS · de 0 a 100</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:6px" id="profileTraits"></div>
+          <div id="profileTraitsGist" style="font-family:'VT323',monospace;font-size:15px;color:#c9b896;line-height:1.2;margin-top:6px;padding-top:5px;border-top:2px solid #1a1a1a">—</div>
         </div>
       </div>
       <div id="profileTab_estado" style="display:none">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
           <div style="background:#000;border:2px solid #000;padding:6px;text-align:center">
-            <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#8a7a5a">FITNESS</div>
-            <div style="font-family:'Press Start 2P',monospace;font-size:12px;color:#2de67a;line-height:1;margin-top:2px" id="profileFitness">1.24</div>
-            <div style="font-family:'VT323',monospace;font-size:10px;color:#8a7a5a;line-height:1" id="profileDeliveries">3 ent • 2 exc</div>
+            <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#8a7a5a">QUÉ TAN BIEN LE VA</div>
+            <div style="font-family:'Press Start 2P',monospace;font-size:17px;color:#2de67a;line-height:1;margin-top:2px" id="profileFitness">1.24</div>
+            <div style="font-family:'VT323',monospace;font-size:14px;color:#8a7a5a;line-height:1" id="profileDeliveries">3 ent • 2 exc</div>
           </div>
           <div style="background:#000;border:2px solid #000;padding:6px;text-align:center">
-            <div style="font-family:'Press Start 2P',monospace;font-size:5px;color:#8a7a5a">CRIMEN • SEG</div>
-            <div style="font-family:'Press Start 2P',monospace;font-size:12px;color:#ff3b30;line-height:1;margin-top:2px" id="profileCrimes">0 • 0</div>
-            <div style="font-family:'VT323',monospace;font-size:10px;color:#8a7a5a;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="profileBelief">— sin culto</div>
+            <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#8a7a5a">PELEAS • SEGUIDORAS</div>
+            <div style="font-family:'Press Start 2P',monospace;font-size:17px;color:#ff3b30;line-height:1;margin-top:2px" id="profileCrimes">0 • 0</div>
+            <div style="font-family:'VT323',monospace;font-size:14px;color:#8a7a5a;line-height:1.15" id="profileBelief">— sin culto</div>
           </div>
         </div>
       </div>
       <div id="profileTab_arbol" style="display:none">
         <div style="background:#000;border:2px solid #000;padding:6px">
-          <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#b47aff">ÁRBOL</div>
-          <div style="font-family:'VT323',monospace;font-size:11px;color:#c9b896;margin-top:4px;line-height:1.25;max-height:none;overflow:visible" id="profileTree">—</div>
+          <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#b47aff">ÁRBOL</div>
+          <div style="font-family:'VT323',monospace;font-size:16px;color:#c9b896;margin-top:4px;line-height:1.25;max-height:none;overflow:visible" id="profileTree">—</div>
+        </div>
+      </div>
+      <div id="profileTab_cerebro" style="display:none">
+        <div style="background:#000;border:2px solid #000;padding:7px">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+            <span style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00;letter-spacing:0.3px">🧠 LO QUE ESTA PENSANDO</span>
+            <button class="pixel-btn small" id="btnCerebroNumeros" title="Enseñar los numeros crudos de las neuronas" style="min-width:0;width:auto;padding:4px 6px;font-size:9px;min-height:20px;background:#1a140f;color:#8a7a5a;border:2px solid #000;letter-spacing:0;white-space:nowrap">ver numeros</button>
+          </div>
+          <div style="font-family:'VT323',monospace;font-size:15px;color:#8a7a5a;line-height:1.15;margin-top:3px">Su cuerpo y sus antenas le dicen estas cosas, y de ahí sale lo que hace.</div>
+          <div id="profileMindGist" style="font-family:'VT323',monospace;font-size:17px;color:#fff8dc;line-height:1.2;margin-top:6px;background:#2a0f00;border:2px solid #000;padding:6px 7px">—</div>
+          <div id="profileMind" style="margin-top:6px;display:flex;flex-direction:column;gap:3px"></div>
+          <canvas id="profileNn" width="300" height="120" style="width:100%;height:120px;display:block;margin-top:7px;image-rendering:pixelated;background:#050505;border:2px solid #000"></canvas>
+          <div style="font-family:'VT323',monospace;font-size:13px;color:#7a6a4e;line-height:1.2;margin-top:4px">Cada cuadro es una neurona. Las lineas <b style="color:#2de67a">verdes</b> empujan y las <b style="color:#ff3b30">rojas</b> frenan: cuanto mas gruesa, mas manda. IZQUIERDA = lo que percibe · CENTRO = como lo mezcla · DERECHA = lo que decide (<span style="color:#ffcc00">GIRO</span>, <span style="color:#2de67a">VEL</span>, <span style="color:#ff3b30">CAVA</span>, <span style="color:#00e5ff">T1</span>, <span style="color:#b47aff">T2</span>).</div>
+          <div id="profileMindNums" style="display:none;margin-top:6px;font-family:'VT323',monospace;font-size:14px;color:#c9b896;line-height:1.25;white-space:pre-wrap"></div>
         </div>
       </div>
       <div id="profileTab_hist" style="display:none">
         <div style="background:#0a0a1a;border:2px solid #1a1a3a;padding:6px">
-          <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#00e5ff">HISTORIAL — 5 últimos</div>
-          <div style="font-family:'VT323',monospace;font-size:11px;color:#8a7a5a;margin-top:4px;line-height:1.25;max-height:none;overflow:visible" id="profileHistory"></div>
-        </div>
-      </div>
-      <div id="profileTab_cerebro" style="display:none">
-        <div style="background:#000;border:2px solid #000;padding:6px">
-          <div style="display:flex;align-items:baseline;justify-content:space-between;gap:6px">
-            <span style="font-family:'Press Start 2P',monospace;font-size:6px;color:#8a7a5a;letter-spacing:0.3px">CEREBRO</span>
-            <span style="font-family:'VT323',monospace;font-size:11px;color:#ffcc00;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="profCerebroQuien">—</span>
-          </div>
-          <canvas id="profNnCanvas" width="196" height="118" style="display:block;width:100%;max-width:100%;height:auto;margin-top:6px;background:#050505;border:2px solid #1a140f;image-rendering:pixelated;box-sizing:border-box"></canvas>
-          <div style="font-family:'VT323',monospace;font-size:11px;color:#7a6a4e;line-height:1.15;margin-top:5px">11 sentidos · memoria de bulto · 5 decisiones. <b style="color:#2de67a">Verde</b> empuja, <b style="color:#ff3b30">rojo</b> frena; más gruesa la línea, más manda.</div>
-        </div>
-        <div style="background:#000;border:2px solid #000;padding:6px;margin-top:7px">
-          <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#ffcc00;letter-spacing:0.3px">LO QUE ESTÁ NOTANDO</div>
-          <div style="font-family:'VT323',monospace;font-size:11px;color:#7a6a4e;line-height:1;margin-top:3px">lo último que leyó su cerebro · pasa de nuevo cada ratito</div>
-          <div id="profSensors" style="display:flex;flex-direction:column;gap:6px;margin-top:6px"></div>
-        </div>
-        <div style="background:#000;border:2px solid #000;padding:6px;margin-top:7px">
-          <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#2de67a;letter-spacing:0.3px">LO QUE DECIDE AHORA</div>
-          <div style="font-family:'VT323',monospace;font-size:11px;color:#7a6a4e;line-height:1;margin-top:3px">la salida del cerebro, en palabras · el numerito está al pasar el ratón</div>
-          <div id="profOuts" style="display:flex;flex-direction:column;gap:6px;margin-top:6px"></div>
+          <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#00e5ff">HISTORIAL — 5 últimos</div>
+          <div style="font-family:'VT323',monospace;font-size:16px;color:#8a7a5a;margin-top:4px;line-height:1.25;max-height:none;overflow:visible" id="profileHistory"></div>
         </div>
       </div>
       <div style="display:flex;gap:6px;margin-top:2px">
-        <button id="btnFollowAnt" class="pixel-btn small" style="flex:1;padding:6px 4px;font-size:7px">👁 SEGUIR</button>
-        <button id="btnExileAnt" class="pixel-btn small" style="flex:1;background:#ff3b30;color:#fff;padding:6px 4px;font-size:7px">⚔ EXILIAR</button>
+        <button id="btnFollowAnt" class="pixel-btn small" style="flex:1;padding:6px 4px;font-size:10px">👁 SEGUIR</button>
+        <button id="btnExileAnt" class="pixel-btn small" style="flex:1;background:#ff3b30;color:#fff;padding:6px 4px;font-size:10px">⚔ EXILIAR</button>
       </div>
     </div>
   </div>
@@ -569,93 +567,93 @@
 
 
 <!-- PERFIL DE REINA — unificado visual con hormiga (220px, 64x64, tabs idénticos) -->
-<div id="queenProfile" class="hoja-cuerpo" style="display:none;position:fixed;top:0;right:14px;width:220px;max-width:220px;max-height:calc(100vh - 220px);background:#fff8dc;border:4px solid #000;border-top:none;box-shadow:6px 6px 0 #000;z-index:90;overflow:hidden;transform:translateY(-12px) scaleY(0);opacity:0;transition:transform 0.22s cubic-bezier(.2,.8,.2,1), opacity 0.22s;transform-origin:top">
+<div id="queenProfile" class="hoja-cuerpo" style="display:none;position:fixed;top:0;right:14px;width:326px;max-width:326px;max-height:calc(100vh - 240px);background:#fff8dc;border:4px solid #000;border-top:none;box-shadow:6px 6px 0 #000;z-index:90;overflow:hidden;transform:translateY(-12px) scaleY(0);opacity:0;transition:transform 0.22s cubic-bezier(.2,.8,.2,1), opacity 0.22s;transform-origin:top">
   <div style="background:#1a140f;min-height:100%;display:flex;flex-direction:column">
     <div style="background:#000;padding:8px 10px;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #000">
-      <span style="font-family:'Press Start 2P',monospace;font-size:8px;color:#ffcc00;letter-spacing:0.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px" id="queenProfileTitle">ADA 👑 REINA F0</span>
-      <button id="btnCloseQueen" style="background:#ff3b30;color:#fff;border:2px solid #000;padding:4px 8px;font-family:'Press Start 2P',monospace;font-size:7px;cursor:pointer;box-shadow:2px 2px 0 #000">✕</button>
+      <span style="font-family:'Press Start 2P',monospace;font-size:12px;color:#ffcc00;letter-spacing:0.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px" id="queenProfileTitle">ADA 👑 REINA F0</span>
+      <button id="btnVolverQ" title="Volver a la lista de hormigas" style="display:none;background:#1a140f;color:#ffcc00;border:2px solid #000;padding:6px 7px;font-family:'Press Start 2P',monospace;font-size:10px;cursor:pointer;box-shadow:2px 2px 0 #000;line-height:1">◂ LISTA</button><button id="btnCloseQueen" style="background:#ff3b30;color:#fff;border:2px solid #000;padding:4px 8px;font-family:'Press Start 2P',monospace;font-size:10px;cursor:pointer;box-shadow:2px 2px 0 #000">✕</button>
     </div>
     <div style="padding:8px 10px;display:flex;flex-direction:column;gap:8px">
       <div style="display:flex;gap:8px;align-items:flex-start">
-        <div style="width:64px;height:64px;min-width:64px;background:#000;border:2px solid #000;display:grid;place-items:center;position:relative;overflow:hidden;box-shadow:2px 2px 0 #000">
-          <canvas id="queenProfileCanvas" width="64" height="64" style="image-rendering:pixelated;width:64px;height:64px"></canvas>
+        <div style="width:88px;height:88px;min-width:88px;background:#000;border:2px solid #000;display:grid;place-items:center;position:relative;overflow:hidden;box-shadow:2px 2px 0 #000">
+          <canvas id="queenProfileCanvas" width="88" height="88" style="image-rendering:pixelated;width:88px;height:88px"></canvas>
           <span id="queenProfileDot" style="position:absolute;top:3px;right:3px;width:10px;height:10px;background:#ffcc00;border:2px solid #000;box-shadow:1px 1px 0 #000"></span>
-          <span style="position:absolute;bottom:2px;left:2px;background:#b47aff;color:#fff;font-family:'Press Start 2P',monospace;font-size:4px;padding:1px 3px;line-height:1">♛ REINA</span>
+          <span style="position:absolute;bottom:2px;left:2px;background:#b47aff;color:#fff;font-family:'Press Start 2P',monospace;font-size:9px;padding:1px 3px;line-height:1">♛ REINA</span>
         </div>
         <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
-          <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#8a7a5a;letter-spacing:0.4px">ID • EDAD • VIDA</div>
-          <div style="font-family:'Press Start 2P',monospace;font-size:8px;color:#fff;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:#000;padding:2px 4px;border:1px solid #1a1a1a" id="queenProfileId">sin colonia — elige un tamaño</div>
-          <div style="font-family:'VT323',monospace;font-size:12px;color:#c9b896;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="queenProfileRole">REINA • F0 • GEN-0</div>
-          <div style="font-family:'Press Start 2P',monospace;font-size:5px;color:#5a4a3a;margin-top:2px">ESTADO</div>
+          <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#8a7a5a;letter-spacing:0.4px">ID • EDAD • VIDA</div>
+          <div style="font-family:'Press Start 2P',monospace;font-size:12px;color:#fff;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:#000;padding:2px 4px;border:1px solid #1a1a1a" id="queenProfileId">sin colonia — elige un tamaño</div>
+          <div style="font-family:'VT323',monospace;font-size:17px;color:#c9b896;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="queenProfileRole">REINA • F0 • GEN-0</div>
+          <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#5a4a3a;margin-top:2px">ESTADO</div>
           <div style="display:flex;gap:4px;align-items:center">
             <div style="flex:1;height:8px;background:#1a1a1a;border:1px solid #000;position:relative;overflow:hidden"><div id="queenProgressBar" style="position:absolute;left:0;top:0;bottom:0;width:0%;background:#b47aff"></div></div>
-            <span style="font-family:'Press Start 2P',monospace;font-size:5px;color:#b47aff;white-space:nowrap" id="queenProgressLbl">0%</span>
+            <span style="font-family:'Press Start 2P',monospace;font-size:9px;color:#b47aff;white-space:nowrap" id="queenProgressLbl">0%</span>
           </div>
-          <div style="font-family:'VT323',monospace;font-size:10px;color:#8a7a5a;line-height:1" id="queenStateLabel">GRÁVIDA</div>
+          <div style="font-family:'VT323',monospace;font-size:14px;color:#8a7a5a;line-height:1" id="queenStateLabel">GRÁVIDA</div>
         </div>
       </div>
       <div id="queenProfileMood" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px"></div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:3px" id="queenProfileTabs">
-        <button class="pixel-btn small" data-qtab="rasgos" style="min-width:0;width:auto;background:var(--amber);color:#000;padding:5px 0;font-size:6px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">RASGOS</button>
-        <button class="pixel-btn small" data-qtab="estado" style="min-width:0;width:auto;background:#1a140f;color:#8a7a5a;padding:5px 0;font-size:6px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">ESTADO</button>
-        <button class="pixel-btn small" data-qtab="arbol" style="min-width:0;width:auto;background:#1a140f;color:#8a7a5a;padding:5px 0;font-size:6px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">ÁRBOL</button>
-        <button class="pixel-btn small" data-qtab="hist" style="min-width:0;width:auto;background:#1a140f;color:#8a7a5a;padding:5px 0;font-size:6px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">HIST</button>
+        <button class="pixel-btn small" data-qtab="rasgos" style="min-width:0;width:auto;background:var(--amber);color:#000;padding:5px 0;font-size:9px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">RASGOS</button>
+        <button class="pixel-btn small" data-qtab="estado" style="min-width:0;width:auto;background:#1a140f;color:#8a7a5a;padding:5px 0;font-size:9px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">ESTADO</button>
+        <button class="pixel-btn small" data-qtab="arbol" style="min-width:0;width:auto;background:#1a140f;color:#8a7a5a;padding:5px 0;font-size:9px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">ÁRBOL</button>
+        <button class="pixel-btn small" data-qtab="hist" style="min-width:0;width:auto;background:#1a140f;color:#8a7a5a;padding:5px 0;font-size:9px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">HIST</button>
       </div>
       <div id="queenTab_rasgos">
         <div style="background:#000;border:2px solid #000;padding:6px">
-          <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#ff6b9d;letter-spacing:0.3px">👑 PERSONALIDAD 6 RASGOS</div>
+          <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#ff6b9d;letter-spacing:0.3px">👑 PERSONALIDAD 6 RASGOS</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:6px" id="queenProfilePersonalities"></div>
-          <div style="font-family:'VT323',monospace;font-size:10px;color:#8a7a5a;margin-top:6px;line-height:1">Fertilidad=huevos/día • Feromona=control • Maternal=cuidado</div>
-          <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#8a7a5a;margin-top:8px">RASGOS BASE (genoma)</div>
+          <div style="font-family:'VT323',monospace;font-size:14px;color:#8a7a5a;margin-top:6px;line-height:1">Fertilidad=huevos/día • Feromona=control • Maternal=cuidado</div>
+          <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#8a7a5a;margin-top:8px">RASGOS BASE (genoma)</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:4px" id="queenProfileTraits"></div>
         </div>
       </div>
       <div id="queenTab_estado" style="display:none">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
           <div style="background:#000;border:2px solid #000;padding:6px;text-align:center">
-            <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#8a7a5a">NIVEL</div>
-            <div style="font-family:'Press Start 2P',monospace;font-size:12px;color:#ffcc00;line-height:1;margin-top:2px" id="queenGrowthLvl">0</div>
-            <div style="font-family:'VT323',monospace;font-size:10px;color:#8a7a5a;line-height:1" id="queenGrowthSize">48 px</div>
+            <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#8a7a5a">NIVEL</div>
+            <div style="font-family:'Press Start 2P',monospace;font-size:17px;color:#ffcc00;line-height:1;margin-top:2px" id="queenGrowthLvl">0</div>
+            <div style="font-family:'VT323',monospace;font-size:14px;color:#8a7a5a;line-height:1" id="queenGrowthSize">48 px</div>
           </div>
           <div style="background:#000;border:2px solid #000;padding:6px;text-align:center">
-            <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#8a7a5a">VIDA</div>
-            <div style="font-family:'Press Start 2P',monospace;font-size:12px;color:#2de67a;line-height:1;margin-top:2px" id="queenGrowthProg">0% vida</div>
-            <div style="font-family:'VT323',monospace;font-size:10px;color:#8a7a5a;line-height:1" id="queenHealthVal">100%</div>
+            <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#8a7a5a">VIDA</div>
+            <div style="font-family:'Press Start 2P',monospace;font-size:17px;color:#2de67a;line-height:1;margin-top:2px" id="queenGrowthProg">0% vida</div>
+            <div style="font-family:'VT323',monospace;font-size:14px;color:#8a7a5a;line-height:1" id="queenHealthVal">100%</div>
           </div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">
           <div style="background:#000;border:2px solid #000;padding:6px;text-align:center">
-            <div style="font-family:'Press Start 2P',monospace;font-size:5px;color:#8a7a5a">🥚 HUEVOS TOTAL</div>
-            <div style="font-family:'VT323',monospace;font-size:14px;color:#ffcc00" id="queenEggsLaid">0</div>
+            <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#8a7a5a">🥚 HUEVOS TOTAL</div>
+            <div style="font-family:'VT323',monospace;font-size:20px;color:#ffcc00" id="queenEggsLaid">0</div>
           </div>
           <div style="background:#000;border:2px solid #000;padding:6px;text-align:center">
-            <div style="font-family:'Press Start 2P',monospace;font-size:5px;color:#8a7a5a">🐣 CRÍAS / COLONIA</div>
-            <div style="font-family:'VT323',monospace;font-size:11px;color:#b47aff" id="queenBroodCount">0</div>
-            <div style="font-family:'VT323',monospace;font-size:10px;color:#00e5ff" id="queenFollowers">0 obreras</div>
+            <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#8a7a5a">🐣 CRÍAS / COLONIA</div>
+            <div style="font-family:'VT323',monospace;font-size:16px;color:#b47aff" id="queenBroodCount">0</div>
+            <div style="font-family:'VT323',monospace;font-size:14px;color:#00e5ff" id="queenFollowers">0 obreras</div>
           </div>
         </div>
         <div style="margin-top:6px;background:#000;border:2px solid #000;padding:6px">
-          <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#8a7a5a">GENOMA</div>
-          <div style="font-family:'VT323',monospace;font-size:11px;color:#c9b896" id="queenGenomeId">GEN-0 • — • 8 nodos</div>
-          <div style="font-family:'JetBrains Mono',monospace;font-size:8px;color:#5a5a5a;word-break:break-all" id="queenDnaStr">0000</div>
+          <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#8a7a5a">GENOMA</div>
+          <div style="font-family:'VT323',monospace;font-size:16px;color:#c9b896" id="queenGenomeId">GEN-0 • — • 8 nodos</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#5a5a5a;word-break:break-all" id="queenDnaStr">0000</div>
         </div>
       </div>
       <div id="queenTab_arbol" style="display:none">
         <div style="background:#000;border:2px solid #000;padding:6px">
-          <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#b47aff">🌳 LINAJE REAL</div>
-          <div style="font-family:'VT323',monospace;font-size:11px;color:#c9b896;margin-top:4px;line-height:1.25;max-height:none;overflow:visible" id="queenProfileTree">—</div>
+          <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#b47aff">🌳 LINAJE REAL</div>
+          <div style="font-family:'VT323',monospace;font-size:16px;color:#c9b896;margin-top:4px;line-height:1.25;max-height:none;overflow:visible" id="queenProfileTree">—</div>
         </div>
       </div>
       <div id="queenTab_hist" style="display:none">
         <div style="background:#0a0a1a;border:2px solid #1a1a3a;padding:6px">
-          <div style="font-family:'Press Start 2P',monospace;font-size:6px;color:#00e5ff">📜 HISTORIAL — 6 últimos</div>
-          <div style="font-family:'VT323',monospace;font-size:11px;color:#8a7a5a;margin-top:4px;line-height:1.25;max-height:none;overflow:visible" id="queenProfileHistory"></div>
+          <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#00e5ff">📜 HISTORIAL — 6 últimos</div>
+          <div style="font-family:'VT323',monospace;font-size:16px;color:#8a7a5a;margin-top:4px;line-height:1.25;max-height:none;overflow:visible" id="queenProfileHistory"></div>
         </div>
       </div>
       <div style="display:flex;gap:6px;margin-top:2px">
-        <button id="btnFollowQueen" class="pixel-btn small" style="flex:1;padding:6px 4px;font-size:7px">👁 SEGUIR</button>
-        <button id="btnFeedQueen" class="pixel-btn small" style="flex:1;background:#2de67a;color:#000;padding:6px 4px;font-size:7px">🍯 ALIMENTAR (2)</button>
-        <button id="btnMoveQueen" class="pixel-btn small" style="flex:1;background:#b47aff;color:#fff;padding:6px 4px;font-size:7px">🚚 MIGRAR</button>
+        <button id="btnFollowQueen" class="pixel-btn small" style="flex:1;padding:6px 4px;font-size:10px">👁 SEGUIR</button>
+        <button id="btnFeedQueen" class="pixel-btn small" style="flex:1;background:#2de67a;color:#000;padding:6px 4px;font-size:10px">🍯 ALIMENTAR (2)</button>
+        <button id="btnMoveQueen" class="pixel-btn small" style="flex:1;background:#b47aff;color:#fff;padding:6px 4px;font-size:10px">🚚 MIGRAR</button>
       </div>
     </div>
   </div>
@@ -666,42 +664,43 @@
 <!-- CALENDARIO PERMANENTE — híbrido A+C arte pixel madera + panal + teal -->
 
   <!-- HUD VEL+OBRERAS — barra única sobre calendario, réplica exacta mockup -->
-  <div id="velAntBar" style="position:fixed;right:14px;top:14px;z-index:999;width:auto;min-width:380px;max-width:calc(100vw - 28px);height:42px;box-sizing:border-box;background:#3e2a14;border:3px solid #000;box-shadow:4px 4px 0 #000;display:flex;align-items:stretch;overflow:hidden;image-rendering:pixelated;border-radius:2px">
-    <div style="position:absolute;inset:0;background:repeating-linear-gradient(0deg, transparent 0 5px, rgba(0,0,0,0.18) 5px 6px), linear-gradient(180deg,#4a321c 0%, #3e2a14 35%, #2e1e0f 100%);opacity:0.95;pointer-events:none"></div>
+  <div id="velAntBar" style="position:fixed;right:14px;top:14px;z-index:999;width:auto;min-width:520px;max-width:calc(100vw - 28px);height:54px;box-sizing:border-box;background:#3e2a14;border:3px solid #000;box-shadow:4px 4px 0 #000;display:flex;align-items:stretch;overflow:hidden;image-rendering:pixelated;border-radius:2px">
+    <div style="position:absolute;inset:0;background:repeating-linear-gradient(0deg, transparent 0 7px, rgba(0,0,0,0.18) 7px 8px), linear-gradient(180deg,#4a321c 0%, #3e2a14 35%, #2e1e0f 100%);opacity:0.95;pointer-events:none"></div>
     <!-- VEL + botones -->
     <div style="position:relative;flex:1;display:flex;align-items:center;gap:3px;padding:3px 6px 3px 7px;z-index:1">
-      <span style="font-family:'Press Start 2P',monospace;font-size:7px;color:#ffcc00;letter-spacing:0.4px;margin-right:2px;text-shadow:1px 1px 0 #000, 0 0 4px rgba(255,204,0,0.6);line-height:1">VEL</span>
-      <button class="pixel-btn small" id="btnVelPause" title="Pausa (Espacio)" style="min-width:28px;width:28px;height:28px;padding:0;background:#1a0f00;border:2px solid #000;color:#6a5a3a;font-size:10px;display:grid;place-items:center;box-shadow:1px 1px 0 #000">⏸</button>
-      <button class="pixel-btn small" id="btnVel1" title="x1 (tecla 1)" style="min-width:30px;width:30px;height:28px;padding:0;background:#ffcc00;border:2px solid #000;color:#000;font-family:'Press Start 2P';font-size:8px;display:grid;place-items:center;box-shadow:1px 1px 0 #000;text-shadow:none">x1</button>
-      <button class="pixel-btn small" id="btnVel2" title="x2" style="min-width:30px;width:30px;height:28px;padding:0;background:#3e2a14;border:2px solid #000;color:#fff8dc;font-family:'Press Start 2P';font-size:7px;display:grid;place-items:center;box-shadow:1px 1px 0 #000">x2</button>
-      <button class="pixel-btn small" id="btnVel4" title="x4" style="min-width:30px;width:30px;height:28px;padding:0;background:#3e2a14;border:2px solid #000;color:#fff8dc;font-family:'Press Start 2P';font-size:7px;display:grid;place-items:center;box-shadow:1px 1px 0 #000">x4</button>
-      <button class="pixel-btn small" id="btnVel8" title="x8" style="min-width:30px;width:30px;height:28px;padding:0;background:#3e2a14;border:2px solid #000;color:#fff8dc;font-family:'Press Start 2P';font-size:7px;display:grid;place-items:center;box-shadow:1px 1px 0 #000">x8</button>
-      <button class="pixel-btn small" id="btnVel16" title="x16" style="min-width:32px;width:32px;height:28px;padding:0;background:#3e2a14;border:2px solid #000;color:#fff8dc;font-family:'Press Start 2P';font-size:7px;display:grid;place-items:center;box-shadow:1px 1px 0 #000">x16</button>
+      <span style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00;letter-spacing:0.4px;margin-right:2px;text-shadow:1px 1px 0 #000, 0 0 4px rgba(255,204,0,0.6);line-height:1">VEL</span>
+      <button class="pixel-btn small" id="btnVelPause" title="Pausa (Espacio)" style="min-width:38px;width:38px;height:38px;padding:0;background:#1a0f00;border:2px solid #000;color:#6a5a3a;font-size:14px;display:grid;place-items:center;box-shadow:1px 1px 0 #000">⏸</button>
+      <button class="pixel-btn small" id="btnVel1" title="x1 (tecla 1)" style="min-width:40px;width:40px;height:38px;padding:0;background:#ffcc00;border:2px solid #000;color:#000;font-family:'Press Start 2P';font-size:12px;display:grid;place-items:center;box-shadow:1px 1px 0 #000;text-shadow:none">x1</button>
+      <button class="pixel-btn small" id="btnVel2" title="x2" style="min-width:40px;width:40px;height:38px;padding:0;background:#3e2a14;border:2px solid #000;color:#fff8dc;font-family:'Press Start 2P';font-size:10px;display:grid;place-items:center;box-shadow:1px 1px 0 #000">x2</button>
+      <button class="pixel-btn small" id="btnVel4" title="x4" style="min-width:40px;width:40px;height:38px;padding:0;background:#3e2a14;border:2px solid #000;color:#fff8dc;font-family:'Press Start 2P';font-size:10px;display:grid;place-items:center;box-shadow:1px 1px 0 #000">x4</button>
+      <button class="pixel-btn small" id="btnVel8" title="x8" style="min-width:40px;width:40px;height:38px;padding:0;background:#3e2a14;border:2px solid #000;color:#fff8dc;font-family:'Press Start 2P';font-size:10px;display:grid;place-items:center;box-shadow:1px 1px 0 #000">x8</button>
+      <button class="pixel-btn small" id="btnVel16" title="x16" style="min-width:42px;width:42px;height:38px;padding:0;background:#3e2a14;border:2px solid #000;color:#fff8dc;font-family:'Press Start 2P';font-size:10px;display:grid;place-items:center;box-shadow:1px 1px 0 #000">x16</button>
     </div>
     <div style="position:relative;width:3px;background:#000;flex-shrink:0;z-index:1;margin:3px 0;box-shadow:inset 1px 0 0 rgba(255,255,255,0.08)"></div>
     <!-- OBRERAS -->
-    <button id="btnAntList" class="puerta-hormigas" title="Lista de las hormigas activas (tecla L)" aria-label="Lista de hormigas activas" aria-expanded="false" style="position:relative;width:74px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:2px 4px;flex-shrink:0;z-index:1;background:transparent;border:none;color:inherit;font:inherit;cursor:pointer">
+    <button id="btnRoster" title="Ver la lista de todas las hormigas activas (tecla L)" aria-label="Lista de hormigas activas" style="position:relative;width:104px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:2px 4px;flex-shrink:0;z-index:1;background:transparent;border:none;color:inherit;font:inherit;cursor:pointer">
+      
       <div style="display:flex;align-items:center;gap:5px">
-        <span style="width:22px;height:16px;display:inline-flex;align-items:center;justify-content:center;font-size:15px;line-height:1;filter:drop-shadow(1px 1px 0 #000) drop-shadow(0 0 2px rgba(255,255,255,0.5))">🐜</span>
-        <span id="velAntCount" style="font-family:'Press Start 2P',monospace;font-size:13px;color:#fffef0;line-height:1;text-shadow:1px 1px 0 #000, 0 0 6px rgba(255,255,255,0.35);min-width:22px">0</span>
+        <span style="width:22px;height:16px;display:inline-flex;align-items:center;justify-content:center;font-size:22px;line-height:1;filter:drop-shadow(1px 1px 0 #000) drop-shadow(0 0 2px rgba(255,255,255,0.5))">🐜</span>
+        <span id="velAntCount" style="font-family:'Press Start 2P',monospace;font-size:19px;color:#fffef0;line-height:1;text-shadow:1px 1px 0 #000, 0 0 6px rgba(255,255,255,0.35);min-width:30px">0</span>
       </div>
-      <span style="font-family:'Press Start 2P',monospace;font-size:5px;color:#fff8dc;letter-spacing:0.5px;text-shadow:1px 1px 0 #000;line-height:1">OBRERAS ▾</span>
+      <span style="font-family:'Press Start 2P',monospace;font-size:9px;color:#fff8dc;letter-spacing:0.5px;text-shadow:1px 1px 0 #000;line-height:1">OBRERAS</span><span style="font-family:\'Press Start 2P\',monospace;font-size:8px;color:#ffcc00;line-height:1">▾ LISTA</span>
     </button>
     <div style="position:relative;width:3px;background:#000;flex-shrink:0;z-index:1;margin:3px 0;box-shadow:inset 1px 0 0 rgba(255,255,255,0.08)"></div>
     <!-- ALMACÉN — lo que hay dentro del nido, y la puerta al inventario -->
     <div style="position:relative;display:flex;align-items:center;gap:5px;padding:2px 6px 2px 7px;flex-shrink:0;z-index:1">
       <div style="display:flex;flex-direction:column;align-items:center;gap:1px">
         <div style="display:flex;align-items:center;gap:4px">
-          <span style="font-size:14px;line-height:1;filter:drop-shadow(1px 1px 0 #000)">🍯</span>
-          <span id="velFoodCount" style="font-family:'Press Start 2P',monospace;font-size:13px;color:#ffcc00;line-height:1;text-shadow:1px 1px 0 #000, 0 0 6px rgba(255,204,0,0.35);min-width:20px">0</span>
+          <span style="font-size:20px;line-height:1;filter:drop-shadow(1px 1px 0 #000)">🍯</span>
+          <span id="velFoodCount" style="font-family:'Press Start 2P',monospace;font-size:19px;color:#ffcc00;line-height:1;text-shadow:1px 1px 0 #000, 0 0 6px rgba(255,204,0,0.35);min-width:28px">0</span>
         </div>
-        <span style="font-family:'Press Start 2P',monospace;font-size:5px;color:#fff8dc;letter-spacing:0.5px;text-shadow:1px 1px 0 #000;line-height:1">ALMACÉN</span>
+        <span style="font-family:'Press Start 2P',monospace;font-size:9px;color:#fff8dc;letter-spacing:0.5px;text-shadow:1px 1px 0 #000;line-height:1">ALMACÉN</span>
       </div>
-      <div id="velMatChips" style="display:flex;flex-direction:column;justify-content:center;gap:2px;flex-shrink:0;font-family:'Press Start 2P',monospace;font-size:5px;color:#8a7a5a;line-height:1.15;text-shadow:1px 1px 0 #000">
+      <div id="velMatChips" style="display:flex;flex-direction:column;justify-content:center;gap:2px;flex-shrink:0;font-family:'Press Start 2P',monospace;font-size:9px;color:#8a7a5a;line-height:1.15;text-shadow:1px 1px 0 #000">
         <span style="white-space:nowrap">🌿<b id="velMatFiber" style="color:#2de67a">0</b> 🪨<b id="velMatStone" style="color:#c9c9c9">0</b> 🧱<b id="velMatClay" style="color:#e08a5a">0</b></span>
         <span style="white-space:nowrap">🪵<b id="velMatWood" style="color:#c9a06a">0</b> ⌛<b id="velMatSand" style="color:#e8cf8a">0</b> 🏠<b id="velMatRooms" style="color:#c9b896">0</b></span>
       </div>
-      <button class="pixel-btn small" id="btnInventory" title="Inventario del nido (tecla I)" aria-label="Inventario" style="min-width:26px;width:26px;height:28px;padding:0;background:#2a0f00;border:2px solid #000;color:#ffcc00;font-size:12px;display:grid;place-items:center;box-shadow:1px 1px 0 #000;line-height:1">☰</button>
+      <button class="pixel-btn small" id="btnInventory" title="Inventario del nido — lo que hay dentro y las materias primas" aria-label="Inventario" style="min-width:38px;width:38px;height:38px;padding:0;background:#2a0f00;border:2px solid #000;color:#ffcc00;font-size:17px;display:grid;place-items:center;box-shadow:1px 1px 0 #000;line-height:1">☰</button>
     </div>
   </div>
 
@@ -747,12 +746,8 @@
     <div class="rc-mini-bar"><div class="rc-mini-bar-fill" id="rcMiniBar"></div></div>
   </div>
   <button id="calCollapseBtn" title="Minimizar / Expandir">—</button>
-    <div id="calAntRow" style="height:22px;min-height:22px;background:#3e2a14;border-top:3px solid #000;display:flex;align-items:center;justify-content:center;gap:6px;padding:0 6px;box-sizing:border-box;image-rendering:pixelated">
-      <span style="font-size:11px;line-height:1;filter:drop-shadow(1px 1px 0 #000)">🐜</span>
-      <span id="calAntCount" style="font-family:'Press Start 2P',monospace;font-size:9px;color:#fffef0;text-shadow:1px 1px 0 #000;line-height:1">0</span>
-      <span style="font-family:'Press Start 2P',monospace;font-size:6px;color:#ffcc00;text-shadow:1px 1px 0 #000">OBRERAS</span>
-      <span style="font-family:'VT323',monospace;font-size:10px;color:#c9b896;opacity:0.9">ACTIVAS</span>
-      <button class="pixel-btn" id="btnDay1" title="Simula un dia entero: corre el mismo paso del bucle, sin pintar cada frame" style="flex:0 0 auto;height:16px;padding:0 5px;font-family:'Press Start 2P';font-size:6px;line-height:1;display:grid;place-items:center;background:#3e2a14;border:2px solid #000;color:#fff8dc;box-shadow:1px 1px 0 #000;margin-left:2px">&#9197; +1 DIA</button>
+    <div id="calAntRow" style="height:28px;min-height:28px;background:#3e2a14;border-top:3px solid #000;display:flex;align-items:center;justify-content:center;gap:6px;padding:0 6px;box-sizing:border-box;image-rendering:pixelated">
+      <button class="pixel-btn" id="btnDay1" title="Simula un dia entero: corre el mismo paso del bucle, sin pintar cada frame" style="flex:0 0 auto;height:22px;padding:0 8px;font-family:'Press Start 2P';font-size:10px;line-height:1;display:grid;place-items:center;background:#3e2a14;border:2px solid #000;color:#fff8dc;box-shadow:1px 1px 0 #000;margin-left:2px">&#9197; +1 DIA</button>
     </div>
 </div>
 
@@ -803,7 +798,7 @@
   <!-- Motor del juego — núcleo profesional modular -->
   
 
-<script src="js/app.js?v=20261015y"></script>
+<script src="js/app.js?v=20261016a"></script>
 <script>
 // Vigia del arranque: si js/app.js no termino de cargar, decirlo en pantalla en vez de dejar
 // botones sordos. Es lo unico que vive en el HTML; el juego entero esta en js/app.js.

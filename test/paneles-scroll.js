@@ -124,9 +124,14 @@ const BARRIDO = `(raiz)=>{
   await page.screenshot({ path: '/tmp/antfarm-capturas/paneles-antes.png' });
 
   const yMundoAntes = await page.evaluate('(()=>Math.round(view.y*100)/100)()');
-  // la rueda DENTRO del panel: el gesto del dueño
-  await page.mouse.move(1280 - 120, 300);
-  await page.mouse.wheel({ deltaY: 260 });
+  // la rueda DENTRO del panel: el gesto del dueño. El punto se MEDICION en el cuerpo de la hoja, no a 300 px
+  // a ciegas: la hoja se sienta ahora debajo del calendario (que crecio) y un punto fijo caia en la cabecera,
+  // que no es caja de scroll - y eso no es un fallo del juego, era un fallo de la prueba.
+  const punto = await page.evaluate(`(()=>{const r=document.getElementById('invBody').getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+Math.min(52,r.height/2))}})()`);
+  await page.mouse.move(punto.x, punto.y);
+  await page.mouse.wheel({ deltaY: 400 });   // un golpe de rueda con recorrido: Chrome lo topa en el maximo
+                                            // del contenedor (260 se quedaba a 13 px del final y la ultima
+                                            // fila asomaba a medias, que no es un fallo del juego)
   await sleep(320);
   const despues = await page.evaluate(`(()=>{
     const b=document.getElementById('invBody'), sh=document.getElementById('invSheet');
@@ -137,7 +142,7 @@ const BARRIDO = `(raiz)=>{
       ultimaFila: fila? Math.round(rb.bottom-fila.bottom) : -1, pieAsomado: Math.round(pie.bottom-rs.bottom),
       yMundo:Math.round(view.y*100)/100};
   })()`);
-  ok(despues.top > 0, 'la rueda dentro del panel MUEVE el panel', `scrollTop ${despues.top} de ${despues.max}px`);
+  ok(despues.top > 0, 'la rueda dentro del panel MUEVE el panel', `scrollTop ${despues.top} de ${despues.max}px · rueda en ${punto.x},${punto.y}`);
   ok(despues.ultimaFila >= -2, 'y al bajar, la última fila se ve entera (antes no había forma)', `${despues.ultimaFila}px sobre el borde del cuerpo`);
   ok(despues.pieAsomado <= 1, 'con el cuerpo scrolleado el pie sigue anclado en su sitio', 'a ' + despues.pieAsomado + 'px');
   ok(despues.yMundo === yMundoAntes, 'y el mundo NO se movió por scrollear el panel', `view.y ${yMundoAntes} -> ${despues.yMundo}`);

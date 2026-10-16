@@ -520,18 +520,64 @@ body{ font-size:19px; }
 .hoja-cuerpo::-webkit-scrollbar-thumb:hover{background:#5a4326}
 .hoja-cuerpo:focus-visible{outline:2px solid #ffcc00;outline-offset:-2px}
 
-/* === PUERTA DE LA LISTA DE HORMIGAS Y HOJA DE ELENCO (Topo, 2026-10-16) ===
-   El numero de obreras de la tira viva es el boton que abre la lista; mientras la hoja esta abierta el boton
-   queda encendido, para que se vea de donde salio. La hoja es la unica puerta al elenco: la vieja #antList de
-   la barra lateral sigue sellada y no se duplica. */
-#btnAntList{cursor:pointer;transition:background .12s, box-shadow .12s;border-radius:0}
-#btnAntList:hover{background:rgba(255,204,0,.14)}
-#btnAntList:active{background:rgba(255,204,0,.26)}
-#btnAntList[data-open="1"]{background:rgba(255,204,0,.22);box-shadow:inset 0 -3px 0 #ffcc00}
-#btnAntList:focus-visible{outline:2px solid #ffcc00;outline-offset:-3px}
-.ant-row{display:flex;flex-direction:column;gap:0;width:100%;text-align:left;background:#000;border:2px solid #1a140f;padding:5px 6px;cursor:pointer;font:inherit;color:inherit;box-shadow:2px 2px 0 #000;min-width:0}
-.ant-row:hover{border-color:#ffcc00;background:#150d05}
-.ant-row-sel{border-color:#ffcc00;background:#2a0f00}
-.ant-row:focus-visible{outline:2px solid #ffcc00;outline-offset:1px}
-.prof-fila{min-width:0}
-.prof-fila span{min-width:0}
+/* === TIPAGRAFIA Y HOJAS GRANDES (Topo, 2026-10-16) ===
+   El dueño: «los textos un poco más grandes, es muy difícil de leer todo... puedes hacer todo un poco más
+   grande para que se adapte perfecto». Tres cosas arrastraban lo ilegible: (1) `.pixel-btn` llevaba un
+   `font-size` con `!important` GANANDO a los `style=""` inline de cada botón - así que poner 10px en el
+   markup no servía de nada; (2) las etiquetas de la barra y de las hojas estaban a 5-6 px de Press Start 2P,
+   que es literalmente un hilo; (3) las hojas medían 220-236 px, y con letra grande ya no cabía ni «ESTADO».
+   Se sube la escala entera y se recalculan los huecos: el calendario es un tarjeta de 444×244 escalada, así
+   que su letra crece con el `scale`, no tocando veinte reglas. Medido con test/paneles-scroll.js: nada se
+   corta (scrollWidth<=clientWidth) y ningún texto baja del suelo de legibilidad. */
+:root{ --hoja-ancho:330px; --hoja-ancho-perfil:326px; }
+#velAntBar{ height:54px !important; min-width:520px !important; }
+#calendarWidget{ width:300px !important; height:197px !important; top:74px !important; }
+#calendarWidget .rc-hud{ width:292px !important; height:161px !important; }
+#calendarWidget .rc-card{ transform:scale(0.6577) !important; }
+#calAntRow{ height:28px !important; min-height:28px !important; }
+/* El `top` NO se fija aqui: lo pone el JS (`_asentarBajoCalendario`) midiendo el borde inferior real del
+   calendario, porque el calendario crecio y una hoja fijada a 76px se metia DEBAJO (z-index 999 el
+   widget contra 91 la hoja): el encabezado y las primeras filas quedaban under el reloj, que es justo
+   como se perdia el principio de la lista del almacen. */
+#invSheet,#rosterSheet{ width:var(--hoja-ancho) !important; max-width:calc(100vw - 28px) !important; }
+/* la lista lleva dos lineas de texto por fila (nombre en PixeStart y rol+tarea en VT323): 34 px mas y la
+   tarea deja de irse con puntos. Medido: con 330 sobraban 7 px en las filas de obreras. */
+#rosterSheet{ width:364px !important; }
+#antProfile,#queenProfile{ width:var(--hoja-ancho-perfil) !important; max-width:calc(100vw - 28px) !important; }
+.pixel-btn{ font-size:11px !important; }
+#velAntBar .pixel-btn.small{ font-size:13px !important; }
+#velAntBar #btnVelPause,#velAntBar #btnInventory{ font-size:18px !important; }
+#velAntBar #btnRoster{ cursor:pointer; background:transparent !important; border:none !important; padding:2px 4px !important; font:inherit; }
+#velAntBar #btnRoster:hover{ background:rgba(255,204,0,0.18) !important; }
+#velAntBar #btnRoster:focus-visible{ outline:2px solid #ffcc00; outline-offset:-3px; }
+#velAntBar #btnRoster[data-abierto="1"]{ background:#ffcc00 !important; }
+#velAntBar #btnRoster[data-abierto="1"] span{ color:#000 !important; text-shadow:none !important; }
+#profileTabs .pixel-btn,#queenTabs .pixel-btn{ font-size:10px !important; min-height:28px !important; }
+#btnCerebroNumeros{ font-size:9px !important; }
+#btnCloseProfile,#btnCloseInv,#btnCloseRoster,#btnCloseQueenProfile{ font-size:10px !important; padding:6px 9px !important; }
+#btnFollowAnt,#btnExileAnt,#btnInvGo{ font-size:11px !important; padding:8px 6px !important; }
+#calAntRow #btnDay1{ font-size:10px !important; height:22px !important; }
+.hoja-cuerpo::-webkit-scrollbar{ width:11px; }
+/* la lista de hormigas: una fila por bicho, con su piel de bloque (cuerpo negro, junta, ámbar al pinchar) */
+.ficha-hormiga{ display:grid; grid-template-columns:26px 1fr auto; align-items:center; gap:8px; background:#000;
+  border:2px solid #000; box-shadow:2px 2px 0 #1a1a1a; padding:6px 7px; cursor:pointer; text-align:left; width:100%;
+  font-family:'VT323',monospace; font-size:16px; color:#c9b896; line-height:1.05; }
+.ficha-hormiga:hover{ background:#2a0f00; border-color:#ffcc00; }
+.ficha-hormiga:focus-visible{ outline:2px solid #ffcc00; outline-offset:1px; }
+.ficha-hormiga[data-viva="0"]{ opacity:0.55; }
+.ficha-hormiga .fh-caste{ font-size:17px; line-height:1; text-align:center; filter:drop-shadow(1px 1px 0 #000); }
+.ficha-hormiga .fh-nombre, .ficha-hormiga .fh-tarea, .ficha-hormiga .fh-dato{ display:block; }
+.ficha-hormiga .fh-nombre{ font-family:'Press Start 2P',monospace; font-size:10px; color:#fff8dc; letter-spacing:0.2px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ficha-hormiga .fh-tarea{ font-size:14px; color:#8a7a5a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ficha-hormiga{ gap:7px; }   /* y 7 px de junta: la columna de la tarea respira y deja de irse con puntos */
+.ficha-hormiga .fh-dato{ font-family:'Press Start 2P',monospace; font-size:10px; color:#ffcc00; text-shadow:1px 1px 0 #000; white-space:nowrap; text-align:right; }
+.chip-roster{ font-family:'Press Start 2P',monospace; font-size:9px; color:#8a7a5a; background:#1a140f; border:2px solid #000;
+  padding:5px 6px; cursor:pointer; box-shadow:2px 2px 0 #000; }
+.chip-roster[aria-pressed="true"]{ background:#ffcc00; color:#000; }
+/* y el cerebro dentro del perfil: frases, no números, con su barra de intensidad como un bloque del terreno */
+.linea-mente{ display:grid; grid-template-columns:auto 1fr; align-items:center; gap:7px; background:#0a0a0a;
+  border:2px solid #1a1a1a; padding:5px 6px; font-family:'VT323',monospace; font-size:15px; color:#c9b896; line-height:1.1; }
+.linea-mente b{ font-family:'Press Start 2P',monospace; font-size:9px; color:#8a7a5a; letter-spacing:0.2px; white-space:nowrap; }
+.linea-mente .lm-barra{ height:7px; background:#000; border:1px solid #2a2a2a; margin-top:3px; }
+.linea-mente .lm-barra > div{ height:100%; }

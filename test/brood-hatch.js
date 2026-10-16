@@ -170,17 +170,24 @@ caso(' alimentar a una larva entera desde la despensa cuesta piezas, no el grane
   return out;
 });
 
-// 10 · El contador de OBRERAS no puede inventarse una: con la colonia a cero y reina viva tiene
-// que marcar 0 en la barra, en el panel del reloj y en la taskbar (antes titilaba 0/1).
-caso('el contador de obreras marca 0 en los tres sitios si no queda ninguna, y vuelve al valor real', () => {
+// 10 · El contador de OBRERAS no puede inventarse una: con la colonia a cero y reina viva tiene que marcar
+// 0 en los DOS sitios que existen ahora - la barra de arriba y la taskbar (antes titilaba 0/1). Y desde
+// 2026-10-16 hay que comprobar además que el TERCER sitio ya no está: el dueño pidió quitar la cifra que
+// repetía debajo del reloj («esa información ya está en la barra de arriba... la de abajo sobra»), así que
+// el numero vive en un solo sitio de la pantalla y ahi se pincha para ver la lista.
+caso('el contador de obreras marca 0 en los dos sitios que quedan, el del reloj ya no existe, y vuelve al valor real', () => {
   const perdidas = workers.splice(0, workers.length);
   _updateBothAntCounts();
-  const leido = ['velAntCount', 'calAntCount', 'tbPop'].map((i) => String(document.getElementById(i).textContent)).join('/');
-  const okCero = leido === '0/0/0';
+  const leido = ['velAntCount', 'tbPop'].map((i) => String(document.getElementById(i).textContent)).join('/');
+  const okCero = leido === '0/0';
+  // (que el sitio del reloj DESAPARECIO de verdad se comprueba en test/hojas-legibles.js, sobre el markup y
+  // sobre el codigo servido: aqui el arnes de jsdom inventa un elemento para cualquier id que se le pida,
+  // asi que «getElementById» no puede usarse como prueba de que algo existe.)
+  const puerta = !!document.getElementById('btnRoster');
   Array.prototype.push.apply(workers, perdidas);
   _updateBothAntCounts();
-  const deVuelta = String(document.getElementById('calAntCount').textContent);
-  return { pasa: okCero && deVuelta === String(workers.length), detalle: 'con 0 obreras: ' + leido + ' · de vuelta ' + deVuelta + '/' + workers.length };
+  const deVuelta = String(document.getElementById('velAntCount').textContent);
+  return { pasa: okCero && puerta && deVuelta === String(workers.length), detalle: 'con 0 obreras: ' + leido + ' · de vuelta ' + deVuelta + '/' + workers.length + ' · la cifra es boton: ' + puerta };
 });
 
 console.log('\n' + pass + ' ok' + (fail ? ' · ' + fail + ' FALLOS' : ' · cria a punto'));
