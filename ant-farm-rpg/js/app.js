@@ -3485,7 +3485,9 @@ function updateAnt(ant, dt){
       if(nc<0||nc>=COLS||checkR<SURFACE_ROW||checkR>=ROWS) continue;
       if(soil[checkR]&&soil[checkR][nc]===1){
         const dx=nc*CELL+8 - _x, dy=checkR*CELL+8 - _y;
-        if(Math.hypot(dx,dy) < 18.5) return 'wall';
+        // 21 px alcanza el labio diagonal del pozo de tres celdas; con 18,5 perdía el agarre a 2–4 px
+        // de coronarlo y la gravedad la devolvía al nido.
+        if(Math.hypot(dx,dy) < 21) return 'wall';
       }
       for(let s of structures){ if(nc>=s.c&&nc<s.c+s.w && checkR>=s.r&&checkR<s.r+s.h) return 'wall'; }
     }
@@ -3562,6 +3564,9 @@ function updateAnt(ant, dt){
           // la pared - media veces trepaba hacia el nido y nunca salia. Medido: con 5 de 27 obreras con
           // objetivo en la superficie, `enSuperficie 0 de 27` (daban vueltas dentro del pozo).
           const wantUp = (ant.digTarget && ant.digTarget.r < _r) || (ant.food && storagePos().y < ant.y) || ant._quiereSubir || Math.sin(ant.angle) < -0.3;
+          // Agarrada a pared y trepando, las garras vencen la caída. Antes conservaba vy>0, subía unos
+          // píxeles y volvía a caer aunque la cabeza apuntara correctamente hacia arriba.
+          if(wantUp && ant.vy>0) ant.vy=0;
           const targetAngle = wantUp ? -Math.PI/2 : Math.PI/2;
           // interpola ángulo hacia vertical (física: la hormiga gira el cuerpo 90°)
           let diff=((targetAngle - ant.angle + Math.PI*3)%(Math.PI*2)-Math.PI);
@@ -4065,7 +4070,18 @@ function updateAnt(ant, dt){
       // y con la despensa floja no se abre calada NUEVA por gusto: solo para salir de un atasco, o si
       // la colonia ya tiene de qué comer (primero se come, despues se excava)
       const _pocaComida = colonyFood < 5;
-      if(!_aprieto && (_frustrada || (!_pocaComida && digIntent>0.48 && wallAvg>0.18 && Math.random()<0.11 && (ant.role==='EXCAVADORA' || Math.random()<0.38)))){
+      // Reflejo colectivo minimo: si la despensa aguanta y no hay ningun frente activo, la obrera
+      // libre con mayor rasgo de construccion abre uno. La red sigue decidiendo las demas excavadoras.
+      // Esto evita que un linaje viable se quede en cero por heredar todas una salida «cavar» baja.
+      let _constructoraTurno=null;
+      if(!_pocaComida && !workers.some(w=>w.health>0 && w.state==='CAVANDO' && w.digTarget)){
+        for(const w of workers){
+          if(w.health<=0 || w.food || w.targetFood || w.digTarget || w.wasteTarget || w.state==='DESCANSAR') continue;
+          if(!_constructoraTurno || (w.traits&&w.traits.construccion||0) > (_constructoraTurno.traits&&_constructoraTurno.traits.construccion||0)) _constructoraTurno=w;
+        }
+      }
+      const _instintoObra = _constructoraTurno===ant;
+      if(!_aprieto && (_frustrada || _instintoObra || (!_pocaComida && digIntent>0.48 && wallAvg>0.18 && Math.random()<0.11 && (ant.role==='EXCAVADORA' || Math.random()<0.38)))){
         const frontier=findFrontier();
         if(frontier.length){
           // Topo: muestrear en vez de filtrar las miles de celdas del frontier (coste fijo por hormiga
@@ -4180,25 +4196,32 @@ function updateAnt(ant, dt){
     // a los 36 pasos bloqueados la hormiga abandonaba el objetivo: las entregas se paraban en cuanto
     // la colonia bajaba al nido, la despensa no se reponia y la reina dejaba de poner. Mismo truco
     // en los dos sentidos: primero la boca, luego la miel.
-    const _boca = {x: CENTER_COL*CELL+8, y: SURFACE_Y-6};
-    // Para cruzar de dentro a fuera (o al reves) no hay atajo: se pasa por la boca. La prueba anterior
-    // comparaba alturas con un margen (targ < SURFACE_Y+12 y ant > SURFACE_Y+18), y en cuanto la hormiga
-    // entraba en la franja de 30 px de la boca cambiaba de rumbo hacia una gota que estaba a 180 px a la
-    // derecha, se daba de narices contra la pared del tunel y caia de nuevo al nido. Medido: rebotando
-    // 208-260-225-241-189-251 px de la miel, sin sumar NUNCA un golpe contra la pared (blk 0).
-    // (let, no const: la linea de abajo le cambia el destino cuando la obrera esta atascada, y con const
-    // aquello reventaba el cuadro entero - el bucle lo cazaba y el rescate no llegaba nunca a ejecutarse)
-    let _meta = ((targ.y < SURFACE_Y) !== (ant.y < SURFACE_Y - 2)) ? _boca : targ;
+    const _centroBoca=CENTER_COL*CELL+8;
+    // Se corona por el labio del mismo lado que la comida, no por el centro del pozo: en un hueco de
+    // tres celdas el centro queda lejos de ambas paredes y la trepadora pierde el agarre. Cambia de lado
+    // abajo, donde sí puede caminar, y sube después pegada a esa pared.
+    const _boca={x:_centroBoca+(targ.x<_centroBoca?-CELL:CELL), y:SURFACE_Y-6};
+    // Para cruzar de dentro a fuera no hay atajo: pie del pozo → labio elegido → miel. Si viene de una
+    // galería más profunda vuelve primero al pie conocido (la boca inicial acaba en SURFACE_ROW+8).
+    const _cruzaBoca=((targ.y<SURFACE_Y)!==(ant.y<SURFACE_Y-5));
+    let _meta=targ;
+    if(_cruzaBoca){
+      const _pieY=(SURFACE_ROW+8)*CELL+8;
+      if(ant.y>_pieY+CELL*0.6) _meta={x:_boca.x,y:_pieY};
+      else if(Math.abs(ant.x-_boca.x)>CELL*0.45){
+        const _fila=Math.max(SURFACE_ROW+1,Math.min(SURFACE_ROW+8,Math.floor(ant.y/CELL)));
+        _meta={x:_boca.x,y:_fila*CELL+8};
+      } else _meta=_boca;
+    }
     // para la fisica del pozo: mi destino esta por encima de mi? (sin esto no sabe trepar hacia arriba en la ida)
-    ant._quiereSubir = (targ.y < ant.y - 4);
-    if(ant.blocked>10){ const _rs = routeStep(ant, _meta.x, _meta.y); if(_rs) _meta=_rs; }
-    const ang=Math.atan2(_meta.y-ant.y, _meta.x-ant.x);
+    ant._quiereSubir=(targ.y<ant.y-4);
+    if(_cruzaBoca || ant.blocked>10){ const _rs=routeStep(ant,_meta.x,_meta.y); if(_rs) _meta=_rs; }
+    const ang=Math.atan2(_meta.y-ant.y,_meta.x-ant.x);
     let diff=((ang-ant.angle+Math.PI*3)%(Math.PI*2)-Math.PI);
-    // Al aire libre no hay galerias que esquivar, y con 0.06 de giro la forrajera vaga en circulos a
-    // 300 px de la miel: medido x 63->67->56->59 en 200 pasos con blk 0 (no esta bloqueada, es que no
-    // gira hacia la meta). Fuera del nido se gira en seco y sin esquivar paredes.
-    const _aire = ant.y < SURFACE_Y+14 && targ.y < SURFACE_Y+14;
-    ant.angle+= diff*(_aire?0.45:0.06) + steer*(_aire?0.02:0.13);
+    // La red decide ir a por la comida; una vez comprometida, el camino transitable manda sobre el giro
+    // exploratorio. Mezclarlos hacía que linajes con steer≈±1 caminaran en círculos sin salir nunca.
+    const _aire=ant.y<SURFACE_Y+14 && targ.y<SURFACE_Y+14;
+    ant.angle+=diff*(_aire?0.45:0.32);
     if(!_aire){
       if(ant.sensors.wallLeft>0.7) ant.angle+=0.18;
       if(ant.sensors.wallRight>0.7) ant.angle-=0.18;

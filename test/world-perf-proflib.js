@@ -3,6 +3,24 @@ const fs = require('fs');
 const vm = require('vm');
 const code = require('./core-carga.js').conCore(fs.readFileSync(process.env.APP_JS || '/home/user/ant-farm-rpg/js/app.js', 'utf8'));
 
+// Los tests de equilibrio pueden pedir una corrida totalmente repetible. La semilla debe existir
+// ANTES de evaluar app.js: el juego ya consume azar al cargar, no solo al crear el mundo.
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function random() {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const testSeed = process.env.TEST_SEED;
+const sandboxMath = Object.create(Math);
+if (testSeed !== undefined && testSeed !== '') sandboxMath.random = mulberry32(Number(testSeed));
+const sandboxPerformance = { now: () => Number(process.hrtime.bigint() / 1000n) / 1000 };
+class SimulatedDate extends Date { static now() { return sandboxPerformance.now(); } }
+const sandboxDate = process.env.TEST_CLOCK === 'simulated' ? SimulatedDate : Date;
+
 function fakeCtx2D(canvas) {
   const t = { canvas, fillStyle: '', font: '', globalAlpha: 1, lineWidth: 1 };
   return new Proxy(t, { get: (target, p) => { if (p in target) return target[p]; if (typeof p === 'symbol') return undefined; if (p === 'measureText') return () => ({ width: 10 }); if (p === 'createLinearGradient' || p === 'createRadialGradient' || p === 'createPattern') return () => ({ addColorStop() { } }); if (p === 'getImageData' || p === 'createImageData') return (x, y, w, h) => ({ data: new Uint8ClampedArray(Math.max(4, (w | 0) * (h | 0) * 4)), width: w, height: h }); return () => undefined; }, set: (t2, p, v) => { t2[p] = v; return true; } });
@@ -41,8 +59,8 @@ const document = new Proxy({
 
 const sb = {
   console: { log() { }, warn() { }, error() { } },
-  document, localStorage, performance: { now: () => Number(process.hrtime.bigint() / 1000n) / 1000 },
-  Date, Math, JSON, Object, Array, Number, String, Boolean, Symbol, Promise, Set, Map, WeakMap, WeakSet, isNaN, isFinite, parseInt, parseFloat,
+  document, localStorage, performance: sandboxPerformance,
+  Date: sandboxDate, Math: sandboxMath, JSON, Object, Array, Number, String, Boolean, Symbol, Promise, Set, Map, WeakMap, WeakSet, isNaN, isFinite, parseInt, parseFloat,
   Uint8Array, Uint8ClampedArray, Int8Array, Float32Array, Float64Array, ArrayBuffer, Error, TypeError, RangeError,
   setTimeout: () => 0, setInterval: () => 0, clearInterval() { }, clearTimeout() { }, queueMicrotask: f => f(),
   requestAnimationFrame: () => 0, cancelAnimationFrame() { }, fetch: () => Promise.reject(new Error('nf')),

@@ -4,17 +4,21 @@
  * no toca nada. Sirve para ver si la curva de comida, poblacion, materiales y profundidad es
  * razonable, y cuanto tarda el calculo por dia simulado.
  *
- *   node test/bot-equilibrio.js [dias=2]
+ *   node test/bot-equilibrio.js [dias=2] [semilla=1]
  *
- * Falla solo si el juego se rompe (excepcion) o si no pasa nada en absoluto. Los numeros son para
- * leer, no para aprobar: los umbrales de equilibrio se fijan cuando haya un objetivo por fase.
+ * La semilla y el reloj simulado se fijan ANTES de cargar app.js, para que una corrida se pueda
+ * repetir exactamente. Con 5 días o más, T1-T5 son criterios v0 aprobados y también hacen fallar
+ * el proceso: un objetivo rojo no se arregla moviendo el umbral, sino equilibrando el juego.
  */
+const DIAS = Number(process.argv[2] || 2);
+const SEMILLA = Number(process.argv[3] || 1);
+process.env.TEST_SEED = String(SEMILLA);
+process.env.TEST_CLOCK = 'simulated';
 const { sb, ctx, vm } = require('./world-perf-proflib.js');
 
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) { pass++; console.log('  ok   ' + msg); } else { fail++; console.log('  FAIL ' + msg); } };
 
-const DIAS = Number(process.argv[2] || 2);
 const FRAMES_POR_MEDIO_DIA = 230;
 const FOTO = `JSON.stringify({
   dia: Math.floor(time/DAY_LENGTH)+1,
@@ -25,24 +29,26 @@ const FOTO = `JSON.stringify({
   banda: bandaMax, losasRotas: umbralesRotos, reliquias: reliquias.length,
   materiales: Object.values(worldMaterials).reduce((a,b)=>a+(b||0),0)
 })`;
+let t = 1;
+sb.performance.now = () => t;
 vm.runInContext(`topoCreateFreshWorld(48, 28); paused=false; gameSpeed=64;
+  last=performance.now(); lastRealWall=Date.now();
   window._step = () => loop(performance.now());
   window._foto = () => ${FOTO};`, ctx);
 
 const paso = sb._step, foto = sb._foto;
-let t = 1;
 const historial = [];
-const t0 = Date.now();
+const t0 = process.hrtime.bigint();
 let errores = 0;
 const total = Math.ceil(FRAMES_POR_MEDIO_DIA * DIAS * 2);
 for (let f = 0; f < total; f++) {
-  sb.performance.now = () => t; t += 42;
+  t += 42;
   try { paso(); } catch (e) { errores++; if (errores < 3) console.log('  error en cuadro ' + f + ': ' + e.message); }
   if (f % FRAMES_POR_MEDIO_DIA === FRAMES_POR_MEDIO_DIA - 1) historial.push(JSON.parse(foto()));
 }
-const seg = (Date.now() - t0) / 1000;
+const seg = Number(process.hrtime.bigint() - t0) / 1e9;
 
-console.log(`\nbot de equilibrio v0 · ${DIAS} dias simulados · ${seg.toFixed(1)} s reales (${(seg / DIAS).toFixed(1)} s por dia)`);
+console.log(`\nbot de equilibrio v0 · semilla ${SEMILLA} · ${DIAS} dias simulados · ${seg.toFixed(1)} s reales (${(seg / DIAS).toFixed(1)} s por dia)`);
 console.log('  dia  obreras  comida  entregas  cavadas  gen  IQ   banda  losas  reliq  materiales');
 for (const h of historial)
   console.log(`  ${String(h.dia).padStart(3)}  ${String(h.obreras).padStart(7)}  ${String(h.comida).padStart(6)}  ${String(h.entregas).padStart(8)}  ${String(h.cavadas).padStart(7)}  ${String(h.generacion).padStart(3)}  ${String(h.iq).padStart(4)}  ${String(h.banda).padStart(5)}  ${String(h.losasRotas).padStart(5)}  ${String(h.reliquias).padStart(5)}  ${String(h.materiales).padStart(10)}`);
@@ -51,12 +57,11 @@ const ult = historial[historial.length - 1] || {};
 ok(errores === 0, 'ningun cuadro lanza excepcion (' + errores + ' errores)');
 ok(historial.length > 0 && ult.obreras >= 1, 'la colonia sigue viva al final (' + (ult.obreras || 0) + ' obreras)');
 ok(ult.cavadas > 0, 'se cava algo (' + (ult.cavadas || 0) + ' bloques)');
-// Objetivos PROVISIONALES (docs/EQUILIBRIO.md). Son avisos, no fallos: el dueño los aprueba o los cambia.
-// Se miden en dias de juego (los mismos del bot). Un aviso no cambia el codigo de salida.
-const objetivo = (nombre, cumple, valor) => console.log('  ' + (cumple ? 'ok ' : 'AVISO') + '  ' + nombre + ' · ' + valor);
+// Objetivos v0 aprobados (docs/EQUILIBRIO.md). Se miden en días de calendario del juego.
+const objetivo = (nombre, cumple, valor) => ok(cumple, nombre + ' · ' + valor);
 const enDia = (d) => historial.filter(h => h.dia <= d);
 const minComida = (d) => Math.min(...enDia(d).map(h => h.comida));
-console.log('\nobjetivos provisionales (EQUILIBRIO.md):');
+console.log('\nobjetivos de equilibrio v0 (EQUILIBRIO.md):');
 if (DIAS >= 5) {
   objetivo('T1 la comida nunca baja de 5 hasta el dia 5', minComida(5) >= 5, 'minimo ' + minComida(5));
   objetivo('T2 hay 6 obreras vivas al dia 3', (enDia(3).slice(-1)[0] || {}).obreras >= 6, 'dia 3: ' + ((enDia(3).slice(-1)[0] || {}).obreras));
