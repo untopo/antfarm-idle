@@ -4,8 +4,8 @@
 recomendaciones y procede». Desde 5 días, `test/bot-equilibrio.js` aprueba o falla; ya no son avisos.
 No se arregla un fallo moviendo su umbral.
 
-**Decisión de la losa:** la colonia debe romperla sola. El jugador puede ayudar u orientar más adelante,
-pero el progreso idle no puede depender de un clic. Por eso T4 sigue rojo y no se rebaja.
+**Decisión de la losa:** la colonia la rompe sola. El jugador podrá ayudar u orientar más adelante,
+pero el progreso idle no depende de un clic.
 
 ## 1 · Método reproducible
 
@@ -24,7 +24,7 @@ Las primeras tres corridas anotadas en la versión anterior de este documento no
 `app.js` consumía azar antes de sembrarlo y el bucle mezclaba reloj real con reloj simulado. Sirvieron
 para descubrir el síntoma, pero sus rangos no se usan como referencia.
 
-## 2 · Parón fundacional: causa y corrección
+## 2 · Parón fundacional y salida al prado
 
 La semilla 1 reproducía el caso catastrófico: todas las fundadoras heredaban una salida neuronal de
 cavado cercana a −1; tras más de tres días había **0 bloques abiertos**, aunque la colonia seguía viva.
@@ -39,48 +39,69 @@ Se corrigieron dos mecanismos, sin regalar recursos ni asignar profesiones:
    pegada a ese labio. La ruta manda durante un objetivo ya elegido; el giro neuronal sigue decidiendo la
    exploración libre. El agarre vence la velocidad de caída al trepar y alcanza 21 px en el borde diagonal.
 
-Pruebas de regresión:
+Pruebas: `test/paron-fundacion.js` y `test/salida-superficie.js`.
 
-- `test/paron-fundacion.js`: semilla 1 abre frente y sigue viva.
-- `test/salida-superficie.js`: con el código anterior, 0 entregas; con el nuevo, corona el pozo y entrega.
-- `test/diag-parones.js`: expone estados, comida, generación, losa y objetos para diagnóstico.
+## 3 · Primera losa y mundo expandido
 
-## 3 · Lote de referencia: 12 semillas × 5 días
+Medir T4 mostró que 120 excavaciones laterales podían dejar intactos los 68 HP de la primera losa. No
+faltaba velocidad bruta: faltaba una dirección de trabajo.
 
-Mundo pequeño 48×28, sin jugador, código real (`app.js + core/`). Las doce semillas son 1–12.
+La solución conserva la excavación emergente y añade una sola obra colectiva:
+
+- **frente principal:** a partir de GEN1 o del día 3, una obrera mantiene el pozo dentro de las tres
+  columnas de la boca; las demás siguen abriendo cámaras según su red;
+- si la despensa toca 5, se prioriza comida antes de asignar otro frente (T1 no cambia);
+- en ese primer pozo el escombro queda en un montón profundo con coste higiénico, en vez de obligar a
+  subir cada bloque por separado;
+- la cadena rápida termina al romper la **primera** losa. La segunda vuelve al ritmo normal;
+- tras expandir, el enrutado cacheado puede recorrer el mapa nuevo y su límite crece con `COLS×ROWS`;
+- `expandWorld()` añade también filas a `water`; las reinas toleran rejillas antiguas incompletas.
+
+Durante esta medición apareció y se corrigió otro fallo: un tándem entregaba a la seguidora la carga
+`{amount}` como si fuera un objetivo `{x,y}`. El ángulo pasaba a `NaN` y `loop()` ocultaba la excepción.
+Ahora un tándem solo nace si queda una fuente real con coordenadas.
+
+Pruebas: `test/primera-losa.js`, `test/expansion-agua.js` y `test/tandem-objetivo.js`.
+
+## 4 · Lote de referencia: 12 semillas × 5 días
+
+Mundo pequeño 48×28, sin jugador, código real (`app.js + core/`), semillas 1–12. Se capturan también
+los errores internos que `loop()` normalmente registra en consola.
 
 | Medida final | Rango |
 |---|---:|
-| Obreras vivas | 10–20 |
-| Comida | 18,8–193,4 |
-| Entregas | 35–163 |
-| Bloques excavados | 12–120 |
-| Parón final sin completar un bloque | 0–0,51 días |
-| Excepciones | 0 |
+| Obreras vivas | 8–26 |
+| Comida | 0,5–294,9 |
+| Entregas | 13–241 |
+| Bloques excavados | 22–146 |
+| Parón final sin completar un bloque | 0–1,03 días |
+| Primeras losas rotas | 1 en las 12 semillas |
+| Segundas losas rotas | 0 |
+| Excepciones internas | 0 |
 
-No hay ya ninguna corrida con cero excavación ni una fundación inmóvil. La dispersión sigue siendo alta:
-forma parte del equilibrio pendiente, no de la reproducibilidad.
+No hay ninguna fundación inmóvil. La dispersión de comida sigue siendo demasiado alta y queda como
+trabajo de equilibrio, no de reproducibilidad.
 
-## 4 · Objetivos v0
+## 5 · Objetivos v0
 
 «Día 3» significa el día de calendario 3 completo (`3,00..3,99`), igual que en el bot.
 
 | Id | Objetivo | Resultado en 12 semillas | Estado |
 |---|---|---:|---|
-| T1 | La comida nunca baja de 5 hasta el día 5 | 10/12 | Falla en 5 y 9 |
+| T1 | La comida nunca baja de 5 hasta el día 5 | 10/12 | Fallan 10 y 12 |
 | T2 | Hay 6 obreras vivas al día 3 | 12/12 | Cumple |
-| T3 | Hay 10 obreras vivas al día 5 | 11/12 | Falla en 9 |
-| T4 | La primera losa cede antes del día 5, sin jugador | 0/12 | Falla en todas |
-| T5 | Nace la primera generación antes de terminar el día 3 | 11/12 | Falla en 11 |
+| T3 | Hay 10 obreras vivas al día 5 | 11/12 | Falla 12 |
+| T4 | La primera losa cede antes del día 5, sin jugador | 12/12 | Cumple |
+| T5 | Nace la primera generación antes de terminar el día 3 | 11/12 | Falla 6 |
 
-La semilla 1, usada por defecto en el bot, pasa T1, T2, T3 y T5. T4 hace que
-`node test/bot-equilibrio.js 5 1` termine en fallo, como debe.
+La semilla 1, usada por defecto en el bot, pasa los cinco objetivos. El lote multisemilla, no una sola
+corrida, sigue siendo la autoridad para equilibrar.
 
-## 5 · Próximo equilibrio, sin cambiar umbrales
+## 6 · Próximo equilibrio, sin cambiar umbrales
 
-1. **T4 primero:** concentrar la excavación vertical y hacer que la cuadrilla alcance, muerda y rompa la
-   primera losa antes del día 5. En la semilla 9 se abren 120 bloques y aun así la losa conserva sus 68 HP:
-   el problema es dirección de trabajo, no velocidad bruta.
-2. **T1/T3:** estudiar las semillas 5 y 9. Ya salen al prado; falta margen de despensa y población.
-3. **T5:** estudiar por qué la semilla 11 retrasa la primera generación al día 4,11.
+1. **T1/T3:** estudiar por qué 10 y 12 pierden margen de despensa después de la expansión; la 12 también
+   termina el día 5 con solo 8 obreras.
+2. **T5:** estudiar por qué la semilla 6 retrasa la primera generación al día 4,11 aunque comida y
+   población se recuperan después.
+3. Reducir la dispersión final de comida (0,5–294,9) sin aplanar personalidades ni resultados.
 4. Cuando T1–T5 pasen en el lote, ampliar a más semillas y mapas; no suavizar T1–T5 para obtener verde.

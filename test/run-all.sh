@@ -6,7 +6,7 @@ if [ -d /tmp/libs ]; then export LD_LIBRARY_PATH="/tmp/libs${LD_LIBRARY_PATH:+:$
 # Uso: bash test/run-all.sh
 cd "$(dirname "$0")/.." || exit 1
 fail=0
-for t in no-orphans create-farm-flow world-size-rules brood-hatch foundacion-dias paron-fundacion salida-superficie save-roundtrip reload-simulation; do
+for t in no-orphans create-farm-flow world-size-rules brood-hatch foundacion-dias paron-fundacion salida-superficie tandem-objetivo expansion-agua primera-losa save-roundtrip reload-simulation; do
   printf '\n=== test/%s.js ===\n' "$t"
   if node "test/$t.js" > /tmp/_t.out 2>&1; then
     tail -n 3 /tmp/_t.out

@@ -62,10 +62,14 @@ propósito, para que el baile sea repetir en el mismo sitio). Con `umbral.hp <= 
 hace falta la invención `masonry` (cantería: GEN≥6, IQ≥145, piedra+arcilla). Si falta algo, el panel lo
 dice en vez de dejar a la colonia picando en seco.
 
-**A quién se le encarga.** En la elección de frente de excavación hay dos reglas nuevas:
+**A quién se le encarga.** En la elección de frente de excavación hay tres reglas:
 
 1. **sesgo de pozo**: `distancia = |Δ| − 1,35 · piso`, o sea que entre dos frentes iguales gana el bajo;
-2. **la obra de la losa**: si la losa está a tiro y la colonia puede morderla, hasta la mitad de las
+2. **frente principal de fundación**: desde GEN1 (o al entrar en el día 3 si el aprendizaje tarda), una
+   sola obrera libre mantiene el pozo dentro de las tres columnas de la boca hasta la primera losa. Si la
+   despensa toca 5, vuelve a mandar la comida. El escombro queda abajo como residuo con coste higiénico,
+   para no obligarla a subir cada bloque por separado. Después de la primera losa esta cadena se retira;
+3. **la obra de la losa**: si la losa está a tiro y la colonia puede morderla, hasta la mitad de las
    excavadoras (rol EXCAVADORA o `construccion > 52`) reciben como objetivo la casilla `17` con hueco
    libre encima **más cercana a su columna** — y solo si están a una fila de la losa. Darles un objetivo
    lejano las ponía a rebotar contra la pared (`blocked` subiendo y cero picoteos: medido, 30 rebotes y

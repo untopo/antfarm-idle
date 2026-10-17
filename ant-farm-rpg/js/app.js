@@ -553,6 +553,7 @@ function expandWorld(addRows, silencioso){
   for(let r=oldRows;r<newRows;r++){
     const depth=r-SURFACE_ROW;
     soil.push(Array(COLS).fill(1));
+    water.push(Array(COLS).fill(0));
     soilType.push(Array.from({length:COLS},()=>tipoDePiso(depth)));
   }
   // vetas de la banda nueva (la misma VETA_P del mapa inicial, un pelin mas generosa: lo recien abierto
@@ -1256,7 +1257,7 @@ function routeStep(ant, gx, gy){
   if(ant._routeGoal===clave && ant._routeUntil>time) return ant._routeNext;
   const prev=new Map(); const q=[[sr,sc]]; prev.set(sr+','+sc, null);
   let head=0, vistos=0, found=null;
-  while(head<q.length && vistos<1400){
+  while(head<q.length && vistos<Math.min(5000,COLS*ROWS)){
     const cur=q[head++]; vistos++;
     if(cur[0]===tr && cur[1]===tc){ found=cur; break; }
     const vks=[[cur[0]+1,cur[1]],[cur[0]-1,cur[1]],[cur[0],cur[1]+1],[cur[0],cur[1]-1]];
@@ -2467,7 +2468,7 @@ function updateQueen(dt){
     if(hereSolid){
       for(let dy=-2; dy<=2; dy++) for(let dx=-3; dx<=3; dx++){
         const nc=c+dx, nr=r+dy;
-        if(nc>=0&&nc<COLS&&nr>=SURFACE_ROW&&nr<ROWS&&soil[nr][nc]===0 && !water[nr][nc]){
+        if(nc>=0&&nc<COLS&&nr>=SURFACE_ROW&&nr<ROWS&&soil[nr][nc]===0 && (!water[nr] || !water[nr][nc])){
           q.x=nc*CELL+8; q.y=nr*CELL+12; q.vy=0; break;
         }
       }
@@ -2496,7 +2497,7 @@ function updateQueen(dt){
           const nc=c+dx, nr=r+dy;
           if(nc<2||nc>=COLS-2||nr<SURFACE_ROW+2||nr>=ROWS-2) continue;
           if(soil[nr][nc]!==0) continue;
-          if(water[nr][nc]>0.3) continue;
+          if(water[nr] && water[nr][nc]>0.3) continue;
           // score por espacio libre alrededor
           let score=0;
           for(let y2=-2;y2<=2;y2++) for(let x2=-3;x2<=3;x2++) if(soil[nr+y2]&&soil[nr+y2][nc+x2]===0) score++;
@@ -3317,6 +3318,10 @@ function getSensorsForAnt(ant){
 // el paso partido, con y sin el contador de golpes corregido). Si algun dia se intenta, hay que reequilibrar
 // forrajeo y puesta a la vez; no es un parche de un turno.
 function updateAnt(ant, dt){
+  // Un relevo del pozo que cambia de tarea no conserva un objetivo fantasma.
+  if(ant._pozoPrincipal && ant.state!=='CAVANDO'){
+    ant._pozoPrincipal=false; ant.digTarget=null; ant.digProgress=0;
+  }
   // SALIDA GLOBAL DEL ATASCO. El atasco no era un problema del forrajeo: una hormiga SIN objetivo puede
   // quedar encajada en una celda y contar blocked hasta 4.430 pasos, porque las unicas reglas que miran
   // el atasco viven dentro de la persecucion de la miel. Medido en el mundo pequeno con seis dias de
@@ -3459,10 +3464,13 @@ function updateAnt(ant, dt){
   // === TANDEM RUNNING: reclutamiento 1-a-1 en colonia pequeña (Pontier) ===
   if(!ant.tandemCooldown) ant.tandemCooldown=0;
   if(ant.food && !ant.food.isSoil && workers.length<16 && Math.random()<0.007 && ant.tandemCooldown<=0 && !ant.tandemPartner){
-    const follower = workers.find(w=>w.id!==ant.id && w.state==='EXPLORAR' && !w.food && !w.tandemPartner && dist(ant,w)<26);
+    // La carga es {amount}, no una posición. Solo se recluta si queda una fuente real a la que guiar.
+    const _tandemFood=(ant.targetFood && Number.isFinite(ant.targetFood.x) && Number.isFinite(ant.targetFood.y)) ? ant.targetFood : nearestFood(ant);
+    const follower = _tandemFood && workers.find(w=>w.id!==ant.id && w.state==='EXPLORAR' && !w.food && !w.tandemPartner && dist(ant,w)<26);
     if(follower){
       ant.tandemPartner=follower.id; follower.tandemPartner=ant.id;
-      ant.state='TANDEM_LEADER'; follower.state='TANDEM_FOLLOWER'; follower.targetFood=ant.targetFood || ant.food;
+      ant.targetFood=_tandemFood; follower.targetFood=_tandemFood;
+      ant.state='TANDEM_LEADER'; follower.state='TANDEM_FOLLOWER';
       ant.tandemCooldown=320; follower.tandemCooldown=320;
       pushEvent('evo',`🤝 Tandem ${ant.id} → ${follower.id}`,`Guía 1-a-1 a comida - colonia pequeña`);
     }
@@ -3838,7 +3846,14 @@ function updateAnt(ant, dt){
             if(Math.random()<0.35) ant.state='EXPLORAR';
           }
         }
-        ant.food={amount:1,isSoil:true}; ant.digTarget=null; ant.digProgress=0; ant.state='VOLVER_TIERRA';
+        if(ant._pozoPrincipal){
+          // En el pozo la cuadrilla encadena golpes: deja el escombro profundo (con coste higienico)
+          // en vez de subir a superficie tras CADA bloque.
+          addWaste(tx,ty,_mt); ant._pozoPrincipal=false; ant.food=null;
+          ant.digTarget=null; ant.digProgress=0; ant.state='EXPLORAR';
+        } else {
+          ant.food={amount:1,isSoil:true}; ant.digTarget=null; ant.digProgress=0; ant.state='VOLVER_TIERRA';
+        }
       }
     }
     return;
@@ -4045,13 +4060,14 @@ function updateAnt(ant, dt){
   // aprieta el hambre, TODAS salen y el enfriamiento no existe; mientras haya colchon se mantiene la
   // regla de media colonia para que el hormiguero siga creciendo.
   const _aprieto = colonyFood < 1.5;
+  const _pocaComida = colonyFood <= 5; // T1: al tocar el suelo, se come antes de abrir otro frente
   // Quien va a por miel con la despensa floja NO se decide por sorteo de nombre: la regla de la paridad
   // del id dejaba a media colonia mirando la miel para siempre, y las que nacian heredaban el «no» de su
   // estirpe (el dueno lo vio como hormigas que pasan el rato sin hacer nada). Ahora: va todo el que no
   // tiene una calada asignada, y las recolectoras aunque la tengan. La obra no se para - solo la manda
   // la comida, no la rifa.
   const _conTunel = (ant.state==='CAVANDO' && !!ant.digTarget);
-  if(!ant.targetFood && !ant.food && (_aprieto || colonyFood < 5) &&
+  if(!ant.targetFood && !ant.food && (_aprieto || _pocaComida) &&
      (time - (ant._frustrada||-1e9)) >= (_aprieto ? 0 : 900) &&
      (_aprieto || !_conTunel || ant.role==='RECOLECTORA' || ant.affinity==='RECOLECTORA')) {
     // Si todas salen a por miel, nadie cava y el hormiguero no crece (y sin camaras nuevas el tope de
@@ -4069,12 +4085,15 @@ function updateAnt(ant, dt){
       // y con la despensa a cero no se abre galeria nueva: primero se come, despues se excava
       // y con la despensa floja no se abre calada NUEVA por gusto: solo para salir de un atasco, o si
       // la colonia ya tiene de qué comer (primero se come, despues se excava)
-      const _pocaComida = colonyFood < 5;
       // Reflejo colectivo minimo: si la despensa aguanta y no hay ningun frente activo, la obrera
       // libre con mayor rasgo de construccion abre uno. La red sigue decidiendo las demas excavadoras.
       // Esto evita que un linaje viable se quede en cero por heredar todas una salida «cavar» baja.
       let _constructoraTurno=null;
-      if(!_pocaComida && !workers.some(w=>w.health>0 && w.state==='CAVANDO' && w.digTarget)){
+      const _hayFrenteActivo=workers.some(w=>w.health>0 && w.state==='CAVANDO' && w.digTarget);
+      const _hayFrentePozo=workers.some(w=>w.health>0 && w.state==='CAVANDO' && w.digTarget && w._pozoPrincipal);
+      const _primerUmbralPendiente=umbralesRotos===0;
+      const _puedePozo=_primerUmbralPendiente && (gen>=1 || day>=3);
+      if(!_pocaComida && (!_hayFrenteActivo || (_puedePozo && !_hayFrentePozo))){
         for(const w of workers){
           if(w.health<=0 || w.food || w.targetFood || w.digTarget || w.wasteTarget || w.state==='DESCANSAR') continue;
           if(!_constructoraTurno || (w.traits&&w.traits.construccion||0) > (_constructoraTurno.traits&&_constructoraTurno.traits.construccion||0)) _constructoraTurno=w;
@@ -4100,6 +4119,25 @@ function updateAnt(ant, dt){
             else if(_d<_bestD){ _bestD=_d; _far=_f; }
           }
           let pick=_cands&&_cands.length ? _cands[(Math.random()*_cands.length)|0] : (_far || frontier[(Math.random()*_fn)|0]);
+          // FRENTE PRINCIPAL: la excavadora de reserva mantiene un pozo dentro de las tres columnas de la
+          // boca hasta romper la primera losa. El resto conserva sus frentes y camaras laterales.
+          if(_instintoObra && _puedePozo && umbral){
+            let _frentePozo=null, _fd=Infinity;
+            for(let _pc=CENTER_COL-1;_pc<=CENTER_COL+1;_pc++){
+              for(let _pr=umbral.r;_pr>SURFACE_ROW;_pr--){
+                if(!soil[_pr] || soil[_pr][_pc]!==1 || !soil[_pr-1] || soil[_pr-1][_pc]!==0) continue;
+                const _pt=soilType[_pr]&&soilType[_pr][_pc];
+                if(_pt===15 || (_pt===7 && (gen<8 || !inventions.masonry))) continue;
+                if(_pt===17 && !puedeGolpearUmbral()) continue;
+                const _pd=Math.abs((_pc+0.5)*CELL-ant.x);
+                if(!_frentePozo || _pr>_frentePozo.r || (_pr===_frentePozo.r && _pd<_fd)){
+                  _frentePozo={r:_pr,c:_pc}; _fd=_pd;
+                }
+                break;
+              }
+            }
+            if(_frentePozo){ pick=_frentePozo; ant._pozoPrincipal=true; }
+          } else ant._pozoPrincipal=false;
           // Las obras del umbral: si la losa esta a tiro y la colonia ya puede morderla, parte de las
           // excavadoras dejan el frente y van a ella. Sin esto el avance depende de que el azar ponga
           // una hormiga encima de la losa, y eso no es una decision de la colonia, es una ruleta.
@@ -4215,7 +4253,7 @@ function updateAnt(ant, dt){
     }
     // para la fisica del pozo: mi destino esta por encima de mi? (sin esto no sabe trepar hacia arriba en la ida)
     ant._quiereSubir=(targ.y<ant.y-4);
-    if(_cruzaBoca || ant.blocked>10){ const _rs=routeStep(ant,_meta.x,_meta.y); if(_rs) _meta=_rs; }
+    if(_cruzaBoca || ant.blocked>10 || umbralesRotos>0){ const _rs=routeStep(ant,_meta.x,_meta.y); if(_rs) _meta=_rs; }
     const ang=Math.atan2(_meta.y-ant.y,_meta.x-ant.x);
     let diff=((ang-ant.angle+Math.PI*3)%(Math.PI*2)-Math.PI);
     // La red decide ir a por la comida; una vez comprometida, el camino transitable manda sobre el giro
