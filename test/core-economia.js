@@ -13,6 +13,7 @@ check('reserva de superficie en referencia = 5', E.reservaSuperficie(1) === 5, E
 check('reserva de superficie tiene suelo 2 y techo 10', E.reservaSuperficie(0.1) === 2 && E.reservaSuperficie(9) === 10);
 check('tope de superficie en referencia = 8', E.topeSuperficie(1) === 8, E.topeSuperficie(1));
 check('tope de superficie tiene suelo 3 y techo 14', E.topeSuperficie(0.1) === 3 && E.topeSuperficie(9) === 14);
+check('la reserva vital protege exactamente 5 raciones', E.reservaVitalComida() === 5, E.reservaVitalComida());
 // Pagar
 const m = { stone: 5, clay: 2, wood: 3 };
 check('puedePagar con inventario suficiente', E.puedePagar(m, { stone: 2, clay: 1 }) === true);

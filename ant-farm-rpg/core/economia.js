@@ -8,6 +8,10 @@
 function reservaInicialComida(ratio){ return Math.max(5, Math.min(20, Math.round(12*ratio))); }
 function reservaSuperficie(ratio){ return Math.max(2, Math.min(10, Math.round(5*ratio))); }
 function topeSuperficie(ratio){ return Math.max(3, Math.min(14, Math.round(5*ratio*1.6))); }
+// Cinco raciones no son excedente: son la reserva vital de la colonia. La reina puede criar con lo
+// que haya por encima, pero la puesta automática no se come este suelo y obliga a las obreras a
+// reponerlo antes de abrir trabajo nuevo. Es una regla de juego, no una concesión del bot.
+function reservaVitalComida(){ return 5; }
 
 // Materiales: un coste es un objeto {material: cantidad}. Se paga restando del inventario.
 function puedePagar(mats, coste){
@@ -23,5 +27,5 @@ function pagar(mats, coste){
 }
 
 if(typeof module!=='undefined' && module.exports){
-  module.exports={reservaInicialComida,reservaSuperficie,topeSuperficie,puedePagar,pagar};
+  module.exports={reservaInicialComida,reservaSuperficie,topeSuperficie,reservaVitalComida,puedePagar,pagar};
 }

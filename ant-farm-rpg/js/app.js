@@ -322,7 +322,12 @@ function abrirUmbral(){
   // de la banda. Sin el flag salian dos tarjetas diciendo lo mismo (el dueno lo dijo: una cifra, un sitio).
   try{ expandWorld(add, true); }catch(e){ console.warn('expandWorld tras umbral', e); }
   bandaMax=Math.max(bandaMax, Math.min(nuevo, bandaDe(Math.max(SURFACE_ROW+1, ROWS-2)-SURFACE_ROW))); umbralesRotos++;
+  try{ workers.forEach(w=>{ w._pozoPrincipal=false; }); }catch(e){}
   stats.xp += 90 + 30*nuevo; colonyFitness += 2.2;
+  // Romper una losa es trabajo evolutivo igual que una entrega. Antes el XP se sumaba pero GEN no
+  // se comprobaba hasta la siguiente entrega; una colonia podía haber ganado la generación en día 3
+  // y seguir mostrando GEN0 hasta el día 4. El hito se liquida en el mismo instante en que ocurre.
+  checkLevelUp();
   markSoilDirty(); reindexMagma();
   pushEvent('evo', '🕳️ UMBRAL ROTO · '+NOMBRE_BANDA(nuevo), 'el mapa llega a '+ROWS+' filas - '+reliquias.length+' reliquias en la vitrina');
   notifyCanon('🕳️ ¡NUEVA PROFUNDIDAD!', NOMBRE_BANDA(nuevo)+' - la colonia huele piedra mojada y algo mas duro', 6400);
@@ -603,9 +608,15 @@ function expandWorld(addRows, silencioso){
     }
   }
   ROWS=newRows;
-  // expandir canvas cache
+  // El alto lógico, el lienzo visible y el cache tienen que crecer juntos. Antes solo crecían las
+  // matrices: H seguía en la fila de la primera losa, la física sujetaba a todas en y=H-12 y la
+  // despensa podía mudarse a una cámara que ni las hormigas ni la cámara alcanzaban. Al recargar sí
+  // se recalculaba H, por eso la misma partida cambiaba de comportamiento después de un F5.
+  H=ROWS*CELL;
   try{
-    soilCacheCanvas.height=ROWS*CELL; soilCacheCanvas.width=COLS*CELL;
+    const _cv=document.getElementById('farmCanvas');
+    if(_cv){ _cv.height=H; if(ctx) ctx.imageSmoothingEnabled=false; }
+    soilCacheCanvas.height=H; soilCacheCanvas.width=COLS*CELL;
     // Cambiar el tamano del lienzo REINICIA su contexto: sin volver a apagar el suavizado, las filas
     // recien liberadas salen borrosas (el dueno lo llamo «texturas raras»). Y el aviso de repintado
     // tenia que ser UNO solo - marcar dos veces convertia «mapa entero» en «lote vacio», asi que las
@@ -615,7 +626,6 @@ function expandWorld(addRows, silencioso){
     soilCacheCtx=_cc;
     soilDirtyCells=null; soilCacheDirty=true; _soilRev++;
   }catch(e){}
-  // worldH es ROWS*CELL implícito, no tocar H (canvas) - la cámara usa ROWS*CELL directamente
   if(!silencioso){
     pushEvent('evo',`🌍 Mundo expandido +`+addRows+` filas → `+ROWS+` profundidad`, `progresivo: más profundo = más duro y más recompensas`);
     notifyCanon('🌍 MAPA MÁS PROFUNDO', `El mundo crece a `+ROWS+` filas - las excavadoras llegaron al fondo`, 5200);
@@ -978,7 +988,11 @@ function updateEcosystem(dt){
     if(!_pie){
       pl.seca = 1;
       pl.growth -= 0.0022*dt;
+      pl.age+=dt;
       if(pl.growth <= 0.02){ plants.splice(i,1); continue; }
+      // Seca significa seca: no compensa el encogimiento con crecimiento solar ni vuelve a dar fruto.
+      // Antes ambas cuentas ocurrían en el mismo paso y una mata sin raíz podía seguir produciendo.
+      continue;
     } else if(pl.seca) pl.seca = 0;
     const f=fertility[pl.c];
     const growthRate = (0.00055 + f*0.00062)*dt*rainBoost*seasonBoost*sunBoost;
@@ -1274,6 +1288,30 @@ function routeStep(ant, gx, gy){
   while(cur && !(cur[0]===sr && cur[1]===sc)){ paso=cur; cur=prev.get(cur[0]+','+cur[1]); }
   ant._routeNext = paso? {x:paso[1]*CELL+8, y:paso[0]*CELL+8} : null;
   return ant._routeNext;
+}
+// Una calada es sólida y no puede ser la meta del BFS. Para que la integrante del pozo vuelva a su
+// frente tras descansar, se enruta hasta una de las caras ya abiertas del bloque.
+function routeStepToDig(ant, target){
+  if(!target) return null;
+  const cands=[];
+  for(const d of [[0,-1],[-1,0],[1,0],[0,1]]){
+    const c=target.c+d[0], r=target.r+d[1];
+    if(c<0||c>=COLS||r<SURFACE_ROW||r>=ROWS||!soil[r]||soil[r][c]!==0) continue;
+    cands.push({c,r,d:Math.hypot((c+0.5)*CELL-ant.x,(r+0.5)*CELL-ant.y)});
+  }
+  cands.sort((a,b)=>a.d-b.d);
+  for(const p of cands){
+    if(Math.floor(ant.x/CELL)===p.c && Math.floor(ant.y/CELL)===p.r){
+      // Estar en la celda vecina no basta: puede haber quedado contra su arista y el radio físico
+      // todavía pisa la pared lateral. Primero se recentra; después ya puede acercarse al bloque.
+      const _centro={x:p.c*CELL+8,y:p.r*CELL+8};
+      if(Math.hypot(_centro.x-ant.x,_centro.y-ant.y)>2){ ant._routeNext=_centro; return _centro; }
+      ant._routeNext=null; return null;
+    }
+    const paso=routeStep(ant,p.c*CELL+8,p.r*CELL+8);
+    if(paso) return paso;
+  }
+  return null;
 }
 // Topo: la basura va a la camara de residuo, no repartida por todo el nido. Antes cada calada
 // plantaba su monticulo y habia tres sitios que empujaban sin acordarse del tope: en un mundo
@@ -2340,8 +2378,13 @@ function capacidadCria(){
   return Math.max(3, Math.min(base+extra, base*3+12));
 }
 window.capacidadCria=capacidadCria;
-// Umbral de despensa por debajo del cual la reina paga criar sola (las bocas de la cria).
-function _sostieneCriar(){ try{ return 4 + 1.9*brood.length; }catch(e){ return 4; } }   // lo mismo que exige la puesta (vease updateQueen)
+// La reserva vital no se gasta en puestas automáticas: es el suelo que mantiene al superorganismo
+// vivo mientras las forrajeras vuelven. La fórmula pura vive en core/economia.js.
+function _reservaVital(){ try{ return reservaVitalComida(); }catch(e){ return 5; } }
+// Lo que hace falta para poner otro huevo: debe quedar la reserva vital Y debe poder sostenerse la
+// camada. Son dos suelos alternativos, no dos facturas que se suman (sumarlos frenaba la reposición
+// justo cuando las fundadoras empezaban a morir de viejas).
+function _sostieneCriar(){ try{ return Math.max(_reservaVital()+3, 3+1.9*brood.length); }catch(e){ return 8; } }
 const _MAT_DEFS = [
   {k:'stone', n:'PIEDRA',  col:'#9a9a9a', col2:'#6e6e6e', icon:'\u{1FAA8}', sirve:'muros y herramientas de pico'},
   {k:'clay',  n:'ARCILLA', col:'#c47a52', col2:'#8f5433', icon:'\u{1F9F1}', sirve:'paredes, granero y tinajas'},
@@ -2574,9 +2617,13 @@ function updateQueen(dt){
     // 0,6 la reina de la semilla 2 se comio 17 raciones en 6 puestas en dos dias, la despensa cayo a 2,
     // las larvas se quedaron sin nada y la colonia entero se apago al dia 9 - mientras 8 gotas de miel
     // esperaban en el prado. Racionarse por lo que puede MANTENER es la unica salida.
-    const _sostiene = need + 1.9*brood.length;
+    const _sostiene = _sostieneCriar();
     const _sitio = brood.length < capacidadCria();
-    if(colonyFood>=_sostiene && _sitio){
+    // Hasta diez obreras la fundadora puede completar la puesta con sus reservas corporales. No
+    // inventa comida: la parte que falta se paga en salud, mientras las cinco raciones vitales se
+    // quedan en la despensa. Así la primera cohorte reemplaza a las fundadoras antes de su vejez.
+    const _puestaCorporal = workers.length<10 && colonyFood>=_reservaVital() && (q.health||0)>18;
+    if((colonyFood>=_sostiene || _puestaCorporal) && _sitio){
       // FERTILIDAD EVOLUTIVA REALISTA - Lasius 4-7k (100/d pico), Atta 5M (30k/d), argentina billones
       // En juego: base 2.19/d, con evolución GEN30 puede llegar a 18/d por reina (como Atta joven), 4 reinas = 72/d → N=72*18=1296
       const _evoFert = 1 + gen*0.13 + Math.max(0, colonyIQ-108)*0.009 + (q.personality?.fertilidad? (q.personality.fertilidad-50)*0.006:0) + (fungusGardens.filter(f=>f.health>0.62).length*0.12) + (typeof inventions!=='undefined' && inventions.fungus?0.22:0);
@@ -2600,7 +2647,10 @@ function updateQueen(dt){
           ( q.age > q.maxAge*0.45 || (q.health||100) < 46 ) && colonyFood>5;
         const isQueenLarva = _necesitaHeredera || (workers.length>=6 && colonyFood>8 && queens.length < reinasPermitidas() && Math.random()<0.04 + gen*0.002);
         brood.push({type:'egg', progress:0, genome:mutated.genome, time:0, isQueen:isQueenLarva, faction:q.faction, parents:[q.name||q.id, best?best.id:'-'], parentGenomes:[q.genome.id, best?best.genome.id:'-'], x:q.x+(Math.random()-0.5)*22, y:q.y+(Math.random()-0.5)*14, hunger:0});
-        colonyFood-=need;
+        const _excedente=Math.max(0,colonyFood-_reservaVital());
+        const _pagoPuesta=Math.min(need,_excedente);
+        colonyFood-= _pagoPuesta;
+        if(_pagoPuesta<need) q.health=Math.max(4,(q.health||100)-(need-_pagoPuesta)*1.8);
         const eggIcon2=isQueenLarva?'👑':'🥚';
         // === reina: crecimiento y personalidad ===
         q.eggsLaid=(q.eggsLaid||0)+1;
@@ -2682,12 +2732,19 @@ function updateBrood(dt){
           if(donor) donor.crop = Math.max(0, (donor.crop||0) - _g*0.020);
         }
         if(nivel>=3){
-          colonyFood = Math.max(0, colonyFood - _g*(nivel===3?0.030:0.018));
+          const _costeCria=_g*(nivel===3?0.030:0.018);
+          // Con reina viva, la reserva de cinco raciones no se toca: si no queda excedente, la
+          // fundadora alimenta la larva con sus reservas corporales. Sin reina sí se permite usar
+          // la despensa para que una cría ya puesta pueda refundar la colonia.
+          const _sueloComida=queens.length>0?_reservaVital():0;
+          const _pagable=Math.max(0,colonyFood-_sueloComida);
+          const _pagado=Math.min(_costeCria,_pagable);
+          colonyFood = Math.max(_sueloComida>colonyFood?colonyFood:_sueloComida, colonyFood-_pagado);
           // Criar sola le cuesta, SI: solo cuando la despensa no llega para lo que la cria pide.
           // Con el granero lleno quien alimenta es la colonia, y la reina no deveria estar pagando
           // 20 puntos de vida por jornada (medido: 100 -> 60 en dos dias con 7 obreras trabajando),
           // porque una reina que se apaga a la mitad de su vida es una sucesion forzada cada semana.
-          if(nivel===3 && queens.length>0 && colonyFood < _sostieneCriar()) queens[0].health = Math.max(4, (queens[0].health||100) - _g*0.02);
+          if(queens.length>0 && (_pagado<_costeCria || colonyFood < _sostieneCriar())) queens[0].health = Math.max(4, (queens[0].health||100) - _g*0.02);
         }
         b.hunger=Math.max(0, b.hunger- dt*(nivel<=2?0.08:0.045));
         if(byp > (SURFACE_ROW+10)*CELL) b.progress+= dt*0.00042; // más cálido abajo
@@ -2752,6 +2809,10 @@ if(workers.length < getMaxPopulation()){
             // si los padres ya decoran/construyen, la cría empieza con trait cuidado levemente mayor
             if(decoSet.size>6 && ant.traits.cuidado<68) ant.traits.cuidado = Math.min(72, ant.traits.cuidado+2);
             workers.push(ant);
+            // Sacar adelante una obrera también es progreso evolutivo observable. La eclosión aporta
+            // menos que una entrega grande, pero evita que un linaje que cría bien quede en GEN0 sólo
+            // porque sus fundadoras hicieron pocos viajes o caladas durante esos mismos tres días.
+            stats.xp+=20; checkLevelUp();
             // hereda facción y un poco del ánimo de la madre
             pushEvent('birth',`Eclosiona ${ant.id} [${ant.role}] GEN${ant.genome.gen}`, `EXP${ant.traits.exploracion} CAV${ant.traits.construccion} COM${ant.traits.comunica}`);
             if(workers.length<=5) notifyCanon('🐣 ECLOSION', `${ant.id} nace - la colonia crece`, 4800);
@@ -2881,7 +2942,8 @@ function updateWaste(dt){
     const w=wastePiles[i];
     w.age=(w.age||0)+dt;
     // viejas llevan basura lejos (si hay viejas)
-    const carriers = workers.filter(ww=> ww.age/DAY_LENGTH>1.0 && dist(ww,w)<44 && ww.state==='EXPLORAR' && !ww.food);
+    const carriers = workers.filter(ww=> ww.age/DAY_LENGTH>1.0 && dist(ww,w)<44 && ww.state==='EXPLORAR' &&
+      !ww.food && !ww.targetFood && !ww.digTarget && !ww.wasteTarget && !ww._pozoPrincipal);
     if(carriers.length>0 && Math.random()<0.018){
       // mover basura a borde lejano
       w.x = Math.max(12, Math.min(W-12, w.x + (Math.random()<0.5?-1:1)*28));
@@ -3318,9 +3380,33 @@ function getSensorsForAnt(ant){
 // el paso partido, con y sin el contador de golpes corregido). Si algun dia se intenta, hay que reequilibrar
 // forrajeo y puesta a la vez; no es un parche de un turno.
 function updateAnt(ant, dt){
-  // Un relevo del pozo que cambia de tarea no conserva un objetivo fantasma.
-  if(ant._pozoPrincipal && ant.state!=='CAVANDO'){
-    ant._pozoPrincipal=false; ant.digTarget=null; ant.digProgress=0;
+  // La marca de la primera cuadrilla dura toda la obra, no solo una calada. Así la obrera que ya está
+  // abajo encadena el siguiente bloque en vez de ser sustituida por otra que vuelve a empezar desde el
+  // nido. Al abrir la primera losa se retira el encargo para siempre.
+  if(ant._pozoPrincipal && umbralesRotos>0) ant._pozoPrincipal=false;
+  // La cuadrilla reservada no acepta una calada lateral por el reflejo de atasco mientras espera a
+  // que vuelva la comida. Su único frente, hasta la losa, vive en las tres columnas de la boca.
+  if(ant._pozoPrincipal && umbralesRotos===0 && ant.digTarget && Math.abs(ant.digTarget.c-CENTER_COL)>1){
+    ant.digTarget=null; ant.digProgress=0; if(ant.state==='CAVANDO') ant.state='EXPLORAR';
+  }
+  // Una tarea interrumpida no conserva objetivos fantasma. El descanso, la basura o una entrega
+  // podían cambiar el estado pero dejar `digTarget`; después la misma obrera acumulaba calada,
+  // tierra en la boca y objetivo de miel a la vez, y ninguna rama era ya dueña de su movimiento.
+  if(ant.digTarget && ant.state!=='CAVANDO' && ant.state!=='DESCANSAR'){
+    ant.digTarget=null; ant.digProgress=0;
+  }
+  // La tierra ya extraída se devuelve antes de aceptar otro encargo. Si se durmió cargada, al
+  // despertar recupera VOLVER_TIERRA en el siguiente paso en vez de quedar como EXPLORAR cargada.
+  if(ant.food && ant.food.isSoil){
+    ant.targetFood=null; ant.wasteTarget=null;
+    if(ant.state!=='VOLVER_TIERRA' && ant.state!=='DESCANSAR'){
+      ant.digTarget=null; ant.digProgress=0; ant.state='VOLVER_TIERRA';
+    }
+  }
+  // Igual con la basura: una siesta puede cambiar el estado, no borrar el encargo. Al despertar
+  // recupera el transporte en vez de pasear eternamente con un `wasteTarget` invisible.
+  if(ant.wasteTarget && !(ant.food&&ant.food.isSoil) && ant.state!=='LLEVANDO_BASURA' && ant.state!=='DESCANSAR'){
+    ant.targetFood=null; ant.digTarget=null; ant.digProgress=0; ant.state='LLEVANDO_BASURA';
   }
   // SALIDA GLOBAL DEL ATASCO. El atasco no era un problema del forrajeo: una hormiga SIN objetivo puede
   // quedar encajada en una celda y contar blocked hasta 4.430 pasos, porque las unicas reglas que miran
@@ -3480,29 +3566,30 @@ function updateAnt(ant, dt){
   // === FÍSICA REAL: gravedad ===
   // helpers internos
   function hasGrip(_x,_y){
-    const _c=Math.floor(_x/CELL), _r=Math.floor((_y+10)/CELL);
-    if(_r>=0&&_r<ROWS&&_c>=0&&_c<COLS){
-      if(soil[_r]&&soil[_r][_c]===1) return 'floor';
-      for(let s of structures){ if(_c>=s.c&&_c<s.c+s.w && _r>=s.r&&_r<s.r+s.h) return 'floor'; }
+    const _c=Math.floor(_x/CELL), _footR=Math.floor((_y+10)/CELL);
+    if(_footR>=0&&_footR<ROWS&&_c>=0&&_c<COLS){
+      if(soil[_footR]&&soil[_footR][_c]===1) return 'floor';
+      for(let s of structures){ if(_c>=s.c&&_c<s.c+s.w && _footR>=s.r&&_footR<s.r+s.h) return 'floor'; }
     }
-    // hormigas reales: arolia + garras + pelos = trepan cualquier cosa (hasta vidrio) y duermen en techo
+    // Arolia + garras: medir la distancia al BORDE real de la pared que rodea el cuerpo. Antes se
+    // mezclaba la fila de los pies con la de la cabeza y, durante media celda de cada paso, no se
+    // miraba la pared que estaba justo al lado. En un pozo de tres celdas la hormiga trepaba hasta
+    // y=150, perdia agarre, caia y repetia para siempre aunque el BFS señalara la salida correcta.
+    const _bodyR=Math.floor(_y/CELL), _alcance=13; // radio del cuerpo (7 px) + patas; no cruza dos celdas
+    function _tocaRect(x0,y0,x1,y1){
+      const dx=_x<x0?x0-_x:_x>x1?_x-x1:0;
+      const dy=_y<y0?y0-_y:_y>y1?_y-y1:0;
+      return dx*dx+dy*dy <= _alcance*_alcance;
+    }
     for(let dr=-1; dr<=1; dr++) for(let dc=-1; dc<=1; dc++){
-      if(dr===0&&dc===0) continue;
-      const nc=_c+dc, nr=_r+dr;
-      const checkR = dr===-1 ? Math.floor((_y-8)/CELL) : _r;
-      if(nc<0||nc>=COLS||checkR<SURFACE_ROW||checkR>=ROWS) continue;
-      if(soil[checkR]&&soil[checkR][nc]===1){
-        const dx=nc*CELL+8 - _x, dy=checkR*CELL+8 - _y;
-        // 21 px alcanza el labio diagonal del pozo de tres celdas; con 18,5 perdía el agarre a 2–4 px
-        // de coronarlo y la gravedad la devolvía al nido.
-        if(Math.hypot(dx,dy) < 21) return 'wall';
+      const nc=_c+dc, nr=_bodyR+dr;
+      if(nc<0||nc>=COLS||nr<SURFACE_ROW||nr>=ROWS) continue;
+      if(soil[nr]&&soil[nr][nc]===1 && _tocaRect(nc*CELL,nr*CELL,(nc+1)*CELL,(nr+1)*CELL)) return 'wall';
+      for(let s of structures){
+        if(nc>=s.c&&nc<s.c+s.w && nr>=s.r&&nr<s.r+s.h &&
+           _tocaRect(s.c*CELL,s.r*CELL,(s.c+s.w)*CELL,(s.r+s.h)*CELL)) return 'wall';
       }
-      for(let s of structures){ if(nc>=s.c&&nc<s.c+s.w && checkR>=s.r&&checkR<s.r+s.h) return 'wall'; }
     }
-    // borde diagonal cercano también agarra (18% antes, ahora más generoso)
-    const _r2=_r; const _c1=_c-1,_c2=_c+1;
-    if(_c1>=0&&soil[_r2]&&soil[_r2][_c1]===1 && Math.hypot((_c1*CELL+8)-_x, (_r2*CELL+8)-_y) < 18) return 'wall';
-    if(_c2<COLS&&soil[_r2]&&soil[_r2][_c2]===1 && Math.hypot((_c2*CELL+8)-_x, (_r2*CELL+8)-_y) < 18) return 'wall';
     return null;
   }
   function hasFloorBelow(_x,_y){ return !!hasGrip(_x,_y); }
@@ -3751,16 +3838,45 @@ function updateAnt(ant, dt){
     return;
   }
   if(ant.state==='CAVANDO' && ant.digTarget){
+    // Cinco raciones son reserva, no combustible de obra. La cuadrilla conserva el frente y espera;
+    // en cuanto entra una entrega continúa exactamente donde estaba, sin aceptar una calada lateral.
+    if(ant._pozoPrincipal && colonyFood<=_reservaVital()) return;
     const tx=(ant.digTarget.c+0.5)*CELL, ty=(ant.digTarget.r+0.5)*CELL;
-    const ang=Math.atan2(ty-ant.y, tx-ant.x);
-    let diff=((ang-ant.angle+Math.PI*3)%(Math.PI*2)-Math.PI); ant.angle+=diff*0.18;
     const d=dist(ant,{x:tx,y:ty});
+    let _metaCava={x:tx,y:ty}, _cavaEnRuta=false;
+    // Solo la obra principal necesita conservar un frente remoto. Los frentes espontáneos siguen
+    // usando su locomoción original; así no se convierte cada calada lateral en un BFS costoso.
+    if(ant._pozoPrincipal && d>CELL*1.35){
+      const _pasoCava=routeStepToDig(ant,ant.digTarget);
+      if(_pasoCava){ _metaCava=_pasoCava; _cavaEnRuta=true; }
+      else if(d>CELL*3){
+        // El frente pertenecía a otra bolsa de aire: caminar en línea recta sólo la deja mordiendo una
+        // pared ajena. Lo suelta para que el selector elija, esta vez, una frontera conectada.
+        ant.digTarget=null; ant.digProgress=0; ant.state='EXPLORAR'; return;
+      }
+    }
+    // En una galería de una celda el centro cabe, aunque una pata haya quedado dentro de la arista
+    // anterior. El nodo BFS es aire contiguo: recentrar ahí sólo cuando la postura actual es inválida
+    // evita que la cuadrilla pase jornadas enteras vibrando en el borde de su propio pozo.
+    if(_cavaEnRuta && !canMove(ant.x,ant.y) && !isSolidPixel(_metaCava.x,_metaCava.y) && dist(ant,_metaCava)<CELL*2){
+      ant.x=_metaCava.x; ant.y=_metaCava.y; ant.vy=0;
+    }
+    const ang=Math.atan2(_metaCava.y-ant.y, _metaCava.x-ant.x);
+    let diff=((ang-ant.angle+Math.PI*3)%(Math.PI*2)-Math.PI); ant.angle+=diff*(_cavaEnRuta?0.34:0.18);
     if(d>10){
-      const nx=ant.x+Math.cos(ant.angle)*speed*0.82, ny=ant.y+Math.sin(ant.angle)*speed*0.82;
-      if(canMoveIgnoreTarget(nx,ny,ant.digTarget)){ant.x=nx;ant.y=ny;}else{
+      const _distPaso=dist(ant,_metaCava);
+      const _velCava=_cavaEnRuta ? Math.min(speed*0.82,Math.max(2,_distPaso*0.72)) : speed*0.82;
+      const nx=ant.x+Math.cos(ant.angle)*_velCava, ny=ant.y+Math.sin(ant.angle)*_velCava;
+      if(canMoveIgnoreTarget(nx,ny,ant.digTarget)){ant.x=nx;ant.y=ny;}else if(_cavaEnRuta && !isSolidPixel(nx,ny)){
+        // El BFS trabaja por celdas abiertas, pero la física usa un radio de siete píxeles. Si una
+        // obrera queda pegada a la arista de una galería de una celda, ese radio puede rechazar todos
+        // los pasos aunque su centro y el siguiente nodo estén en aire. Déjala recentrarse dentro de
+        // la ruta; el centro nunca atraviesa suelo y, una vez separado del borde, vuelve al radio normal.
+        ant.x=nx; ant.y=ny;
+      }else{
         // intentar deslizar por pared: probar solo X o solo Y (ignorando bloque objetivo)
-        const sx=ant.x+Math.cos(ant.angle)*speed*0.45;
-        const sy=ant.y+Math.sin(ant.angle)*speed*0.45;
+        const sx=ant.x+Math.cos(ant.angle)*_velCava*0.55;
+        const sy=ant.y+Math.sin(ant.angle)*_velCava*0.55;
         if(canMoveIgnoreTarget(sx,ant.y,ant.digTarget)) ant.x=sx;
         else if(canMoveIgnoreTarget(ant.x,sy,ant.digTarget)) ant.y=sy;
         else ant.angle+=(Math.random()-0.5)*0.7;
@@ -3801,7 +3917,12 @@ function updateAnt(ant, dt){
           ant.digTarget=null; ant.digProgress=0; ant.state='VOLVER_TIERRA'; ant.fatigue=Math.min(100,ant.fatigue+9);
           pushToast(ant.x,ant.y-10,'🔥 QUEMA','#ff6a1e'); return;
         } if(_mt===7 && (gen<8 || !inventions.masonry)){ ant.digTarget=null; ant.digProgress=0; ant.state='EXPLORAR'; pushToast(ant.x,ant.y-10,'⛔ BEDROCK','#555'); return; }
-        soil[ant.digTarget.r][ant.digTarget.c]=0; if(soilType[ant.digTarget.r]) soilType[ant.digTarget.r][ant.digTarget.c]=0; markSoilDirty(ant.digTarget.c,ant.digTarget.r); ant.digsDone++; digs++; colonyFitness+=0.35; if(digs%6===0) pushImportant('invention', `⛏ ${digs} bloques cavados`, `GEN${typeof gen!=='undefined'?gen:0} - ${workers.filter(w=>w.state==='CAVANDO').length} activas en [${ant.digTarget?ant.digTarget.c:''},${ant.digTarget?ant.digTarget.r:''}]`);
+        soil[ant.digTarget.r][ant.digTarget.c]=0; if(soilType[ant.digTarget.r]) soilType[ant.digTarget.r][ant.digTarget.c]=0; markSoilDirty(ant.digTarget.c,ant.digTarget.r); ant.digsDone++; digs++; colonyFitness+=0.35;
+        // La evolución mide trabajo de la colonia, no solo viajes de miel. Una calada vale menos de
+        // la mitad de una entrega mínima (8 frente a 21 XP), pero una fundación que excava de verdad
+        // puede alcanzar GEN1 aunque su linaje tarde en coronar el pozo de salida.
+        stats.xp+=8; checkLevelUp();
+        if(digs%6===0) pushImportant('invention', `⛏ ${digs} bloques cavados`, `GEN${typeof gen!=='undefined'?gen:0} - ${workers.filter(w=>w.state==='CAVANDO').length} activas en [${ant.digTarget?ant.digTarget.c:''},${ant.digTarget?ant.digTarget.r:''}]`);
         // residuo real: la tierra excavada va a basurero, no desaparece
         if(Math.random()<0.52){ addWaste(tx, ty, _mt); }
         // cosecha de material según estrato
@@ -3847,9 +3968,10 @@ function updateAnt(ant, dt){
           }
         }
         if(ant._pozoPrincipal){
-          // En el pozo la cuadrilla encadena golpes: deja el escombro profundo (con coste higienico)
-          // en vez de subir a superficie tras CADA bloque.
-          addWaste(tx,ty,_mt); ant._pozoPrincipal=false; ant.food=null;
+          // En el pozo la misma integrante encadena caladas: deja el escombro profundo (con coste
+          // higiénico) y conserva el relevo hasta la primera losa, en vez de volver al nido o sortear
+          // una excavadora lejana después de CADA bloque.
+          addWaste(tx,ty,_mt); ant.food=null;
           ant.digTarget=null; ant.digProgress=0; ant.state='EXPLORAR';
         } else {
           ant.food={amount:1,isSoil:true}; ant.digTarget=null; ant.digProgress=0; ant.state='VOLVER_TIERRA';
@@ -4061,13 +4183,16 @@ function updateAnt(ant, dt){
   // regla de media colonia para que el hormiguero siga creciendo.
   const _aprieto = colonyFood < 1.5;
   const _pocaComida = colonyFood <= 5; // T1: al tocar el suelo, se come antes de abrir otro frente
+  // La cuadrilla profunda se detiene en la reserva, pero no conserva una excursión a la superficie
+  // cuando la despensa ya se recuperó: ese doble objetivo dejaba su calada congelada durante días.
+  if(ant._pozoPrincipal && ant.targetFood && !ant.food && !_aprieto) ant.targetFood=null;
   // Quien va a por miel con la despensa floja NO se decide por sorteo de nombre: la regla de la paridad
   // del id dejaba a media colonia mirando la miel para siempre, y las que nacian heredaban el «no» de su
   // estirpe (el dueno lo vio como hormigas que pasan el rato sin hacer nada). Ahora: va todo el que no
   // tiene una calada asignada, y las recolectoras aunque la tengan. La obra no se para - solo la manda
   // la comida, no la rifa.
   const _conTunel = (ant.state==='CAVANDO' && !!ant.digTarget);
-  if(!ant.targetFood && !ant.food && (_aprieto || _pocaComida) &&
+  if(!ant.targetFood && !ant.food && (_aprieto || _pocaComida) && (!ant._pozoPrincipal || _aprieto) &&
      (time - (ant._frustrada||-1e9)) >= (_aprieto ? 0 : 900) &&
      (_aprieto || !_conTunel || ant.role==='RECOLECTORA' || ant.affinity==='RECOLECTORA')) {
     // Si todas salen a por miel, nadie cava y el hormiguero no crece (y sin camaras nuevas el tope de
@@ -4078,7 +4203,10 @@ function updateAnt(ant, dt){
   if(!ant.targetFood){
     let nf=null, bd=Infinity;
     for(let f of foods){const d=dist(ant,f); if(d<90 && d<bd){bd=d;nf=f;}}
-    if(nf) ant.targetFood=nf;
+    // La integrante del pozo no abandona una obra profunda por una migaja que pase cerca; conserva
+    // el turno hasta la losa. Sólo una crisis real la moviliza: al tocar la reserva espera mientras
+    // las recolectoras reponen, en vez de emprender desde el fondo un viaje que congela ambos trabajos.
+    if(nf && (!ant._pozoPrincipal || _aprieto)) ant.targetFood=nf;
     else{
       const wallAvg=(ant.sensors.wallLeft+ant.sensors.wallCenter+ant.sensors.wallRight)/3;
       const _frustrada = (time - (ant._frustrada||-1e9)) < 900; // viene de estrellarse: que abra paso
@@ -4093,14 +4221,20 @@ function updateAnt(ant, dt){
       const _hayFrentePozo=workers.some(w=>w.health>0 && w.state==='CAVANDO' && w.digTarget && w._pozoPrincipal);
       const _primerUmbralPendiente=umbralesRotos===0;
       const _puedePozo=_primerUmbralPendiente && (gen>=1 || day>=3);
+      const _cuadrillaPozo=_primerUmbralPendiente ? workers.find(w=>w.health>0 && w._pozoPrincipal) : null;
       if(!_pocaComida && (!_hayFrenteActivo || (_puedePozo && !_hayFrentePozo))){
-        for(const w of workers){
+        // Si ya hay una integrante de la cuadrilla y está libre, conserva ella el relevo: normalmente
+        // sigue junto al último bloque abierto y no tiene que atravesar de nuevo todo el hormiguero.
+        if(_cuadrillaPozo && !_cuadrillaPozo.food && !_cuadrillaPozo.targetFood && !_cuadrillaPozo.digTarget &&
+           !_cuadrillaPozo.wasteTarget && _cuadrillaPozo.state!=='DESCANSAR') _constructoraTurno=_cuadrillaPozo;
+        if(!_constructoraTurno) for(const w of workers){
           if(w.health<=0 || w.food || w.targetFood || w.digTarget || w.wasteTarget || w.state==='DESCANSAR') continue;
           if(!_constructoraTurno || (w.traits&&w.traits.construccion||0) > (_constructoraTurno.traits&&_constructoraTurno.traits.construccion||0)) _constructoraTurno=w;
         }
       }
       const _instintoObra = _constructoraTurno===ant;
-      if(!_aprieto && (_frustrada || _instintoObra || (!_pocaComida && digIntent>0.48 && wallAvg>0.18 && Math.random()<0.11 && (ant.role==='EXCAVADORA' || Math.random()<0.38)))){
+      const _pozoPuedeCavar = !ant._pozoPrincipal || (_instintoObra && _puedePozo && !_pocaComida);
+      if(_pozoPuedeCavar && !_aprieto && (_frustrada || _instintoObra || (!_pocaComida && digIntent>0.48 && wallAvg>0.18 && Math.random()<0.11 && (ant.role==='EXCAVADORA' || Math.random()<0.38)))){
         const frontier=findFrontier();
         if(frontier.length){
           // Topo: muestrear en vez de filtrar las miles de celdas del frontier (coste fijo por hormiga
@@ -4121,7 +4255,7 @@ function updateAnt(ant, dt){
           let pick=_cands&&_cands.length ? _cands[(Math.random()*_cands.length)|0] : (_far || frontier[(Math.random()*_fn)|0]);
           // FRENTE PRINCIPAL: la excavadora de reserva mantiene un pozo dentro de las tres columnas de la
           // boca hasta romper la primera losa. El resto conserva sus frentes y camaras laterales.
-          if(_instintoObra && _puedePozo && umbral){
+          if(_instintoObra && _puedePozo && umbral && (!_cuadrillaPozo || _cuadrillaPozo===ant)){
             let _frentePozo=null, _fd=Infinity;
             for(let _pc=CENTER_COL-1;_pc<=CENTER_COL+1;_pc++){
               for(let _pr=umbral.r;_pr>SURFACE_ROW;_pr--){
@@ -4129,15 +4263,20 @@ function updateAnt(ant, dt){
                 const _pt=soilType[_pr]&&soilType[_pr][_pc];
                 if(_pt===15 || (_pt===7 && (gen<8 || !inventions.masonry))) continue;
                 if(_pt===17 && !puedeGolpearUmbral()) continue;
+                const _candidatoPozo={r:_pr,c:_pc};
+                const _cercaPozo=Math.hypot((_pc+0.5)*CELL-ant.x,(_pr+0.5)*CELL-ant.y);
+                // «Aire encima» no significa «conectado»: una cámara aislada puede quedar justo sobre
+                // el bloque más hondo. La cuadrilla sólo adopta un frente al que llega por sus galerías.
+                if(_cercaPozo>CELL*2.2 && !routeStepToDig(ant,_candidatoPozo)) continue;
                 const _pd=Math.abs((_pc+0.5)*CELL-ant.x);
                 if(!_frentePozo || _pr>_frentePozo.r || (_pr===_frentePozo.r && _pd<_fd)){
-                  _frentePozo={r:_pr,c:_pc}; _fd=_pd;
+                  _frentePozo=_candidatoPozo; _fd=_pd;
                 }
                 break;
               }
             }
             if(_frentePozo){ pick=_frentePozo; ant._pozoPrincipal=true; }
-          } else ant._pozoPrincipal=false;
+          } else if(ant!==_cuadrillaPozo || !_primerUmbralPendiente) ant._pozoPrincipal=false;
           // Las obras del umbral: si la losa esta a tiro y la colonia ya puede morderla, parte de las
           // excavadoras dejan el frente y van a ella. Sin esto el avance depende de que el azar ponga
           // una hormiga encima de la losa, y eso no es una decision de la colonia, es una ruleta.

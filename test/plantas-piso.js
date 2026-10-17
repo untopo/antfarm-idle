@@ -124,10 +124,10 @@ const FOTO = `(()=>plants.map(p=>({c:p.c, x:Math.round(p.x), r:p.rr, cr:p.cr, ca
 
   console.log('\n· la que ya estaba puesta se seca delante de la camara');
   // elegimos una planta con pie y le calamos el suelo debajo, con el juego corriendo
-  const objetivo = await page.evaluate(`(()=>{ const p = plants.find(p=>p.pie!==false && _pieSuperficie(p.c) && p.growth>0.45) || plants.find(p=>_pieSuperficie(p.c));
+  const objetivo = await page.evaluate(`(()=>{ const p = plants.find(p=>!p.cave && _pieSuperficie(p.c) && p.growth>0.45) || plants.find(p=>!p.cave && _pieSuperficie(p.c));
     if(!p) return null; return {c:p.c, x:p.x, g:p.growth, tipo:p.type}; })()`);
   ok(!!objetivo, 'hay una mata madura con la tierra debajo intacta para medir con ella', objetivo ? `columna ${objetivo.c} · ${objetivo.tipo} · crecimiento ${objetivo.g.toFixed(2)}` : 'ninguna');
-  const testigo = await page.evaluate(`(()=>{ const p=plants.find(q=>q.c!==${objetivo.c} && _pieSuperficie(q.c) && q.growth>0.4); return p? {c:p.c, g:p.growth}:null; })()`);
+  const testigo = await page.evaluate(`(()=>{ const p=plants.find(q=>!q.cave && q.c!==${objetivo.c} && _pieSuperficie(q.c) && q.growth>0.4); return p? {c:p.c, g:p.growth}:null; })()`);
   // color que pinta la mata ANTES de calarle el suelo (verde de la estacion)
   const pintaAntes = await page.evaluate(`(async()=>{
     window.__g.rects.length=0; window.__g.on=true; await window.__frame(3); window.__g.on=false;
@@ -137,7 +137,7 @@ const FOTO = `(()=>plants.map(p=>({c:p.c, x:Math.round(p.x), r:p.rr, cr:p.cr, ca
   })()`);
   await page.evaluate(`soil[SURFACE_ROW+1][${objetivo.c}]=0; soilType[SURFACE_ROW+1][${objetivo.c}]=0; markSoilDirty(${objetivo.c},SURFACE_ROW+1);`);
   const tras = await page.evaluate(`(async()=>{ await window.__frame(40,16);
-    const p = plants.find(p=>p.c===${objetivo.c}); return {seca: p? !!p.seca : null, g: p? +p.growth.toFixed(4): null, sigue: !!p}; })()`);
+    const p = plants.find(p=>!p.cave && p.c===${objetivo.c}); return {seca: p? !!p.seca : null, g: p? +p.growth.toFixed(4): null, sigue: !!p}; })()`);
   ok(tras.seca === true, 'en cuanto le calan la casilla de debajo la mata se marca como seca', `sigue en el mapa: ${tras.sigue} · crecimiento ${tras.g} (antes ${objetivo.g.toFixed(4)})`);
   ok(tras.g !== null && tras.g < objetivo.g, 'y su crecimiento BAJA (antes subia: eso era lo de "crecen en el aire")', `${objetivo.g.toFixed(4)} -> ${tras.g}`);
   const pintaDespues = await page.evaluate(`(async()=>{
@@ -147,10 +147,10 @@ const FOTO = `(()=>plants.map(p=>({c:p.c, x:Math.round(p.x), r:p.rr, cr:p.cr, ca
     return {n:rs.length, seco};
   })()`);
   ok(pintaDespues.seco > 0, 'y se la ve ponerse de color paja en el lienzo (rojo por encima del verde: se seca, no crece)', `${pintaDespues.seco} rectangulos secos de ${pintaDespues.n} pintados · antes: ${pintaAntes.verde} verdes de ${pintaAntes.n}`);
-  const desaparece = await page.evaluate(`(async()=>{ for(let i=0;i<150;i++){ await window.__frame(10,16); if(!plants.some(p=>p.c===${objetivo.c})) return {i:i*10, fuera:true}; } return {fuera:false}; })()`);
+  const desaparece = await page.evaluate(`(async()=>{ for(let i=0;i<150;i++){ await window.__frame(10,16); if(!plants.some(p=>!p.cave && p.c===${objetivo.c})) return {i:i*10, fuera:true}; } return {i:1500, fuera:false}; })()`);
   ok(desaparece.fuera === true, 'y al final se cae: deja de estar en el mapa', `despues de ${desaparece.i} cuadros a x16`);
   if (testigo) {
-    const trasTestigo = await page.evaluate(`(()=>{ const p=plants.find(q=>q.c===${testigo.c}); return p? {seca:!!p.seca, g:+p.growth.toFixed(4)} : null; })()`);
+    const trasTestigo = await page.evaluate(`(()=>{ const p=plants.find(q=>!q.cave && q.c===${testigo.c}); return p? {seca:!!p.seca, g:+p.growth.toFixed(4)} : null; })()`);
     ok(trasTestigo && trasTestigo.seca === false && trasTestigo.g >= testigo.g - 0.001, 'a la vecina que si tiene tierra no la toca: sigue viva y creciendo', `${testigo.g.toFixed(3)} -> ${trasTestigo ? trasTestigo.g : 'perdida'} · seca ${trasTestigo ? trasTestigo.seca : '-'}`);
   }
 

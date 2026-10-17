@@ -33,10 +33,10 @@ const { sb, ctx, vm } = require('./world-perf-proflib.js');
 if (args.includes('--errores')) sb.console.error=(...m)=>console.error('[sandbox]',...m.map(x=>x&&x.stack||x));
 
 const FOTO = `JSON.stringify({ dia:+(time/DAY_LENGTH+1).toFixed(2), velocidad:gameSpeed, pausado:paused, reloj:performance.now(), ultimo:last, corriendo:_cuadroCorriendo, obreras: workers.filter(w=>w.health>0).length,
-  comida:+colonyFood.toFixed(1), entregas:deliveries, cavadas:digs, gen:gen,
+  comida:+colonyFood.toFixed(1), entregas:deliveries, cavadas:digs, gen:gen, xp:+stats.xp.toFixed(1), xpSig:stats.xpToNext,
   losas:umbralesRotos, hpLosa:umbral?+umbral.hp.toFixed(1):null,
   pozoMax:Math.max(...soil.flatMap((row,r)=>row.slice(CENTER_COL-1,CENTER_COL+2).some(v=>v===0)?[r]:[]),0),
-  pozoTargets:workers.filter(w=>w._pozoPrincipal).map(w=>({s:w.state,t:w.digTarget&&[w.digTarget.c,w.digTarget.r]})),
+  pozoTargets:workers.filter(w=>w._pozoPrincipal).map(w=>({id:w.id,s:w.state,x:+w.x.toFixed(0),y:+w.y.toFixed(0),t:w.digTarget&&[w.digTarget.c,w.digTarget.r],comida:w.food&&{n:w.food.amount,tierra:!!w.food.isSoil},busca:w.targetFood&&[+w.targetFood.x.toFixed(0),+w.targetFood.y.toFixed(0)],basura:!!w.wasteTarget,fatiga:+w.fatigue.toFixed(0),ruta:w._routeNext&&[+w._routeNext.x.toFixed(0),+w._routeNext.y.toFixed(0)],meta:w._routeGoal})),
   estados:workers.reduce((m,w)=>{m[w.state]=(m[w.state]||0)+1;return m;},{}),
   sinObjetivo:workers.filter(w=>!w.digTarget&&!w.food&&!w.targetFood).length, fuentes:foods.length,
   yMin:+Math.min(...workers.map(w=>w.y)).toFixed(1), yMax:+Math.max(...workers.map(w=>w.y)).toFixed(1),

@@ -343,7 +343,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         'de manana y a x64 las obreras trabajan: ' + dv + ' bloques cavados y ' + cv + ' celdas nuevas en ' + Math.round((Date.now() - t1) / 1000) + ' s');
       // Despues: el boton. passDays SIEMPRE simula un dia entero (time + DAY_LENGTH), asi que no
       // hay truco que acorte el salto: se le da margen de sobra y se espera a que se apague solo.
-      await page3.evaluate(() => { setGameSpeed(1); time = DAY_LENGTH * 0.30; });
+      await page3.evaluate(() => {
+        setGameSpeed(1); time = DAY_LENGTH * 0.30;
+        // `day` es un espejo que tickStep actualiza; al forzar `time` en el arnés hay que sincronizarlo.
+        // Si la medición de cava anterior ya cruzó de día, comparar contra ese valor viejo daba 2 -> 2
+        // aunque passDays hubiera simulado exactamente la jornada completa solicitada.
+        day = Math.floor(time / DAY_LENGTH) + 1;
+      });
       const antes = await estado();
       const caja = await page3.evaluate(() => { const b = document.getElementById('btnDay1').getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; });
       await page3.mouse.click(caja.x, caja.y); // con el raton de verdad: si estuviera recortado, esto no clica

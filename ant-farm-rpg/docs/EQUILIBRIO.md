@@ -1,8 +1,8 @@
 # EQUILIBRIO · Objetivos v0 y bot reproducible
 
-**Estado (2026-10-16):** T1–T5 aceptados como primera versión al pedir el dueño «sigue tus
+**Estado (2026-10-17):** T1–T5 aceptados como primera versión al pedir el dueño «sigue tus
 recomendaciones y procede». Desde 5 días, `test/bot-equilibrio.js` aprueba o falla; ya no son avisos.
-No se arregla un fallo moviendo su umbral.
+Los cinco objetivos pasan en las 12 semillas de referencia. No se arregló ningún fallo moviendo su umbral.
 
 **Decisión de la losa:** la colonia la rompe sola. El jugador podrá ayudar u orientar más adelante,
 pero el progreso idle no depende de un clic.
@@ -50,12 +50,18 @@ La solución conserva la excavación emergente y añade una sola obra colectiva:
 
 - **frente principal:** a partir de GEN1 o del día 3, una obrera mantiene el pozo dentro de las tres
   columnas de la boca; las demás siguen abriendo cámaras según su red;
-- si la despensa toca 5, se prioriza comida antes de asignar otro frente (T1 no cambia);
+- la cuadrilla sólo acepta un frente conectado a su galería. Si una bolsa de aire aislada parece más
+  profunda, el BFS la descarta; si una ruta deja de existir, suelta ese frente y elige otro;
+- si la despensa toca 5, conserva la calada pero espera. No acepta una excursión de comida desde el fondo
+  salvo crisis real; las recolectoras reponen y la obra continúa al superar la reserva;
+- en galerías de una celda, la ruta recentra a la obrera si su centro está en aire pero el radio físico
+  quedó mordiendo una arista. No atraviesa suelo;
 - en ese primer pozo el escombro queda en un montón profundo con coste higiénico, en vez de obligar a
   subir cada bloque por separado;
 - la cadena rápida termina al romper la **primera** losa. La segunda vuelve al ritmo normal;
 - tras expandir, el enrutado cacheado puede recorrer el mapa nuevo y su límite crece con `COLS×ROWS`;
-- `expandWorld()` añade también filas a `water`; las reinas toleran rejillas antiguas incompletas.
+- `expandWorld()` crece a la vez `ROWS`, `H`, el lienzo y las filas de `water`; física, cámara y despensa
+  ya no siguen sujetas al alto anterior hasta recargar.
 
 Durante esta medición apareció y se corrigió otro fallo: un tándem entregaba a la seguidora la carga
 `{amount}` como si fuera un objetivo `{x,y}`. El ángulo pasaba a `NaN` y `loop()` ocultaba la excepción.
@@ -68,19 +74,21 @@ Pruebas: `test/primera-losa.js`, `test/expansion-agua.js` y `test/tandem-objetiv
 Mundo pequeño 48×28, sin jugador, código real (`app.js + core/`), semillas 1–12. Se capturan también
 los errores internos que `loop()` normalmente registra en consola.
 
+Corrida del 17 de octubre de 2026, después de cerrar T1–T5:
+
 | Medida final | Rango |
 |---|---:|
-| Obreras vivas | 8–26 |
-| Comida | 0,5–294,9 |
-| Entregas | 13–241 |
-| Bloques excavados | 22–146 |
+| Obreras vivas | 12–20 |
+| Comida | 6,4–156,4 |
+| Entregas | 22–137 |
+| Bloques excavados | 21–80 |
 | Parón final sin completar un bloque | 0–1,03 días |
 | Primeras losas rotas | 1 en las 12 semillas |
 | Segundas losas rotas | 0 |
 | Excepciones internas | 0 |
 
-No hay ninguna fundación inmóvil. La dispersión de comida sigue siendo demasiado alta y queda como
-trabajo de equilibrio, no de reproducibilidad.
+No hay ninguna fundación inmóvil ni una colonia por debajo de la reserva al cierre. La dispersión de
+comida sigue siendo amplia y queda como trabajo de equilibrio posterior, no de reproducibilidad.
 
 ## 5 · Objetivos v0
 
@@ -88,20 +96,24 @@ trabajo de equilibrio, no de reproducibilidad.
 
 | Id | Objetivo | Resultado en 12 semillas | Estado |
 |---|---|---:|---|
-| T1 | La comida nunca baja de 5 hasta el día 5 | 10/12 | Fallan 10 y 12 |
-| T2 | Hay 6 obreras vivas al día 3 | 12/12 | Cumple |
-| T3 | Hay 10 obreras vivas al día 5 | 11/12 | Falla 12 |
+| T1 | La comida nunca baja de 5 hasta el día 5 | 12/12 · mínimo 5 | Cumple |
+| T2 | Hay 6 obreras vivas al día 3 | 12/12 · 8–9 obreras | Cumple |
+| T3 | Hay 10 obreras vivas al día 5 | 12/12 · 13–20 obreras | Cumple |
 | T4 | La primera losa cede antes del día 5, sin jugador | 12/12 | Cumple |
-| T5 | Nace la primera generación antes de terminar el día 3 | 11/12 | Falla 6 |
+| T5 | Nace la primera generación antes de terminar el día 3 | 12/12 · GEN1–2 | Cumple |
 
-La semilla 1, usada por defecto en el bot, pasa los cinco objetivos. El lote multisemilla, no una sola
-corrida, sigue siendo la autoridad para equilibrar.
+La reserva de cinco raciones vive en `core/economia.js`: puesta y cría no la consumen. Antes de llegar a
+diez obreras, la fundadora puede terminar una puesta pagando el faltante con salud; no aparece comida de
+la nada. Cada bloque realmente excavado aporta 8 XP y cada obrera eclosionada 20 XP; ambos liquidan nivel
+en el instante. Así excavar, criar y entregar cuentan como trabajo evolutivo, sin bajar el umbral de T5.
 
-## 6 · Próximo equilibrio, sin cambiar umbrales
+El lote multisemilla, no una sola corrida, sigue siendo la autoridad para equilibrar.
 
-1. **T1/T3:** estudiar por qué 10 y 12 pierden margen de despensa después de la expansión; la 12 también
-   termina el día 5 con solo 8 obreras.
-2. **T5:** estudiar por qué la semilla 6 retrasa la primera generación al día 4,11 aunque comida y
-   población se recuperan después.
-3. Reducir la dispersión final de comida (0,5–294,9) sin aplanar personalidades ni resultados.
-4. Cuando T1–T5 pasen en el lote, ampliar a más semillas y mapas; no suavizar T1–T5 para obtener verde.
+## 6 · Siguiente paso, sin cambiar umbrales
+
+1. Mantener T1–T5 como puerta de regresión y ampliar más adelante a más semillas y tamaños de mapa.
+2. Reducir la dispersión final de comida (6,4–156,4) sin aplanar personalidades ni resultados.
+3. Migrar `colonyFood` y `worldMaterials` al libro de cuentas puro de `core/`; las reglas ya probadas no
+   deben volver a repartirse entre la UI y la simulación.
+4. Continuar la traducción a inglés de `app.js` e `index.html`, conservando una sola cifra y un solo control
+   para cada dato.
