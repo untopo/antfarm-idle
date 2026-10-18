@@ -121,8 +121,8 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ok   ' + m); } else { fai
       visible: cs.display !== 'none' && parseFloat(cs.opacity) > 0.5,
       debajoDeLaTira: Math.round(rs.top) >= Math.round(rb.bottom) - 1,
       dentroPantalla: rs.right <= window.innerWidth + 2 && rs.bottom <= window.innerHeight + 2,
-      tieneRaciones: /raciones/.test(txt), tieneMateriales: /PIEDRA|ARCILLA|FIBRA|MADERA/.test(txt),
-      camara: /celda/.test(txt), txt: txt.slice(0, 130)
+      tieneRaciones: /rations|raciones/i.test(txt), tieneMateriales: /STONE|CLAY|FIBER|WOOD|PIEDRA|ARCILLA|FIBRA|MADERA/.test(txt),
+      camara: /cell|celda/i.test(txt), txt: txt.slice(0, 130)
     };
   });
   ok(hoja.visible, 'el click abre la hoja de almacen');

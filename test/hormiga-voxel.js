@@ -118,15 +118,14 @@ const TIRA = `(() => {
       g.fillStyle='#241a10'; g.fillRect(i*CW, fila*CH, CW, CH);
       g.save(); g.translate(i*CW+CW/2-2, fila*CH+CH/2+2);
       window.__trazos = window.__trazos || {stroke:0, arc:0, img:0, rect:0};
-      let r = {trazos: window.__trazos};
-      if (fila===0){
-        _hormigaVoxel(g, ant, esMini? escala*0.6 : escala, esMini, i);
-      } else {
-          _hormigaVoxel(g, ant, esMini? escala*0.6 : escala, esMini, i);
-      }
+      // Measure the synchronous painter call by delta. The live farm keeps rendering behind this test;
+      // cumulative counters can otherwise attribute an unrelated sky/weather arc to the ant.
+      const antes={stroke:window.__trazos.stroke,arc:window.__trazos.arc,img:window.__trazos.img,rect:window.__trazos.rect};
+      _hormigaVoxel(g, ant, esMini? escala*0.6 : escala, esMini, i);
+      const usados={stroke:window.__trazos.stroke-antes.stroke,arc:window.__trazos.arc-antes.arc,img:window.__trazos.img-antes.img,rect:window.__trazos.rect-antes.rect};
       g.restore();
       if (esAnthro) { useAnthro = ANTES_ANTHRO; }
-      res.push({ nombre, mide: mide(i*CW, fila*CH), trazos: {stroke:window.__trazos.stroke, arc:window.__trazos.arc, img:window.__trazos.img, rect:window.__trazos.rect}, i, fila });
+      res.push({ nombre, mide: mide(i*CW, fila*CH), trazos: usados, i, fila });
     }
   }
   const url = cv.toDataURL('image/png');

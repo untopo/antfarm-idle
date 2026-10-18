@@ -87,20 +87,23 @@ caso('pupa real sin reina: nace una reina y la colonia sigue', () => {
   return out;
 });
 
-// 5 · el tope de poblacion sigue mandando: si la colonia esta llena, la pupa espera (no es un bug).
-// El tope real es min(espacio, comida, cuidado) con un suelo de 14 en GEN0, asi que aqui se le
-// quita la comida al mundo para que el suelo mande y la colmena quede justo en su tope.
-caso('con la colonia en su tope, la pupa no nace pero tampoco se pierde', () => {
+// 5 · el tope de poblacion sigue mandando, pero no puede borrar un nacimiento prometido. La pupa
+// madura espera y ocupa la primera plaza que deja una obrera vieja: esto cierra la extincion SMALL.
+caso('con la colonia en su tope, la pupa espera y nace al liberarse una plaza', () => {
   const plantas = plants.splice(0, plants.length);
   const hongos = fungusGardens.splice(0, fungusGardens.length);
   const edad = worldAge; worldAge = 0;
   const tope = getMaxPopulation();
   while (workers.length < tope) workers.push(Object.assign({}, workers[0]));
   _pupa();
-  const err = _zumbido(6);
+  const err1 = _zumbido(6);
+  const espera = !err1 && brood.length === 1 && brood[0].type === 'pupa' && brood[0].progress >= 100 && workers.length === tope;
+  workers.pop();
+  const err2 = _zumbido(1);
+  const nace = !err2 && brood.length === 0 && workers.length === tope;
   const out = {
-    pasa: !err && brood.length === 0 && workers.length === tope,
-    detalle: 'tope ' + tope + ' obreras · nace 0 y la pupa se va con aviso' + (err ? ', error: ' + err : '')
+    pasa: espera && nace,
+    detalle: 'tope ' + tope + ' · espera madura ' + espera + ' · nace al quedar plaza ' + nace + ((err1||err2) ? ', error: ' + (err1||err2) : '')
   };
   Array.prototype.push.apply(plants, plantas); Array.prototype.push.apply(fungusGardens, hongos); worldAge = edad;
   return out;

@@ -66,7 +66,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await page.click('#createSizeScreen [data-size="big"]');
     await sleep(260);
     // si ya habia granja guardada, el juego pregunta antes de sobrescribir: responder SÍ
-    const pregunta = await page.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (!h) return null; const b = [...h.querySelectorAll('button')].find(x => x.textContent.trim() === 'SÍ'); const txt = h.textContent.slice(0, 90); if (b) b.click(); return txt; });
+    const pregunta = await page.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (!h) return null; const b = [...h.querySelectorAll('button')].find(x => /^(SÍ|YES)$/i.test(x.textContent.trim())); const txt = h.textContent.slice(0, 90); if (b) b.click(); return txt; });
     if (pregunta) console.log('   dialogo de sobrescritura detectado y confirmado: ' + pregunta.replace(/\s+/g, ' '));
     await page.screenshot({ path: '/tmp/antfarm-capturas/03b-post-confirmar.png' });
     const genState = await visible('#worldGenScreen');
@@ -258,7 +258,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       await page2.screenshot({ path: '/tmp/antfarm-capturas/06-iframe-tamanos.png' });
       await frame.evaluate(() => { document.querySelector('#createSizeScreen [data-size="small"]').click(); });
       await sleep(400);
-      await frame.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (h) { const b = [...h.querySelectorAll('button')].find(x => x.textContent.trim() === 'SÍ'); if (b) b.click(); } });
+      await frame.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (h) { const b = [...h.querySelectorAll('button')].find(x => /^(SÍ|YES)$/i.test(x.textContent.trim())); if (b) b.click(); } });
       const genInFrame = await frame.evaluate(() => { const e = document.getElementById('worldGenScreen'); return e ? getComputedStyle(e).display : 'no-existe'; });
       ok(genInFrame === 'flex' || genInFrame === 'block' || /none/.test(genInFrame) === false, 'en el iframe bloqueado el click SI reacciona (siembra en curso: display=' + genInFrame + ')');
       let done2 = true;
@@ -302,7 +302,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       await sleep(350);
       // El aviso «¿Sobrescribir tu granja actual?» sale DESPUES de elegir el tamano. Contestarlo
       // antes (como se hacia aqui) dejaba el toldo del dialogo puesto y tapaba todo el HUD.
-      await page3.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (h) { const y = [...h.querySelectorAll('button')].find((x) => x.textContent.trim() === 'SÍ'); if (y) y.click(); } });
+      await page3.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (h) { const y = [...h.querySelectorAll('button')].find((x) => /^(SÍ|YES)$/i.test(x.textContent.trim())); if (y) y.click(); } });
       await page3.waitForFunction('window.COLS===64', { timeout: 90000 });
       // Estado "el dueño ya está jugando": sin modal de onboarding, sin pantalla de generando
       // mundo, sin menu encima. Mientras alguno de esos toldos esta puesto, tapan el HUD y un

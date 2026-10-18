@@ -24,7 +24,7 @@ window.tlog=tlog; window.DEBUG_TOPO=DEBUG_TOPO;
 // _topoDbg(): foto del estado, para consola y para las pruebas de navegador
 window._topoDbg=()=>{ try{ return { day:(typeof day!=='undefined'?day:0), time:(typeof time!=='undefined'?time:0),
   ants:(typeof workers!=='undefined'?workers.length:0), cols:(typeof COLS!=='undefined'?COLS:0), rows:(typeof ROWS!=='undefined'?ROWS:0),
-  food:(typeof colonyFood!=='undefined'?colonyFood:0), digs:(typeof digs!=='undefined'?digs:0),
+  food:(typeof economyLedger.food!=='undefined'?economyLedger.food:0), digs:(typeof digs!=='undefined'?digs:0),
   paused:(typeof paused!=='undefined'?paused:null), started: document.body.classList.contains('game-started'),
   queen: (typeof queen!=='undefined'&&queen)? (queen.personalName||queen.name||'reina'):null }; }catch(e){ return {error:e.message}; } };
 function initSoilCache(){ const worldW=1024, worldH=576; // 64*16, 36*16 - no usar COLS antes de que exista
@@ -178,22 +178,40 @@ const DAY_LENGTH = 72000; // 20 min reales (Minecraft: 24000 ticks -> 20min) a 6
 const _fatUnidad = 100/DAY_LENGTH;
 let gameSpeed=1, turbo=false, time=DAY_LENGTH*0.28, paused=false, taskbarMode=false, mouse={x:W/2,y:SURFACE_Y-10};
 let deliveries=0, digs=0, accidents=0, rewardsFound=0, gen=0, mutations=0, commsCount=0;
-let colonyFood=0, colonyFitness=0, colonyIQ=100; let lastCoup=0;
+// One ledger owns every ration and material. The two global accessors keep old saves, diagnostics and
+// browser-console commands compatible while all assignments still pass through the core book.
+const economyLedger=createEconomyLedger();
+Object.defineProperties(globalThis,{
+  colonyFood:{enumerable:true,configurable:true,get:()=>economyLedger.food,set:v=>economyLedger.setFood(v,'legacy food assignment')},
+  worldMaterials:{enumerable:true,configurable:true,get:()=>economyLedger.materials,set:v=>economyLedger.replaceMaterials(v,'legacy material assignment')}
+});
+window.economyLedger=economyLedger;
+let colonyFitness=0, colonyIQ=100; let lastCoup=0;
 let selectedAntIndex=0;
 let selectedQueenIndex=0;
 let stats={nivel:1,xp:0,xpToNext:360}; // realista: GEN cuesta trabajo, no 2 entregas
 let foods=[], pheromones=[], particles=[], mound=[], hiddenRewards=[], events=[];
 let commInks=[], toasts=[];
 let soil=[];
-let water=[]; // agua por celda 0-1 (Topo pidió física realista)
+let water=[]; // physical liquid mass per cell; it may exceed 1 briefly under pressure
+let waterVisual=[]; // interpolated visible level: water must be watchable, not teleport between cells
+let waterFlow=new Map(); // recent conservative transfers, keyed by "c,r" for falling/spill animation
+let _waterVisualActive=false;
+// One seed owns geology, hydrology and the hidden past. Sites are materialised lazily as slabs open,
+// but their position and evidence were already determined by this seed.
+let worldSeed=0, worldProfile=null;
+let ancientSites=[];
+let ancientMasonry=[];
+let _ancientArtCells=new Map(), _ancientMasonryCells=new Map(), _generatedSiteIds=new Set();
 let decoSet=new Set(); // celdas decoradas por arquitectas (clave numerica dkey(c,r), nada de cadenas por celda)
 function dkey(c,r){ return (r<<12)|c; }
 function hasDeco(c,r){ return decoSet.size>0 && decoSet.has(dkey(c,r)); }
 // === MUNDO VIVO EXTERIOR ===
-let soilType=[]; // 0 vacío, 1 topsoil, 2 arcilla, 3 arena, 4 piedra
+let soilType=[]; // physical block/deposit type; bands now describe predominance, not perfect stripes
+let geologyHost=[]; // host rock under an ore inclusion, used to render mixed seams naturally
 let fertility=[]; // por columna 0-1
 let plants=[]; // vegetación exterior
-let worldMaterials={stone:0, clay:0, sand:0, fiber:0, wood:0, cobre:0, hierro:0, oro:0, cuarzo:0, gema:0, obsidiana:0, meteorito:0};
+// Material balances live in economyLedger; `worldMaterials` above is only its compatibility view.
 // Lo que la colonia ha HECHO con cada material (minarlo, cargarlo, llevarlo). De aqui saldra el invento:
 // sin arbol de tecnologia escrito, solo costumbre y observacion.
 let antsAtascados=0;
@@ -292,12 +310,47 @@ function puedeGolpearUmbral(){
   if(umbral.guarda>=5 && !inventions.masonry) return false;  // del marmol en adelante hace falta canteria
   return true;
 }
+function _reclutaFrenteUmbral(lider,u){
+  if(!lider||lider.id==='TEST'||!u||!workers||workers.length<2) return;
+  const crewCap=Math.min(8,Math.max(4,Math.floor(workers.length*0.24)));
+  const leaderCounted=!!(lider.digTarget&&lider.digTarget.r===u.r&&soilType[u.r]&&soilType[u.r][lider.digTarget.c]===17);
+  // The biter clears digTarget for the few lines that call golpearUmbral(), then restores it. Count her
+  // during that gap; otherwise every bite recruits one extra helper and eventually drafts everyone.
+  const already=workers.filter(w=>w.digTarget&&w.digTarget.r===u.r&&soilType[u.r]&&soilType[u.r][w.digTarget.c]===17).length+(leaderCounted?0:1);
+  const slots=Math.max(0,crewCap-already); if(!slots) return;
+  // The ant that discovered the slab remains the lead biter. Helpers make the collective work visible,
+  // but must not demote the leader to the deliberately slow support rate or recruit the whole colony.
+  const libres=workers.filter(w=>w!==lider&&!(w.digTarget&&w.digTarget.r===u.r)&&w.health>20&&(w.fatigue||0)<82&&!w.food&&!w._magmaRetreat&&w.state!=='CONTROLAR_AGUA'&&Math.abs(((w.y/CELL)|0)-u.r)<=2)
+    .sort((a,b)=>Math.hypot(a.x-lider.x,a.y-lider.y)-Math.hypot(b.x-lider.x,b.y-lider.y));
+  let n=0;
+  for(const w of libres){
+    let col=-1,bd=Infinity,at=Math.round(w.x/CELL);
+    for(let c=u.c0;c<=u.c1;c++){
+      if(!soil[u.r]||soil[u.r][c]!==1||!soilType[u.r]||soilType[u.r][c]!==17||!soil[u.r-1]||soil[u.r-1][c]!==0) continue;
+      const d=Math.abs(c-at); if(d<bd){bd=d;col=c;}
+    }
+    if(col<0) continue;
+    w.targetFood=null; w.wasteTarget=null; w.buildTarget=null;
+    const same=w.digTarget&&w.digTarget.r===u.r&&w.digTarget.c===col;
+    w.digTarget={r:u.r,c:col}; if(!same) w.digProgress=0;
+    w.digNeeded=Math.max(5,11-Math.min(6,gen*0.5)); w.state='CAVANDO'; w._pozoPrincipal=true; w._umbralSupport=true; w._obraUmbralHasta=time+DAY_LENGTH*0.12;
+    if(++n>=slots) break;
+  }
+}
 function golpearUmbral(ant){
   const u=umbral; if(!u) return false;
+  if(ant&&ant.id!=='TEST'){
+    let lead=workers.find(w=>w!==ant&&w._umbralLead&&w.health>0&&(w.fatigue||0)<88&&w.state!=='DESCANSAR'&&!w._magmaRetreat);
+    if(!lead){
+      for(const w of workers) if(w!==ant) delete w._umbralLead;
+      ant._umbralLead=true; delete ant._umbralSupport;
+    }else if(!ant._umbralLead) ant._umbralSupport=true;
+  }
   const exc = (ant && ant.role==='EXCAVADORA')? 0.55 : 0;
   const golpe = 1 + exc + (inventions.masonry?0.6:0) + Math.min(1.4, (typeof gen!=='undefined'?gen:0)*0.07)
               + Math.max(0,((typeof colonyIQ!=='undefined'?colonyIQ:100)-100))/200 + bonusCava;
   u.hp = Math.max(0, u.hp - golpe);
+  _reclutaFrenteUmbral(ant,u);
   const c = (ant && Number.isFinite(ant.x))? Math.floor(ant.x/CELL) : u.c0;
   try{
     for(let i=0;i<4;i++) particles.push({x:c*CELL+6, y:u.r*CELL+8, vx:(Math.random()-0.5)*2.4, vy:-Math.random()*1.8, life:1, decay:0.035, color:'#c8c8d8', bloque:true});
@@ -314,7 +367,7 @@ function abrirUmbral(){
   umbral=null;
   for(let c=0;c<COLS;c++){                                  // la losa se disuelve: primer piso de la banda
     if(soil[u.r]) soil[u.r][c]=1;
-    if(soilType[u.r]) soilType[u.r][c]=tipoDePiso(u.r-SURFACE_ROW);
+    if(soilType[u.r]) soilType[u.r][c]=_geoType(c,u.r);
   }
   const suelo=SURFACE_ROW + BANDAS[nuevo].desde + PISOS_BANDA;
   const add=Math.max(6, suelo-(ROWS-1));
@@ -322,7 +375,7 @@ function abrirUmbral(){
   // de la banda. Sin el flag salian dos tarjetas diciendo lo mismo (el dueno lo dijo: una cifra, un sitio).
   try{ expandWorld(add, true); }catch(e){ console.warn('expandWorld tras umbral', e); }
   bandaMax=Math.max(bandaMax, Math.min(nuevo, bandaDe(Math.max(SURFACE_ROW+1, ROWS-2)-SURFACE_ROW))); umbralesRotos++;
-  try{ workers.forEach(w=>{ w._pozoPrincipal=false; }); }catch(e){}
+  try{ workers.forEach(w=>{ w._pozoPrincipal=false; delete w._umbralSupport; delete w._umbralLead; if(w.digTarget&&w.digTarget.r===u.r){ w.digTarget=null; w.digProgress=0; if(w.state==='CAVANDO') w.state='EXPLORAR'; } }); }catch(e){}
   stats.xp += 90 + 30*nuevo; colonyFitness += 2.2;
   // Romper una losa es trabajo evolutivo igual que una entrega. Antes el XP se sumaba pero GEN no
   // se comprobaba hasta la siguiente entrega; una colonia podía haber ganado la generación en día 3
@@ -367,40 +420,255 @@ function spawnSmartTreasure(c,r,forcedType){
   return true; // siempre truthy: el contador debe subir aunque el tipo caiga raro
 }
 
-function initSoil(){
-  soil=Array.from({length:ROWS},(_,r)=>Array.from({length:COLS},(_,c)=> r<SURFACE_ROW?0:1));
-  water=Array.from({length:ROWS},()=>Array(COLS).fill(0));
-  soilType=Array.from({length:ROWS},(_,r)=>Array.from({length:COLS},(_,c)=>{
-    if(r<SURFACE_ROW) return 0;
-    // La Escalera: el tipo sale de la banda (BANDAS arriba). Raices, barro, arena movediza, piedra,
-    // pizarra, cuarcita, marmol negro, obsidiana y basalto igneo. Mas hondo = mas duro y mas raro.
-    return tipoDePiso(r-SURFACE_ROW);
-  }));
-  // Vetas: cada banda escupe su metal dentro de su franja y nada mas arriba ni nada mas abajo, con la
-  // probabilidad cayendo a medida que baja (VETA_P). Que un filon de oro sea raro es lo que lo hace oro.
-  for(let r=SURFACE_ROW+1; r<ROWS-1; r++){
-    const _b=bandaDe(r-SURFACE_ROW), _vb=vetaDeBanda(_b);
-    if(_vb===null) continue;
-    const _vt=BANDAS[_b].tipo, _p=VETA_P[_b]||0.03;
-    for(let c=1;c<COLS-1;c++){
-      if(soilType[r][c]!==_vt) continue;
-      if(Math.random()>_p) continue;
-      soilType[r][c]=_vb;
-      for(let k=0;k<1+Math.floor(Math.random()*3);k++){        // nido de 2-4: una celda suelta no se ve
-        const rr=r+Math.floor(Math.random()*2), cc2=c+Math.floor(Math.random()*3)-1;
-        if(rr>ROWS-2||cc2<1||cc2>=COLS-1) continue;
-        if(soilType[rr][cc2]===_vt || soilType[rr][cc2]===BANDAS[_b].tipo) soilType[rr][cc2]=_vb;
+function _fastGeoHost(c,r){
+  const depth=Math.max(0,r-SURFACE_ROW),seg=Math.floor(c/8),u=(c-seg*8)/8,t=u*u*(3-2*u);
+  const a=worldHash(worldSeed,seg,0,110),b=worldHash(worldSeed,seg+1,0,110);
+  const warp=((a+(b-a)*t)-0.5)*7;
+  let bi=worldBandAt(Math.max(0,depth+warp),BANDAS);
+  const patch=worldHash(worldSeed,Math.floor(c/5),Math.floor(depth/4),111);
+  if(patch<0.115&&bi>0) bi--;
+  else if(patch>0.94&&bi<BANDAS.length-1&&depth>=BANDAS[bi+1].desde-4) bi++;
+  if(depth<14){
+    const soft=worldHash(worldSeed,Math.floor(c/4),Math.floor(depth/3),112);
+    if(depth>2&&soft<0.22) return 2;
+    if(depth>5&&soft>0.79) return 3;
+    if(depth>11&&worldHash(worldSeed,c,depth,113)<0.055) return 4;
+  }
+  return BANDAS[bi].tipo;
+}
+function _buildGeologyRows(startR,endR){
+  const lo=Math.max(0,startR|0),hi=Math.max(lo,endR|0),hosts=[],types=[];
+  // Cache coarse samples once per slice. Rehashing the same two column anchors for every row made a
+  // SMALL world's creation pay thousands of identical noise calls.
+  const warp=new Array(COLS);
+  for(let c=0;c<COLS;c++){
+    const seg=Math.floor(c/8),u=(c-seg*8)/8,t=u*u*(3-2*u);
+    const a=worldHash(worldSeed,seg,0,110),b=worldHash(worldSeed,seg+1,0,110);
+    warp[c]=((a+(b-a)*t)-0.5)*7;
+  }
+  const maxDepth=Math.max(0,hi-SURFACE_ROW),patchCols=Math.ceil(COLS/5)+1,softCols=Math.ceil(COLS/4)+1;
+  const patches=Array.from({length:Math.ceil((maxDepth+1)/4)+1},(_,y)=>Array.from({length:patchCols},(_,x)=>worldHash(worldSeed,x,y,111)));
+  const softs=Array.from({length:Math.ceil((maxDepth+1)/3)+1},(_,y)=>Array.from({length:softCols},(_,x)=>worldHash(worldSeed,x,y,112)));
+  for(let r=lo;r<hi;r++){
+    const hr=new Array(COLS),tr=new Array(COLS),depth=Math.max(0,r-SURFACE_ROW);
+    for(let c=0;c<COLS;c++){
+      let h=0;
+      if(r>=SURFACE_ROW){
+        let bi=worldBandAt(Math.max(0,depth+warp[c]),BANDAS);
+        const px=Math.floor(c/5),py=Math.floor(depth/4),pu0=(c-px*5)/5,pv0=(depth-py*4)/4,pu=pu0*pu0*(3-2*pu0),pv=pv0*pv0*(3-2*pv0);
+        const pa=patches[py][px]+(patches[py][px+1]-patches[py][px])*pu,pb=patches[py+1][px]+(patches[py+1][px+1]-patches[py+1][px])*pu,patch=pa+(pb-pa)*pv;
+        if(patch<0.115&&bi>0) bi--;
+        else if(patch>0.94&&bi<BANDAS.length-1&&depth>=BANDAS[bi+1].desde-4) bi++;
+        h=BANDAS[bi].tipo;
+        if(depth<14){
+          const sx=Math.floor(c/4),sy=Math.floor(depth/3),su0=(c-sx*4)/4,sv0=(depth-sy*3)/3,su=su0*su0*(3-2*su0),sv=sv0*sv0*(3-2*sv0);
+          const sa=softs[sy][sx]+(softs[sy][sx+1]-softs[sy][sx])*su,sb=softs[sy+1][sx]+(softs[sy+1][sx+1]-softs[sy+1][sx])*su,soft=sa+(sb-sa)*sv;
+          if(depth>2&&soft<0.22) h=2; else if(depth>5&&soft>0.79) h=3;
+        }
+      }
+      hr[c]=h; tr[c]=h;
+    }
+    hosts.push(hr); types.push(tr);
+  }
+  // A few deterministic walkers create crooked seams. Their core lies near the useful depth, while
+  // poor tails can cross a neighbouring stratum. This is both cheaper and less blob-like than rolling
+  // every cell independently against a band table.
+  for(const q of (typeof WORLD_DEPOSITS!=='undefined'?WORLD_DEPOSITS:[])){
+    // A walker may bend up to its maximum length. Include neighbouring chunks so generating a later
+    // slice reproduces veins that began outside that slice instead of cutting them at expansion seams.
+    const first=Math.floor((Math.max(0,lo-SURFACE_ROW)-24)/6),last=Math.floor((Math.max(0,hi-1-SURFACE_ROW)+24)/6);
+    const attempts=Math.max(1,Math.ceil(COLS/40));
+    for(let chunk=first;chunk<=last;chunk++) for(let a=0;a<attempts;a++){
+      // One seam is anchored in each deposit's useful core; all others are statistical. This keeps
+      // progression readable without banning poor traces from neighbouring strata.
+      const anchor=a===0&&chunk===Math.floor(q.center/6);
+      const baseD=anchor?q.center:chunk*6+Math.floor(worldHash(worldSeed,chunk,a,q.salt+10)*6),dist=Math.abs(baseD-q.center);
+      if(dist>q.trace) continue;
+      const richness=Math.max(0,1-dist/q.trace);
+      if(!anchor&&worldHash(worldSeed,chunk,a,q.salt+11)>0.004+Math.pow(richness,3)*0.82) continue;
+      let cc=2+Math.floor(worldHash(worldSeed,chunk,a,q.salt+12)*Math.max(1,COLS-4));
+      let dd=baseD,dir=worldHash(worldSeed,chunk,a,q.salt+13)<0.5?-1:1;
+      const poorTail=!anchor&&dist>=q.core;
+      const len=anchor?12+Math.floor(worldHash(worldSeed,chunk,a,q.salt+14)*5):poorTail?2+Math.floor(worldHash(worldSeed,chunk,a,q.salt+14)*4):4+Math.floor(worldHash(worldSeed,chunk,a,q.salt+14)*(5+richness*9));
+      for(let k=0;k<len;k++){
+        if(anchor) dd=baseD+Math.round(Math.sin(k*0.72)*2);
+        const rr=SURFACE_ROW+Math.round(dd),idx=rr-lo;
+        if(idx>=0&&idx<types.length&&cc>0&&cc<COLS-1&&rr>SURFACE_ROW+1){ types[idx][cc]=q.type; }
+        if(idx>=0&&idx<types.length&&richness>0.55&&worldHash(worldSeed,chunk,k+a*31,q.salt+15)>0.76){ const nc=cc+(dir>0?-1:1); if(nc>0&&nc<COLS-1) types[idx][nc]=q.type; }
+        cc+=dir;
+        if(cc<=1||cc>=COLS-2){ dir*=-1; cc=Math.max(2,Math.min(COLS-3,cc)); }
+        const bend=worldHash(worldSeed,chunk,k+a*37,q.salt+16);
+        if(bend<0.22) dd-=1; else if(bend>0.78) dd+=1;
+        if(worldHash(worldSeed,chunk,k+a*41,q.salt+17)<0.10) dir*=-1;
       }
     }
   }
+  return {hosts,types};
+}
+function _geoHost(c,r){
+  if(geologyHost[r]&&geologyHost[r][c]) return geologyHost[r][c];
+  const depth=Math.max(0,r-SURFACE_ROW);
+  try{ return worldGeologyHost(worldSeed,c,depth); }catch(_e){ return tipoDePiso(depth); }
+}
+function _geoType(c,r){
+  const host=_geoHost(c,r);
+  try{ return worldDepositAt(worldSeed,c,Math.max(0,r-SURFACE_ROW))||host; }catch(_e){ return host; }
+}
+function _isDepositType(t){ return t===8||t===9||t===10||t===16||t===18; }
+function _visualHost(t,c,r){ return _isDepositType(t)?_geoHost(c,r):t; }
+function _ancientStyle(i){
+  const styles=worldProfile&&worldProfile.styles;
+  return styles&&styles.length?styles[Math.abs(i|0)%styles.length]:{palette:['#9b3f2b','#d58a4f','#39251e'],motif:'rings',stroke:1,joint:'clay'};
+}
+function _ancientPixel(map,site,wx,wy,color,size){
+  wx=Math.round(wx); wy=Math.round(wy); const c=Math.floor(wx/CELL),r=Math.floor(wy/CELL);
+  if(c<0||c>=COLS||r<SURFACE_ROW||r>=ROWS) return;
+  // Centuries remove pieces, not whole murals uniformly. The same missing flecks return after reload.
+  try{ if(worldHash(site.muralSeed,wx,wy,913)<site.damage*0.34) return; }catch(_e){}
+  const key=c+','+r; if(!map.has(key)) map.set(key,[]);
+  map.get(key).push({x:wx-c*CELL,y:wy-r*CELL,color,size:size||1});
+}
+function _ancientLine(map,site,x0,y0,x1,y1,color,size){
+  x0=Math.round(x0);y0=Math.round(y0);x1=Math.round(x1);y1=Math.round(y1);
+  const dx=Math.abs(x1-x0),sx=x0<x1?1:-1,dy=-Math.abs(y1-y0),sy=y0<y1?1:-1; let err=dx+dy;
+  for(let guard=0;guard<2048;guard++){
+    _ancientPixel(map,site,x0,y0,color,size);
+    if(x0===x1&&y0===y1) break;
+    const e2=2*err; if(e2>=dy){err+=dy;x0+=sx;} if(e2<=dx){err+=dx;y0+=sy;}
+  }
+}
+function _ancientEllipse(map,site,cx,cy,rx,ry,color,size){
+  const steps=Math.max(16,Math.ceil((rx+ry)*2.2)); let px=cx+rx,py=cy;
+  for(let i=1;i<=steps;i++){ const a=i/steps*Math.PI*2,nx=cx+Math.cos(a)*rx,ny=cy+Math.sin(a)*ry; _ancientLine(map,site,px,py,nx,ny,color,size);px=nx;py=ny; }
+}
+function _buildAncientArt(site,map){
+  const st=_ancientStyle(site.style), col=st.palette[0], pale=st.palette[1], size=st.stroke||1;
+  const cx=site.c*CELL+CELL/2, cy=site.r*CELL+CELL/2;
+  const rx=Math.max(CELL*2,(site.w*CELL)/2-8), ry=Math.max(CELL,(site.h*CELL)/2-7);
+  const motif=st.motif;
+  if(motif==='tide'){
+    for(let band=-1;band<=1;band++){ let px=cx-rx,py=cy+band*5;
+      for(let x=-Math.floor(rx);x<=rx;x+=3){ const nx=cx+x,ny=cy+band*5+Math.sin((x+site.muralSeed%17)*0.10)*4; _ancientLine(map,site,px,py,nx,ny,band===0?pale:col,size);px=nx;py=ny; }
+    }
+  }else if(motif==='rings'){
+    _ancientEllipse(map,site,cx,cy,rx*0.72,ry*0.72,col,size); _ancientEllipse(map,site,cx,cy,rx*0.40,ry*0.42,pale,size);
+    _ancientLine(map,site,cx-rx*0.88,cy,cx+rx*0.88,cy,col,1);
+  }else if(motif==='network'){
+    const pts=[[-.72,-.35],[-.25,.38],[.05,-.42],[.48,.27],[.76,-.22],[.18,.05]];
+    for(let i=0;i<pts.length;i++){
+      const a=pts[i],b=pts[(i*2+3)%pts.length],ax=cx+a[0]*rx,ay=cy+a[1]*ry,bx=cx+b[0]*rx,by=cy+b[1]*ry;
+      _ancientLine(map,site,ax,ay,bx,by,i%2?pale:col,size); _ancientEllipse(map,site,ax,ay,2+i%2,2,col,1);
+    }
+  }else if(motif==='procession'){
+    _ancientEllipse(map,site,cx,cy,5,7,pale,size);
+    for(let i=-3;i<=3;i++){ const ax=cx+i*11,ay=cy+Math.sin(i*1.7)*4; _ancientEllipse(map,site,ax,ay,2,2,col,1); _ancientLine(map,site,ax-4,ay,ax+4,ay,col,1); }
+  }else if(motif==='split'){
+    _ancientLine(map,site,cx,cy+ry*.8,cx,cy-ry*.75,pale,size);
+    for(let i=-2;i<=2;i++){ const yy=cy+i*ry*.26,dir=i%2?1:-1; _ancientLine(map,site,cx,yy,cx+dir*rx*(.45+.08*Math.abs(i)),yy-ry*.22,col,size); }
+  }else{
+    for(let yy=-1;yy<=1;yy++) for(let xx=-3;xx<=3;xx++) _ancientEllipse(map,site,cx+xx*9+(yy&1)*4,cy+yy*8,3,5,(xx+yy)&1?col:pale,1);
+  }
+  // Extremely rare, deterministic marginal marks: small enough to belong to the mural and never
+  // announced. A player who notices one can wonder whether the odd grouping is deliberate.
+  const ox=cx-rx*.72,oy=cy+ry*.63;
+  if(site.oddity===1){ for(const p of [[0,0],[2,0],[3,-2],[1,-4],[-2,-3],[-3,0],[-1,2]]) _ancientPixel(map,site,ox+p[0],oy+p[1],pale,1); }
+  else if(site.oddity===2){ _ancientEllipse(map,site,ox,oy,2,3,pale,1); for(const p of [[-2,-2,-5,-4],[2,-2,5,-4],[-2,1,-5,3],[2,1,5,3]]) _ancientLine(map,site,ox+p[0],oy+p[1],ox+p[2],oy+p[3],col,1); }
+  else if(site.oddity===3){ for(let i=0;i<4;i++) _ancientPixel(map,site,ox+i*2,oy,col,1); for(let i=0;i<2;i++) _ancientPixel(map,site,ox+11+i*2,oy,col,1); }
+}
+function rebuildAncientIndexes(){
+  _ancientArtCells=new Map(); _ancientMasonryCells=new Map(); _generatedSiteIds=new Set();
+  for(const m of ancientMasonry||[]){ const key=m.c+','+m.r; if(!_ancientMasonryCells.has(key)) _ancientMasonryCells.set(key,[]); _ancientMasonryCells.get(key).push(m); }
+  for(const s of ancientSites||[]){ _generatedSiteIds.add(s.id); _buildAncientArt(s,_ancientArtCells); }
+}
+function _paintAncientEvidence(g,c,r,solid){
+  const key=c+','+r;
+  if(!solid){
+    const marks=_ancientArtCells.get(key); if(!marks||!marks.length) return;
+    for(const p of marks){ g.fillStyle=p.color; g.fillRect(c*CELL+p.x,r*CELL+p.y,p.size||1,p.size||1); }
+    return;
+  }
+  const stones=_ancientMasonryCells.get(key); if(!stones||!stones.length) return;
+  const st=_ancientStyle(stones[0].style),x=c*CELL,y=r*CELL;
+  g.fillStyle=st.palette[2]||'#2d241e'; g.fillRect(x+2,y+5,CELL-4,1); g.fillRect(x+4,y+11,CELL-7,1);
+  if(((c*5+r*3)&1)===0){ g.fillStyle=st.palette[0]; g.fillRect(x+7,y+3,1,10); }
+  // Related sites carry related residue: soot, pale tide lines or root scoring. These marks are clues,
+  // never captions; later repairs can visibly use another established palette.
+  const scar=stones[0].scar;
+  if(scar==='heat'){ g.fillStyle='rgba(18,12,10,.58)'; g.fillRect(x+2,y+12,CELL-5,2); }
+  else if(scar==='water'){ g.fillStyle='rgba(166,203,194,.42)'; g.fillRect(x+1,y+8,CELL-2,1); }
+  else if(scar==='roots'){ g.fillStyle='rgba(84,62,36,.55)'; g.fillRect(x+5,y+1,1,6); g.fillRect(x+6,y+6,3,1); }
+}
+function _materializeAncientSite(raw,rowLo,rowHi){
+  const site=Object.assign({},raw,{r:SURFACE_ROW+raw.depth});
+  const top=Math.max(rowLo,site.r-Math.floor(site.h/2)),bot=Math.min(rowHi,site.r+Math.floor(site.h/2));
+  const left=Math.max(2,site.c-Math.floor(site.w/2)),right=Math.min(COLS-3,site.c+Math.floor(site.w/2));
+  if(top>bot||left>right) return false;
+  let carved=0;
+  for(let r=top;r<=bot;r++) for(let c=left;c<=right;c++){
+    if(!soil[r]||!soilType[r]||soilType[r][c]===17) continue;
+    const nx=(c-site.c)/Math.max(1,site.w/2),ny=(r-site.r)/Math.max(1,site.h/2);
+    const inside=nx*nx+ny*ny<0.92;
+    let scar=0; try{ scar=worldHash(site.muralSeed,c,r,701); }catch(_e){ scar=Math.random(); }
+    if(inside&&scar>site.damage*0.20){ soil[r][c]=0; soilType[r][c]=0; carved++; }
+  }
+  if(!carved) return false;
+  // Worked fragments survive around the cavity. Their mismatched repairs make the structure readable
+  // without naming it or explaining why it was abandoned.
+  for(let r=Math.max(SURFACE_ROW,top-1);r<=Math.min(ROWS-1,bot+1);r++) for(let c=Math.max(1,left-1);c<=Math.min(COLS-2,right+1);c++){
+    if(soil[r]&&soil[r][c]===1){
+      let near=false; for(const d of [[1,0],[-1,0],[0,1],[0,-1]]) if(soil[r+d[1]]&&soil[r+d[1]][c+d[0]]===0) near=true;
+      if(near&&worldHash(site.muralSeed,c,r,702)>0.35){
+        const repaired=site.repairStyle!=null&&worldHash(site.muralSeed,c,r,704)<(site.repairRate||0);
+        ancientMasonry.push({c,r,style:repaired?site.repairStyle:site.style,site:site.id,scar:site.scar||''});
+      }
+    }
+  }
+  // A flooded room is only initial mass. It drains, levels and eventually empties; no invisible emitter
+  // refills it. Rain and explicitly marked future springs are separate inputs.
+  if(site.flood>0){
+    const waterLine=site.r+Math.floor(site.h*0.20);
+    for(let r=top;r<=bot;r++) for(let c=left;c<=right;c++) if(soil[r]&&soil[r][c]===0&&r>=waterLine){
+      const amt=Math.max(0.10,Math.min(0.95,site.flood+(r-waterLine)*0.10-worldHash(site.muralSeed,c,r,703)*0.12));
+      water[r][c]=Math.max(water[r][c]||0,amt); _waterActive=true;
+    }
+  }
+  ancientSites.push(site); return true;
+}
+function materializeWorldHistory(rowLo,rowHi){
+  if(!worldSeed) return 0;
+  if(!worldProfile) worldProfile=createWorldProfile(worldSeed,COLS);
+  const lo=Math.max(SURFACE_ROW+8,rowLo|0),hi=Math.min(ROWS-2,rowHi|0); if(lo>hi) return 0;
+  // h is at most 7: reserve four built rows below a centre and overlap four old rows on the next
+  // expansion. A ruin is therefore identical whether its depth existed on day one or arrived lazily.
+  const queryLo=Math.max(15,lo-SURFACE_ROW-4),queryHi=hi-SURFACE_ROW-4;
+  if(queryHi<queryLo) return 0;
+  const sites=worldSitesForRange(worldProfile,COLS,queryLo,queryHi); let n=0;
+  for(const site of sites){
+    if(_generatedSiteIds.has(site.id)) continue;
+    if(_materializeAncientSite(site,SURFACE_ROW+8,ROWS-2)){ _generatedSiteIds.add(site.id); n++; }
+  }
+  rebuildAncientIndexes();
+  if(n) markSoilDirty();
+  return n;
+}
+function initSoil(){
+  soil=Array.from({length:ROWS},(_,r)=>Array.from({length:COLS},(_,c)=> r<SURFACE_ROW?0:1));
+  if(!worldSeed) worldSeed=worldSeed32(Math.floor(Math.random()*4294967296));
+  worldProfile=createWorldProfile(worldSeed,COLS);
+  ancientSites=[]; ancientMasonry=[]; _generatedSiteIds=new Set(); rebuildAncientIndexes();
+  water=Array.from({length:ROWS},()=>Array(COLS).fill(0));
+  waterVisual=Array.from({length:ROWS},()=>Array(COLS).fill(0)); waterFlow=new Map(); _waterVisualActive=false;
+  const _geo=_buildGeologyRows(0,ROWS); geologyHost=_geo.hosts; soilType=_geo.types;
+  // Depth is a tendency, not a ruler-straight command. Warped strata, neighbouring lenses and
+  // crooked deposits make every seed readable as geology while deeper rows still predominate.
   // Y el fuego: en la ultima banda el magma asoma entre el basalto. No se cava, calienta y gasta fatiga.
   const _FUEGO=BANDAS.length-1;
   for(let r=SURFACE_ROW+BANDAS[_FUEGO].desde; r<ROWS-1; r++){
     for(let c=1;c<COLS-1;c++){
       if(soilType[r][c]!==BANDAS[_FUEGO].tipo) continue;
-      if(Math.random()>0.055) continue;
+      if(worldHash(worldSeed,c,r,1501)>0.055) continue;
       soilType[r][c]=15;
-      for(let k=0;k<2;k++){ const cc2=c+(Math.random()<0.5?-1:1); if(cc2>0&&cc2<COLS-1&&soilType[r][cc2]===14&&Math.random()<0.6) soilType[r][cc2]=15; }
+      for(let k=0;k<2;k++){ const cc2=c+(worldHash(worldSeed,c+k,r,1502)<0.5?-1:1); if(cc2>0&&cc2<COLS-1&&soilType[r][cc2]===14&&worldHash(worldSeed,cc2,r+k,1503)<0.6) soilType[r][cc2]=15; }
     }
   }
   reindexMagma();
@@ -411,6 +679,9 @@ function initSoil(){
   // pozo inicial - la UNICA boca del nido: tres columnas de cesped, el resto queda blindado
   carveRect(cc-1,SURFACE_ROW,3,7);
   carveRect(cc-1,SURFACE_ROW+7,3,2);
+  // The first traces may exist in a disconnected side chamber. Deeper sites do not exist in the
+  // matrices until their slab is opened, but their positions are already fixed by worldSeed.
+  materializeWorldHistory(SURFACE_ROW+8,ROWS-2);
   // fertilidad por columna
   fertility=Array.from({length:COLS},()=>0.48+Math.random()*0.36);
   plants=[];
@@ -461,8 +732,8 @@ function initSoil(){
                          losa: (soilType[ROWS-1]? soilType[ROWS-1][3] : -1),
                          losaSuelo: (soil[ROWS-1]? soil[ROWS-1][3] : -1), magma:magmaCells.length,
                          bandaFondo: bandaDe(Math.max(0,ROWS-2-SURFACE_ROW)),
-                         vetas:{cobre:worldMaterials.cobre||0, hierro:worldMaterials.hierro||0, oro:worldMaterials.oro||0,
-                                cuarzo:worldMaterials.cuarzo||0, gema:worldMaterials.gema||0, obsidiana:worldMaterials.obsidiana||0},
+                         vetas:{cobre:economyLedger.materials.cobre||0, hierro:economyLedger.materials.hierro||0, oro:economyLedger.materials.oro||0,
+                                cuarzo:economyLedger.materials.cuarzo||0, gema:economyLedger.materials.gema||0, obsidiana:economyLedger.materials.obsidiana||0},
                          reliquias:reliquias.length, bonusCava});
   window._morderUmbral=(n)=>{ for(let i=0;i<(n||1);i++) golpearUmbral({id:'TEST',role:'EXCAVADORA',x:umbral?umbral.r*0+ (umbral.c0*CELL):0, y:umbral?umbral.r*CELL:0}); return window._escalera(); };
   window._irABanda=(b)=>{   // deja la losa a un mordisco y la revienta: el test quiere ver la banda, no esperar
@@ -475,6 +746,7 @@ function initSoil(){
     return window._escalera();
   };
   window._treasures=()=>hiddenRewards.map(t=>({c:t.c,r:t.r,type:t.type,found:t.found}));
+  window._worldEvidence=()=>({seed:worldSeed,sites:ancientSites.map(s=>({id:s.id,c:s.c,r:s.r,kind:s.kind,biome:s.biome})),masonry:ancientMasonry.length,artCells:_ancientArtCells.size});
   // gancho de prueba: pega obreras de mentira repartidas por el nido para ver como se lee una colonia grande
   // sin esperar diez dias de simulacion. Vive solo en consola; el juego no lo llama nunca.
   window._fakes=(n)=>{ try{
@@ -542,7 +814,7 @@ function excavateChamber(centerC, centerR, w, h, ant){
       }
     }
     // acumula material suelto
-    if(ant && ant.traits.construccion>50) worldMaterials.sand+=Math.floor(carved*0.12);
+    if(ant && ant.traits.construccion>50) economyLedger.creditMaterial('sand',Math.floor(carved*0.12),'chamber excavation');
     return carved;
   }
   return 0;
@@ -554,35 +826,23 @@ function carveOval(cx,cy,rx,ry){for(let y=cy-ry;y<=cy+ry;y++)for(let x=cx-rx;x<=
 function expandWorld(addRows, silencioso){
   const oldRows=ROWS;
   const newRows=ROWS+addRows;
-  // expandir soil y soilType - ya no con una tabla a mano: la Escalera decide el tipo por piso
+  // Generate this slice from the same seed as the initial world: lazy depth, never rerolled depth.
+  const _newGeo=_buildGeologyRows(oldRows,newRows);
   for(let r=oldRows;r<newRows;r++){
-    const depth=r-SURFACE_ROW;
+    const i=r-oldRows;
     soil.push(Array(COLS).fill(1));
     water.push(Array(COLS).fill(0));
-    soilType.push(Array.from({length:COLS},()=>tipoDePiso(depth)));
+    waterVisual.push(Array(COLS).fill(0));
+    geologyHost.push(_newGeo.hosts[i]);
+    soilType.push(_newGeo.types[i]);
   }
-  // vetas de la banda nueva (la misma VETA_P del mapa inicial, un pelin mas generosa: lo recien abierto
-  // tiene que notarse en la colonia, si no la recompensa es invisible)
-  for(let r=oldRows;r<newRows;r++){
-    const _b=bandaDe(r-SURFACE_ROW), _vb=vetaDeBanda(_b);
-    if(_vb===null) continue;
-    const _vt=BANDAS[_b].tipo, _p=(VETA_P[_b]||0.03)*1.5;
-    for(let c=1;c<COLS-1;c++){
-      if(soilType[r][c]!==_vt) continue;
-      if(Math.random()>_p) continue;
-      soilType[r][c]=_vb;
-      for(let k=0;k<2;k++){
-        const rr=r+Math.floor(Math.random()*2), cc2=c+Math.floor(Math.random()*3)-1;
-        if(rr>ROWS-2||cc2<1||cc2>=COLS-1) continue;
-        if(soilType[rr][cc2]===_vt) soilType[rr][cc2]=_vb;
-      }
-    }
-  }
+  // Geology for unopened rows comes from the same seed as the original map. There is no second,
+  // more generous loot pass: opening a slab reveals the world that was already implied, not a reroll.
   // y si la banda que se abre es la ultima, su fuego
   if(bandaDe((newRows-1)-SURFACE_ROW)>=BANDAS.length-1){
     for(let r=Math.max(oldRows,SURFACE_ROW+BANDAS[BANDAS.length-1].desde); r<newRows-1; r++){
       for(let c=1;c<COLS-1;c++){
-        if(soilType[r][c]!==BANDAS[BANDAS.length-1].tipo || Math.random()>0.06) continue;
+        if(soilType[r][c]!==BANDAS[BANDAS.length-1].tipo || worldHash(worldSeed,c,r,1501)>0.055) continue;
         soilType[r][c]=15;
       }
     }
@@ -608,6 +868,7 @@ function expandWorld(addRows, silencioso){
     }
   }
   ROWS=newRows;
+  materializeWorldHistory(oldRows,newRows-2);
   // El alto lógico, el lienzo visible y el cache tienen que crecer juntos. Antes solo crecían las
   // matrices: H seguía en la fila de la primera losa, la física sujetaba a todas en y=H-12 y la
   // despensa podía mudarse a una cámara que ni las hormigas ni la cámara alcanzaban. Al recargar sí
@@ -894,14 +1155,31 @@ function spawnNaturalPlant(forceType=null){
   plants.push({c, x:c*CELL+4+Math.random()*8, y:SURFACE_Y-6, type, growth:0.08+Math.random()*0.12, maxGrowth:1, age:0, fruitCooldown: DAY_LENGTH*0.35+Math.random()*DAY_LENGTH*0.2, variant:Math.floor(Math.random()*3)});
 }
 
-// === AGUA FÍSICA SIMPLE - Topo pidió comportamiento realista pixelado ===
+// === AGUA FÍSICA CONSERVATIVA: llena, sube por presión y rebosa ===
+let _waterActive=false;
 function addWater(c,r,amt=0.7){
-  if(c<0||c>=COLS||r<0||r>=ROWS) return;
-  if(soil[r][c]===1) return; // no en tierra sólida
-  water[r][c]=Math.min(1, (water[r][c]||0)+amt);
+  if(c<0||c>=COLS||r<0||r>=ROWS||soil[r][c]!==0) return 0;
+  // Una fuente puede presurizar temporalmente una celda llena. El núcleo eleva y desborda ese exceso;
+  // limitarlo aquí a 1 borraba lluvia y convertía cada cavidad llena en un sumidero sin fondo.
+  if(floodBarriers.has(c+','+r)) return 0;
+  let added=0;
+  if(typeof addWaterMass==='function') added=addWaterMass(water,soil,c,r,amt,floodBarriers);
+  else { added=Math.max(0,Number(amt)||0); water[r][c]=(Number(water[r][c])||0)+added; }
+  if(added>0) _waterActive=true;
+  return added;
+}
+let _waterPhase=0, _waterFlowSweep=0;
+function recordWaterFlow(fc,fr,tc,tr,amount,kind){
+  const now=performance.now(), put=(c,r,dx,dy,out)=>{
+    const key=c+','+r,old=waterFlow.get(key);
+    if(old&&now-old.at<180){ old.dx+=dx*amount; old.dy+=dy*amount; old.amount=Math.min(2,old.amount+amount); old.at=now; old.kind=kind; old.out=old.out||out; }
+    else waterFlow.set(key,{dx:dx*amount,dy:dy*amount,amount,at:now,kind,out:!!out});
+  };
+  put(fc,fr,tc-fc,tr-fr,true); put(tc,tr,tc-fc,tr-fr,false);
 }
 function updateWater(dt){
-  // lluvia añade agua en superficie
+  // La lluvia entra por los huecos expuestos. addWater conserva la presión, así que un pozo lleno
+  // alcanza su borde y se extiende a la siguiente cámara en lugar de tragarse el sobrante.
   if(weather && (weather.type==='rain'||weather.type==='storm')){
     const rainAmt = weather.type==='storm'? 0.018*dt*0.04 : 0.012*dt*0.04;
     for(let c=0;c<COLS;c++){
@@ -909,48 +1187,206 @@ function updateWater(dt){
       if(soil[SURFACE_ROW][c]===0 && Math.random()<0.08) addWater(c, SURFACE_ROW+1, rainAmt*0.6);
     }
   }
-  // tesoro agua añade pulso
-  // física: gravedad + flujo lateral (celular simple)
-  for(let r=ROWS-2; r>=SURFACE_ROW; r--){
-    for(let c=0;c<COLS;c++){
-      let amt=water[r][c];
-      if(!amt || amt<0.01) continue;
-      if(soil[r][c]===1){ water[r][c]=0; continue; }
-      // si abajo es aire, cae
-      if(r+1<ROWS && soil[r+1][c]===0){
-        const below=water[r+1][c]||0;
-        if(below<1){
-          const flow=Math.min(amt, (1-below)*0.62, 0.22*dt*0.1+amt*0.18);
-          water[r][c]-=flow; water[r+1][c]+=flow;
-          amt-=flow;
-        }
-      }
-      // si no puede caer, fluye lateral (busca hueco más bajo)
-      if(amt>0.12){
-        const dirs = Math.random()<0.5 ? [-1,1] : [1,-1];
-        for(let dc of dirs){
-          const nc=c+dc;
-          if(nc<0||nc>=COLS) continue;
-          if(soil[r][nc]===1) continue;
-          // si lateral está más bajo (abajo del lateral es aire) fluye más
-          const canFlow = soil[r+1] && soil[r+1][nc]===0 ? 0.14 : 0.08;
-          const sideAmt=water[r][nc]||0;
-          if(sideAmt < amt-0.04){
-            const flow=Math.min(amt*canFlow, (amt-sideAmt)*0.5, 0.12);
-            water[r][c]-=flow; water[r][nc]+=flow;
-            break;
-          }
-        }
-      }
-      // evaporación lenta si sol y poca agua
-      if(weather && weather.type==='clear' && amt<0.18 && r===SURFACE_ROW && Math.random()<0.004*dt){
-        water[r][c]*=0.92;
-      }
-      // si queda muy poco, limpiar
-      if(water[r][c]<0.02) water[r][c]=0;
+  let flow={moved:0,overflow:0,mass:0};
+  // Dry worlds are the common case. Do not scan every cell twice per tick until a real source exists.
+  if(_waterActive&&typeof stepWaterGrid==='function'){
+    flow=stepWaterGrid(water,soil,{dt,passes:2,phase:_waterPhase++,barriers:floodBarriers,onFlow:recordWaterFlow});
+    _waterActive=flow.mass>0.0001;
+    if((++_waterFlowSweep&31)===0){ const now=performance.now(); for(const [k,v] of waterFlow) if(now-v.at>900) waterFlow.delete(k); }
+  }
+
+  // La evaporación sí es un sumidero físico explícito; bajo tierra sigue siendo muy lenta.
+  if(_waterActive&&weather&&weather.type==='clear') for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+    if(water[r][c]<=0) continue;
+    if(r<=SURFACE_ROW+2) water[r][c]=Math.max(0,water[r][c]-0.000025*dt);
+    else {
+      // Porous earth absorbs shallow residual moisture after a storm. This is an explicit, slow sink;
+      // floods remain long enough to require a dam, while a 0.2-cell puddle cannot paralyse a shaft forever.
+      let porous=false;
+      for(const d of [[1,0],[-1,0],[0,1],[0,-1]]){ const rr=r+d[1],cc=c+d[0]; if(soil[rr]&&soil[rr][cc]===1&&(!soilType[rr]||soilType[rr][cc]<=3)){ porous=true; break; } }
+      if(porous&&water[r][c]<0.55) water[r][c]=Math.max(0,water[r][c]-0.0000035*dt);
     }
   }
-  // agua en superficie expuesta se ve como charco - no hacer nada más
+  if(_waterActive||floodControl.target) updateFloodResponse(dt);
+}
+
+const WATER_AVOID_LEVEL=0.22;
+const WATER_ESCAPE_LEVEL=WATER_AVOID_LEVEL;
+function waterAtCell(c,r){
+  return r>=0&&r<ROWS&&c>=0&&c<COLS&&water[r]?Math.max(0,Number(water[r][c])||0):0;
+}
+function waterAtPixel(x,y){ return waterAtCell(Math.floor(x/CELL),Math.floor(y/CELL)); }
+function isDryOpenCell(c,r,limit=WATER_AVOID_LEVEL){
+  return r>=0&&r<ROWS&&c>=0&&c<COLS&&soil[r]&&soil[r][c]===0&&waterAtCell(c,r)<limit;
+}
+// Escape is deliberately different from normal pathfinding: a submerged ant may cross wet cells if
+// each step is the shortest available route toward a genuinely dry cell. Blocking all wet movement
+// inside canMove() would imprison precisely the ants that need to get out.
+function findWaterEscapeStep(entity,maxNodes=900,preferDeep=false){
+  const sc=Math.max(0,Math.min(COLS-1,Math.floor(entity.x/CELL)));
+  const sr=Math.max(0,Math.min(ROWS-1,Math.floor(entity.y/CELL)));
+  if(!soil[sr]||soil[sr][sc]!==0) return null;
+  const key=(c,r)=>c+','+r, start=key(sc,sr), q=[[sc,sr,0]], prev=new Map([[start,null]]);
+  let found=null,bestScore=Infinity,head=0;
+  while(head<q.length&&head<maxNodes){
+    const [c,r,depth]=q[head++];
+    if((c!==sc||r!==sr)&&isDryOpenCell(c,r,0.14)){
+      const score=depth+Math.max(0,sr-r)*6-Math.max(0,r-sr)*0.18;
+      if(score<bestScore){ bestScore=score; found=[c,r]; }
+      if(!preferDeep) break;
+    }
+    const raw=preferDeep?[[c-1,r],[c+1,r],[c,r+1],[c,r-1]]:[[c,r-1],[c-1,r],[c+1,r],[c,r+1]];
+    const next=raw
+      .filter(p=>p[0]>=0&&p[0]<COLS&&p[1]>=0&&p[1]<ROWS&&soil[p[1]]&&soil[p[1]][p[0]]===0&&!prev.has(key(p[0],p[1])))
+      .sort((a,b)=>waterAtCell(a[0],a[1])-waterAtCell(b[0],b[1]));
+    for(const p of next){ prev.set(key(p[0],p[1]),[c,r]); q.push([p[0],p[1],depth+1]); }
+  }
+  if(!found){
+    // No dry shore in range: still choose the least flooded open neighbour instead of wandering
+    // deeper. This makes the behaviour safe even in a temporarily closed cistern.
+    const near=(preferDeep?[[sc-1,sr],[sc+1,sr],[sc,sr+1],[sc,sr-1]]:[[sc,sr-1],[sc-1,sr],[sc+1,sr],[sc,sr+1]]).filter(p=>soil[p[1]]&&soil[p[1]][p[0]]===0);
+    near.sort((a,b)=>waterAtCell(a[0],a[1])-waterAtCell(b[0],b[1]));
+    if(!near.length||waterAtCell(near[0][0],near[0][1])>=waterAtCell(sc,sr)-0.015) return null;
+    found=near[0];
+  }
+  let cur=found, parent=prev.get(key(cur[0],cur[1]));
+  while(parent&&!(parent[0]===sc&&parent[1]===sr)){ cur=parent; parent=prev.get(key(cur[0],cur[1])); }
+  return {c:cur[0],r:cur[1],x:cur[0]*CELL+CELL/2,y:cur[1]*CELL+CELL/2};
+}
+function canAntMove(ant,x,y){
+  if(!canMove(x,y)) return false;
+  if(!_waterActive) return true;
+  const target=waterAtPixel(x,y), current=waterAtPixel(ant.x,ant.y);
+  if(current>=WATER_ESCAPE_LEVEL) return target<=current+0.015; // escape branch may move through water, never deeper
+  // At high speed a tick can span several cells. Sample the segment so a dry landing on the far bank
+  // cannot disguise a leap through a flooded tunnel.
+  const length=Math.hypot(x-ant.x,y-ant.y),steps=Math.max(1,Math.ceil(length/(CELL*.48)));
+  for(let i=1;i<=steps;i++) if(waterAtPixel(ant.x+(x-ant.x)*i/steps,ant.y+(y-ant.y)*i/steps)>=WATER_AVOID_LEVEL) return false;
+  return target<WATER_AVOID_LEVEL;
+}
+function canAntMoveIgnoreTarget(ant,x,y,targetCell){
+  if(!canMoveIgnoreTarget(x,y,targetCell)) return false;
+  if(!_waterActive) return true;
+  const target=waterAtPixel(x,y),current=waterAtPixel(ant.x,ant.y);
+  if(current>=WATER_ESCAPE_LEVEL) return target<=current+0.015;
+  const length=Math.hypot(x-ant.x,y-ant.y),steps=Math.max(1,Math.ceil(length/(CELL*.48)));
+  for(let i=1;i<=steps;i++) if(waterAtPixel(ant.x+(x-ant.x)*i/steps,ant.y+(y-ant.y)*i/steps)>=WATER_AVOID_LEVEL) return false;
+  return target<WATER_AVOID_LEVEL;
+}
+
+// Hydrological covers block water but not ants. They are the safe answer in the founding shaft:
+// sealing that only doorway with soil would save the chamber by killing the colony.
+const floodBarriers=new Set();
+const floodControl={target:null,workerId:null,scan:0,incident:0,worldKey:''};
+function _floodWorkCells(target){
+  if(!target) return [];
+  return [[target.c,target.r-1],[target.c-1,target.r],[target.c+1,target.r],[target.c,target.r+1]]
+    .filter(p=>isDryOpenCell(p[0],p[1],0.20));
+}
+function _clearFloodAssignment(ant){
+  if(!ant) return;
+  delete ant.floodTarget; delete ant.floodWork; ant.floodProgress=0;
+  if(ant.state==='CONTROLAR_AGUA') ant.state='EXPLORAR';
+}
+function _floodReachableNest(){
+  const seeds=[];
+  // Lives define the protected side of a dam. pantryPos can relocate upstream while a forager is
+  // lost; using it as a second seed made the colony chase rain toward the surface and roof every row.
+  if(queens&&queens[0]) seeds.push([Math.floor(queens[0].x/CELL),Math.floor(queens[0].y/CELL)]);
+  else if(workers&&workers.length){ const deep=[...workers].sort((a,b)=>b.y-a.y)[0]; seeds.push([Math.floor(deep.x/CELL),Math.floor(deep.y/CELL)]); }
+  const seen=new Set(),q=[];
+  for(const s of seeds){
+    // If the queen stands in a water-only grate, begin on the chamber side (same row/down), never on
+    // the upstream side. Gaps left/right remain connected until the whole shaft cross-section is safe.
+    for(const d of [[0,0],[-1,0],[1,0],[0,1]]){ const c=s[0]+d[0],r=s[1]+d[1],k=c+','+r; if(c<0||c>=COLS||r<SURFACE_ROW||r>=ROWS||!soil[r]||soil[r][c]!==0||floodBarriers.has(k)||seen.has(k)) continue; seen.add(k); q.push([c,r]); }
+  }
+  let head=0;
+  while(head<q.length&&head<COLS*ROWS){
+    const [c,r]=q[head++];
+    for(const d of [[1,0],[-1,0],[0,1],[0,-1]]){ const nc=c+d[0],nr=r+d[1],k=nc+','+nr; if(nc<0||nc>=COLS||nr<SURFACE_ROW||nr>=ROWS||seen.has(k)||floodBarriers.has(k)||!soil[nr]||soil[nr][nc]!==0) continue; seen.add(k); q.push([nc,nr]); }
+  }
+  return seen;
+}
+function _chooseFloodTarget(){
+  let total=0,best=null,bestScore=-Infinity;
+  let store=null; try{ store=storagePos(); }catch(e){}
+  const threatened=_floodReachableNest();
+  const qc=queens&&queens[0]?Math.floor(queens[0].x/CELL):-99, qr=queens&&queens[0]?Math.floor(queens[0].y/CELL):-99;
+  for(let r=SURFACE_ROW+1;r<ROWS-1;r++) for(let c=1;c<COLS-1;c++){
+    const amount=waterAtCell(c,r); if(amount<=0.03||soil[r][c]!==0||!threatened.has(c+','+r)) continue;
+    total+=Math.min(amount,2);
+    if(amount<0.18) continue;
+    const work=_floodWorkCells({c,r}); if(!work.length) continue;
+    let open=0; for(const p of [[c,r-1],[c-1,r],[c+1,r],[c,r+1]]) if(soil[p[1]]&&soil[p[1]][p[0]]===0) open++;
+    const dq=Math.hypot(c-qc,r-qr), ds=store?Math.hypot(c-store.x/CELL,r-store.y/CELL):99;
+    const nearColony=Math.min(dq,ds);
+    const neck=Math.max(0,3-open)*2.8;
+    const source=waterAtCell(c,r-1)>0.22?1.8:0;
+    const score=amount*7+neck+source+Math.max(0,11-nearColony)*0.65-r*0.004;
+    if(score>bestScore){ bestScore=score; best={c,r,score,nearColony}; }
+  }
+  // A remote teaspoon is scenery, not an emergency. Near brood/queen chambers responds earlier.
+  if(!best||(total<0.28&&best.nearColony>7)||(total<0.12)) return null;
+  return best;
+}
+function updateFloodResponse(dt){
+  const worldKey=COLS+'x'+ROWS;
+  if(floodControl.worldKey!==worldKey){ floodControl.target=null; floodControl.workerId=null; floodControl.scan=0; floodControl.worldKey=worldKey; }
+  floodControl.scan-=dt;
+  let worker=floodControl.workerId?workers.find(a=>a.id===floodControl.workerId):null;
+  const t=floodControl.target;
+  if(t&&(soil[t.r][t.c]!==0||waterAtCell(t.c,t.r)<0.16||!_floodWorkCells(t).length)){
+    _clearFloodAssignment(worker); floodControl.target=null; floodControl.workerId=null; worker=null;
+  }
+  if(floodControl.scan>0) return;
+  if(floodControl.target&&!_floodReachableNest().has(floodControl.target.c+','+floodControl.target.r)){
+    _clearFloodAssignment(worker); floodControl.target=null; floodControl.workerId=null; worker=null;
+  }
+  floodControl.scan=24;
+  if(!floodControl.target) floodControl.target=_chooseFloodTarget();
+  if(!floodControl.target) return;
+  if(!worker||worker.health<=20||worker._magmaRetreat){
+    _clearFloodAssignment(worker);
+    const cells=_floodWorkCells(floodControl.target);
+    worker=workers.filter(a=>a.health>24&&!a.food&&!a._magmaRetreat&&a.state!=='CONTROLAR_AGUA')
+      .sort((a,b)=>{
+        const da=Math.min(...cells.map(p=>Math.hypot(a.x-(p[0]+0.5)*CELL,a.y-(p[1]+0.5)*CELL)));
+        const db=Math.min(...cells.map(p=>Math.hypot(b.x-(p[0]+0.5)*CELL,b.y-(p[1]+0.5)*CELL)));
+        return da-db-(a.traits.construccion-b.traits.construccion)*0.08;
+      })[0];
+    if(worker){
+      worker.floodTarget={c:floodControl.target.c,r:floodControl.target.r}; worker.floodProgress=0;
+      worker.state='CONTROLAR_AGUA'; worker.targetFood=null; worker.digTarget=null; worker.buildTarget=null; worker._route=null;
+      floodControl.workerId=worker.id; floodControl.incident++;
+      pushEvent('eco','🌊 Inundación detectada: una obrera prepara un dique',`Brecha ${floodControl.target.c},${floodControl.target.r}`);
+      pushToast(worker.x,worker.y-15,'🌊 ¡DIQUE!','#62c8ff',2.4);
+    }
+  }
+}
+function _sealFloodCell(ant,target){
+  if(!target||!soil[target.r]||soil[target.r][target.c]!==0) return false;
+  const trapped=waterAtCell(target.c,target.r); water[target.r][target.c]=0;
+  // The three founding-shaft columns are the colony's only route to food and the first slab. There the
+  // ants build a permeable-to-ants roof/grate; elsewhere they can safely pack the whole breach with soil.
+  const passable=Math.abs(target.c-CENTER_COL)<=1||target.r<=SURFACE_ROW+1;
+  let kind=1;
+  if(passable){
+    floodBarriers.add(target.c+','+target.r);
+    const cross=[CENTER_COL-1,CENTER_COL,CENTER_COL+1].every(c=>floodBarriers.has(c+','+target.r));
+    if(cross&&queens&&queens[0]) pantryPos={x:queens[0].x,y:queens[0].y};
+  } else {
+    soil[target.r][target.c]=1;
+    if(economyLedger&&economyLedger.materials.clay>0){ economyLedger.debitMaterial('clay',1,{reason:'emergency flood barrier'}); kind=2; }
+    if(soilType[target.r]) soilType[target.r][target.c]=kind;
+  }
+  if(trapped>0&&typeof displaceWaterMass==='function') displaceWaterMass(water,soil,target.c,target.r,trapped,floodBarriers);
+  markSoilDirty(target.c,target.r);
+  pushEvent('eco',passable?'🪵 Entrada cubierta contra el agua':'🧱 Brecha de agua sellada',passable?'Techo drenante: corta el agua sin cerrar el paso de las hormigas':kind===2?'Dique de arcilla; el agua fue desplazada, no borrada':'Dique de tierra compactada; el agua fue desplazada, no borrada');
+  pushToast((target.c+0.5)*CELL,target.r*CELL,passable?'🪵 CUBIERTO':'🧱 SELLADO','#9de5ff',3);
+  for(let i=0;i<12;i++) particles.push({x:(target.c+0.5)*CELL,y:(target.r+0.5)*CELL,vx:(Math.random()-.5)*1.5,vy:-Math.random(),life:1,decay:.04,color:'#8ecae6'});
+  stats.xp+=20; colonyFitness+=0.3; if(ant) ant.fitness=(ant.fitness||0)+0.4; checkLevelUp();
+  _clearFloodAssignment(ant); floodControl.target=null; floodControl.workerId=null; floodControl.scan=18;
+  return true;
 }
 
 function updateEcosystem(dt){
@@ -1019,7 +1455,7 @@ function updateEcosystem(dt){
           if(Math.random()<0.42 && foods.length<8){
             spawnFoodAt(pl.x, SURFACE_Y-8, 1, 'honey');
             // también fibra para inventos
-            if(inventions.fiber && Math.random()<0.3) worldMaterials.fiber+=1;
+            if(inventions.fiber && Math.random()<0.3) economyLedger.creditMaterial('fiber',1,'flower harvest');
             pl.fruitCooldown=DAY_LENGTH*(0.62+Math.random()*0.3);
           } else pl.fruitCooldown=DAY_LENGTH*0.15;
         } else if(pl.type==='berryBush'){
@@ -1033,7 +1469,7 @@ function updateEcosystem(dt){
         } else if(pl.type==='mushroom'){
           if(foods.length<9){
             spawnFoodAt(pl.x, SURFACE_Y-8, 1, 'mushroom');
-            if(inventions.fungus) worldMaterials.fiber+=1;
+            if(inventions.fungus) economyLedger.creditMaterial('fiber',1,'mushroom harvest');
             pl.fruitCooldown=DAY_LENGTH*0.58;
           }
         } else if(pl.type==='fruitTree'){
@@ -1041,8 +1477,8 @@ function updateEcosystem(dt){
           if(foods.length<10){
             for(let k=0;k<3;k++) spawnFoodAt(pl.x + (Math.random()-0.5)*18, SURFACE_Y-8, 1, 'apple');
             // textura de fruto también da fibra y ocasional madera
-            if(inventions.wood && Math.random()<0.12) worldMaterials.wood+=1;
-            if(Math.random()<0.22) worldMaterials.fiber+=1;
+            if(inventions.wood && Math.random()<0.12) economyLedger.creditMaterial('wood',1,'fruit tree harvest');
+            if(Math.random()<0.22) economyLedger.creditMaterial('fiber',1,'fruit tree harvest');
             pushEvent('food','🍎 Manzanas caen del árbol','Frutal maduro '+pl.growth.toFixed(2));
             pl.fruitCooldown=DAY_LENGTH*(0.78+Math.random()*0.32);
           } else pl.fruitCooldown=DAY_LENGTH*0.18;
@@ -1051,7 +1487,7 @@ function updateEcosystem(dt){
           if(pl.growth>=0.98 && Math.random()<0.08 && foods.length<7){
             spawnFoodAt(pl.x, SURFACE_Y-8, 1, 'seed'); // hojas / frutos
             pl.fruitCooldown=DAY_LENGTH*1.1;
-            if(inventions.wood) worldMaterials.wood+=1;
+            if(inventions.wood) economyLedger.creditMaterial('wood',1,'sapling harvest');
           } else if(pl.fruitCooldown<=0) pl.fruitCooldown=DAY_LENGTH*0.35;
         }
       }
@@ -1132,7 +1568,7 @@ function checkInventions(){
 function canBuildStructure(type){
   const def=STRUCTURE_DEFS[type]; if(!def) return false;
   if(gen<def.gen || colonyIQ<def.iq) return false;
-  for(let k in def.need) if((worldMaterials[k]||0) < def.need[k]) return false;
+  if(!economyLedger.canAffordMaterials(def.need)) return false;
   // al menos 1 invento base
   if(type==='workshop' && !inventions.wood) return false;
   if(type==='granary' && !inventions.clay) return false;
@@ -1143,7 +1579,7 @@ function canBuildStructure(type){
 function tryBuildComplexStructure(ant, site){
   // prioriza estructuras útiles según necesidad de colonia
   let candidates=[];
-  if(canBuildStructure('granary') && colonyFood>8 && structures.filter(s=>s.type==='granary').length < 2) candidates.push('granary');
+  if(canBuildStructure('granary') && economyLedger.food>8 && structures.filter(s=>s.type==='granary').length < 2) candidates.push('granary');
   if(canBuildStructure('workshop') && structures.filter(s=>s.type==='workshop').length < 1) candidates.push('workshop');
   if(canBuildStructure('bridge') && Math.random()<0.12) candidates.push('bridge');
   if(canBuildStructure('tower') && workers.length>=9 && structures.filter(s=>s.type==='tower').length < 1) candidates.push('tower');
@@ -1156,7 +1592,7 @@ function tryBuildComplexStructure(ant, site){
     if(rr<0||rr>=ROWS||cc<0||cc>=COLS||soil[rr][cc]===1) return false;
   }
   // consume materiales
-  pagar(worldMaterials, def.need);
+  economyLedger.payMaterials(def.need,'structure '+type);
   // ocupa celdas como suelo especial pero marca estructura
   for(let dy=0; dy<def.h; dy++) for(let dx=0; dx<def.w; dx++){
     const cc=site.c+dx, rr=site.r+dy;
@@ -1170,19 +1606,19 @@ function tryBuildComplexStructure(ant, site){
   pushToast(site.c*CELL+8, site.r*CELL+8, '🏗 '+def.name, def.color, 2.2);
   for(let i=0;i<12;i++) particles.push({x:site.c*CELL+8,y:site.r*CELL+8,vx:(Math.random()-0.5)*2,vy:-Math.random()*1.6,life:1,decay:0.03,color:def.color});
   ant.fitness+=1.2; colonyFitness+=0.9;
-  if(type==='granary') colonyFood+=4; // bonus almacén
+  if(type==='granary') economyLedger.creditFood(4,'granary completed'); // bonus almacén
   return true;
 }
 function tryCraftTool(ant){
   if(ant.tool) return false; // ya tiene
   const opts=[];
-  if(inventions.stone && gen>=TOOL_DEFS.pick.gen && colonyIQ>=TOOL_DEFS.pick.iq && worldMaterials.stone>=2) opts.push('pick');
-  if(inventions.fiber && gen>=TOOL_DEFS.basket.gen && colonyIQ>=TOOL_DEFS.basket.iq && worldMaterials.fiber>=2) opts.push('basket');
-  if(inventions.clay && gen>=TOOL_DEFS.trowel.gen && colonyIQ>=TOOL_DEFS.trowel.iq && worldMaterials.clay>=1 && worldMaterials.stone>=1) opts.push('trowel');
+  if(inventions.stone && gen>=TOOL_DEFS.pick.gen && colonyIQ>=TOOL_DEFS.pick.iq && economyLedger.materials.stone>=2) opts.push('pick');
+  if(inventions.fiber && gen>=TOOL_DEFS.basket.gen && colonyIQ>=TOOL_DEFS.basket.iq && economyLedger.materials.fiber>=2) opts.push('basket');
+  if(inventions.clay && gen>=TOOL_DEFS.trowel.gen && colonyIQ>=TOOL_DEFS.trowel.iq && economyLedger.materials.clay>=1 && economyLedger.materials.stone>=1) opts.push('trowel');
   if(!opts.length) return false;
   const t=opts[Math.floor(Math.random()*opts.length)];
   const def=TOOL_DEFS[t];
-  pagar(worldMaterials, def.need);
+  economyLedger.payMaterials(def.need,'tool '+t);
   ant.tool=t; ant.toolBonus=def;
   pushEvent('evo',`🔧 ${ant.id} forja ${def.name} ${def.icon}`,`Herramienta - ${t}`);
   pushToast(ant.x, ant.y-14, def.icon+' '+def.name, '#ffcc00', 1.8);
@@ -1267,7 +1703,9 @@ function routeStep(ant, gx, gy){
   if(!isFinite(sc)||!isFinite(sr)||!isFinite(tc)||!isFinite(tr)) return null;
   if(sc<0||sr<0||tc<0||tr<0||sc>=COLS||sr>=ROWS||tc>=COLS||tr>=ROWS) return null;
   if(sc===tc && sr===tr){ ant._routeNext=null; return null; }
-  const clave = sr+','+sc+'>'+tr+','+tc;
+  // Water changes routes even when the soil does not. A short flow epoch keeps a cached dry route
+  // cheap while preventing an ant from following yesterday's tunnel into today's flood.
+  const clave = sr+','+sc+'>'+tr+','+tc+'@'+Math.floor(_waterPhase/8);
   if(ant._routeGoal===clave && ant._routeUntil>time) return ant._routeNext;
   const prev=new Map(); const q=[[sr,sc]]; prev.set(sr+','+sc, null);
   let head=0, vistos=0, found=null;
@@ -1279,6 +1717,7 @@ function routeStep(ant, gx, gy){
       const k=n[0]+','+n[1];
       if(prev.has(k)) continue;
       if(!soil[n[0]] || soil[n[0]][n[1]]!==0) continue;
+      if(waterAtCell(n[1],n[0])>=WATER_AVOID_LEVEL) continue; // dry routes only; escape has its own BFS
       prev.set(k, cur); q.push(n);
     }
   }
@@ -1297,6 +1736,7 @@ function routeStepToDig(ant, target){
   for(const d of [[0,-1],[-1,0],[1,0],[0,1]]){
     const c=target.c+d[0], r=target.r+d[1];
     if(c<0||c>=COLS||r<SURFACE_ROW||r>=ROWS||!soil[r]||soil[r][c]!==0) continue;
+    if(waterAtCell(c,r)>=WATER_AVOID_LEVEL) continue;
     cands.push({c,r,d:Math.hypot((c+0.5)*CELL-ant.x,(r+0.5)*CELL-ant.y)});
   }
   cands.sort((a,b)=>a.d-b.d);
@@ -1489,12 +1929,12 @@ function notifyCanon(title, detail, ms=5200){
   // subtle shake for canon if is major
 }
 function updateActionButtons(){
-  const canBreed = colonyFood>=3;
+  const canBreed = economyLedger.food>=3;
   const btnBreed=document.getElementById('btnBreed');
   const btnLay=document.getElementById('btnLay');
   const btnHatch=document.getElementById('btnHatch');
-  if(btnBreed){btnBreed.disabled=!canBreed; btnBreed.title= canBreed ? 'Gastar 3 🍯' : `FALTA ${3-colonyFood} 🍯 (tienes ${colonyFood})`;}
-  if(btnLay){btnLay.disabled=!canBreed; btnLay.title= canBreed ? 'Gastar 3 🍯' : `FALTA ${3-colonyFood} 🍯`;}
+  if(btnBreed){btnBreed.disabled=!canBreed; btnBreed.title= canBreed ? 'Gastar 3 🍯' : `FALTA ${3-economyLedger.food} 🍯 (tienes ${economyLedger.food})`;}
+  if(btnLay){btnLay.disabled=!canBreed; btnLay.title= canBreed ? 'Gastar 3 🍯' : `FALTA ${3-economyLedger.food} 🍯`;}
   if(btnHatch){btnHatch.disabled=brood.length===0; btnHatch.style.opacity= brood.length? '1':'0.35';}
 }
 
@@ -2115,8 +2555,13 @@ function topoCreateFreshWorld(cols, rows){
   // el nuevo - el "residuo al sobre escribir un mundo" que señalo el dueño.
   try{ wastePiles.length=0; fungusGardens.length=0; structures.length=0; }catch(e){ console.warn('limpieza herencia', e.message); }
   try{ if(typeof water!=='undefined' && water) water.forEach(r=>r.fill(0)); }catch(e){}
+  try{ _waterActive=false; floodBarriers.clear(); floodControl.target=null; floodControl.workerId=null; floodControl.scan=0; floodControl.worldKey=''; }catch(e){}
   try{ window._foodlessTimer=0; }catch(e){}
-  day=1; time=DAY_LENGTH*0.28; deliveries=0; digs=0; gen=0; worldAge=0; colonyFood=Math.max(2,Math.round(startReserveFood()/2)); colonyFitness=0;
+  day=1; time=DAY_LENGTH*0.28; deliveries=0; digs=0; gen=0; worldAge=0;
+  worldSeed=worldSeed32(Math.floor(Math.random()*4294967296));
+  worldProfile=createWorldProfile(worldSeed,COLS); ancientSites=[]; ancientMasonry=[]; _generatedSiteIds=new Set(); rebuildAncientIndexes();
+  economyLedger.setFood(Math.max(2,Math.round(startReserveFood()/2)),'fresh world reserve');
+  economyLedger.replaceMaterials({},'fresh world reset'); colonyFitness=0;
   try{ initSoil(); }catch(e){ console.error('initSoil fresh',e); }
   // Topo: la despensa y la lengua son de ESTE mundo. Antes la despensa se quedaba en las coordenadas
   // del mapa de referencia (64x36) y en un 48x28 caia dentro de tierra intacta -> miel "almacenada"
@@ -2154,7 +2599,7 @@ function topoCreateFreshWorld(cols, rows){
     // Topo: la reserva de fundacion tiene que dar para las primeras puestas mientras las
     // forrajeras arrancan (una entrega = 1-2, un huevo = 3). Con 7 la colonia se quedaba sin
     // despensa el dia 2 y nunca volvia a poner: 0 nacimientos para siempre.
-    colonyFood=Math.max(12, startReserveFood()+startSurfaceFood()); if(queen) queen.progress=0; digs=0;
+    economyLedger.setFood(Math.max(12,startReserveFood()+startSurfaceFood()),'founding provisions'); if(queen) queen.progress=0; digs=0;
     const _sf2=startSurfaceFood(); const _spread=Math.max(24, Math.round(38*worldAreaRatio()*0.9));
     for(let i=0;i<_sf2;i++) spawnFoodSurface(CENTER_COL*CELL+8 + (Math.random()-0.5)*(_spread*3) + (i-Math.floor(_sf2/2))*_spread, 1+Math.floor(Math.random()*1.6));
     // Topo: la colonia fundacional tambien nace con provisiones DENTRO del nido, al lado de la
@@ -2309,12 +2754,12 @@ function checkRewardDiscovery(c,r){
       rew.found=true; rewardsFound++;
       const def = TREASURE_DEFS[rew.type] || null;   // antes el typeof mentia y def salia null: ni fibra, ni ambar
       let handled=false;
-      if(rew.type==='semillas'){ colonyFood+=10; pushEvent('discover','¡SEMILLAS!','+10 comida'); notifyCanon('🌾 SEMILLAS', 'Descubriste semillas - +10 comida', 5000); for(let i=0;i<16;i++) particles.push({x:rew.x,y:rew.y,vx:(Math.random()-0.5)*3,vy:-Math.random()*2.5,life:1,decay:0.02,color:'#ffcc00'}); pushToast(rew.x,rew.y-20,'🌾 +10 SEMILLAS','#ffcc00'); }
+      if(rew.type==='semillas'){ economyLedger.creditFood(10,'seed treasure'); pushEvent('discover','¡SEMILLAS!','+10 comida'); notifyCanon('🌾 SEMILLAS', 'Descubriste semillas - +10 comida', 5000); for(let i=0;i<16;i++) particles.push({x:rew.x,y:rew.y,vx:(Math.random()-0.5)*3,vy:-Math.random()*2.5,life:1,decay:0.02,color:'#ffcc00'}); pushToast(rew.x,rew.y-20,'🌾 +10 SEMILLAS','#ffcc00'); }
       else if(rew.type==='agua'){ workers.forEach(w=> w.fatigue=Math.max(0,w.fatigue-30)); pushEvent('discover','¡AGUA!','Energía para todas'); notifyCanon('💧 AGUA', 'Fuente de agua - fatiga restaurada', 5000); for(let i=0;i<14;i++) particles.push({x:rew.x,y:rew.y,vx:(Math.random()-0.5)*2,vy:(Math.random()-0.5)*2,life:1,decay:0.025,color:'#00e5ff'}); pushToast(rew.x,rew.y-20,'💧 AGUA','#00e5ff'); }
-      else if(rew.type==='hongo'){ colonyFood+=6; pushEvent('discover','¡HONGO!','+6 comida'); notifyCanon('🍄 HONGO', 'Hongo nutritivo - +6 comida', 5000); for(let i=0;i<14;i++) particles.push({x:rew.x,y:rew.y,vx:(Math.random()-0.5)*2,vy:(Math.random()-0.5)*2,life:1,decay:0.02,color:'#2de67a'}); pushToast(rew.x,rew.y-20,'🍄 HONGO','#2de67a'); }
+      else if(rew.type==='hongo'){ economyLedger.creditFood(6,'mushroom treasure'); pushEvent('discover','¡HONGO!','+6 comida'); notifyCanon('🍄 HONGO', 'Hongo nutritivo - +6 comida', 5000); for(let i=0;i<14;i++) particles.push({x:rew.x,y:rew.y,vx:(Math.random()-0.5)*2,vy:(Math.random()-0.5)*2,life:1,decay:0.02,color:'#2de67a'}); pushToast(rew.x,rew.y-20,'🍄 HONGO','#2de67a'); }
       else if(def){
-        if(def.food) colonyFood+=def.food;
-        if(def.mat && typeof worldMaterials!=='undefined'){ worldMaterials[def.mat]=(worldMaterials[def.mat]||0)+(def.matAmt||1); }
+        if(def.food) economyLedger.creditFood(def.food,'treasure '+rew.type);
+        if(def.mat) economyLedger.creditMaterial(def.mat,def.matAmt||1,'treasure '+rew.type);
         if(def.xp) stats.xp+=def.xp; else stats.xp+=45;
         if(def.fatigue) workers.forEach(w=> w.fatigue=Math.max(0,w.fatigue-def.fatigue));
         const _grito = def.msg || ('¡'+String(def.reliquia||rew.type||'TESORO').toUpperCase()+'!');
@@ -2386,14 +2831,14 @@ function _reservaVital(){ try{ return reservaVitalComida(); }catch(e){ return 5;
 // justo cuando las fundadoras empezaban a morir de viejas).
 function _sostieneCriar(){ try{ return Math.max(_reservaVital()+3, 3+1.9*brood.length); }catch(e){ return 8; } }
 const _MAT_DEFS = [
-  {k:'stone', n:'PIEDRA',  col:'#9a9a9a', col2:'#6e6e6e', icon:'\u{1FAA8}', sirve:'muros y herramientas de pico'},
-  {k:'clay',  n:'ARCILLA', col:'#c47a52', col2:'#8f5433', icon:'\u{1F9F1}', sirve:'paredes, granero y tinajas'},
-  {k:'sand',  n:'ARENA',   col:'#e8cf8a', col2:'#b99f5f', icon:'\u231B', sirve:'cimenta y drena el tunel'},
-  {k:'fiber', n:'FIBRA',   col:'#8fbf5f', col2:'#5d8438', icon:'\u{1F33F}', sirve:'cestas, cuerdas y acolchado'},
-  {k:'wood',  n:'MADERA',  col:'#a97a44', col2:'#7a5528', icon:'\u{1FAB5}', sirve:'andamios, puentes y techos'},
-  {k:'cobre', n:'COBRE',   col:'#c8703a', col2:'#7c3f1c', icon:'\u{1F7E0}', sirve:'punta, lamina y algo que brillar'},
-  {k:'hierro',n:'HIERRO',  col:'#b9bcc6', col2:'#5f6470', icon:'\u2699\u{FE0E}', sirve:'armazon duro: picos, marcos, coraza'},
-  {k:'oro',   n:'ORO',     col:'#e8c14b', col2:'#8a6a12', icon:'\u{1F7E1}', sirve:'no se oxida: ofrenda, adorno, contacto'}
+  {k:'stone', n:'STONE',  col:'#9a9a9a', col2:'#6e6e6e', icon:'\u{1FAA8}', sirve:'walls and pickaxe tools'},
+  {k:'clay',  n:'CLAY',   col:'#c47a52', col2:'#8f5433', icon:'\u{1F9F1}', sirve:'walls, granaries, and jars'},
+  {k:'sand',  n:'SAND',   col:'#e8cf8a', col2:'#b99f5f', icon:'\u231B', sirve:'foundations and tunnel drainage'},
+  {k:'fiber', n:'FIBER',  col:'#8fbf5f', col2:'#5d8438', icon:'\u{1F33F}', sirve:'baskets, ropes, and padding'},
+  {k:'wood',  n:'WOOD',   col:'#a97a44', col2:'#7a5528', icon:'\u{1FAB5}', sirve:'scaffolds, bridges, and roofs'},
+  {k:'cobre', n:'COPPER', col:'#c8703a', col2:'#7c3f1c', icon:'\u{1F7E0}', sirve:'points, sheets, and something shiny'},
+  {k:'hierro',n:'IRON',   col:'#b9bcc6', col2:'#5f6470', icon:'\u2699\u{FE0E}', sirve:'hard frames: picks, supports, and armor'},
+  {k:'oro',   n:'GOLD',   col:'#e8c14b', col2:'#8a6a12', icon:'\u{1F7E1}', sirve:'rustproof: offerings, ornaments, and contacts'}
 ];
 function storagePos(){
   // Topo: el almacen es el GRANERO que ellas construyen; si todavia no hay ninguno, la camara que
@@ -2448,7 +2893,7 @@ function dibujarAlmacen(){
   const celdas=storageCells();
   if(!celdas.length) return;
   // 1) las raciones de miel: los mismos cuadros de 6x6, en ambar, apoyados en el suelo de la celda
-  const _raciones=Math.max(0, Math.floor(colonyFood||0));
+  const _raciones=Math.max(0, Math.floor(economyLedger.food||0));
   const miel=Math.max(0, Math.min(_cuadrosDe(_raciones)*2, celdas.length, 8 + granerosConstruidos()*4));
   let i=0;
   for(; i<miel; i++){
@@ -2458,7 +2903,7 @@ function dibujarAlmacen(){
   }
   // 2) materiales: un monton por recurso, con su propio color y tamano segun cuanto hay
   for(let m=0;m<_MAT_DEFS.length;m++){
-    const d=_MAT_DEFS[m], n=Math.max(0, Math.floor(worldMaterials[d.k]||0));
+    const d=_MAT_DEFS[m], n=Math.max(0, Math.floor(economyLedger.materials[d.k]||0));
     if(!n) continue;
     const alto=_cuadrosDe(n);                              // cuantos cuadros, no cuanto de gordos
     const cd=celdas[(i+m)%celdas.length]; if(!cd) continue;
@@ -2496,6 +2941,38 @@ function rayWallDist(x,y,angle,max){for(let d=4;d<=max;d+=4){const nx=x+Math.cos
 function inkColorForSymbol(sym){ if(sym==='⬢') return '#00e5ff'; if(sym==='⬣') return '#ffdd57'; if(sym==='◆') return '#ff6b9d'; return '#2de67a';}
 function symbolForComms(c1,c2){ if(c1>0.4 && c2>0.4) return '◆'; if(c1>0.4) return '⬢'; if(c2>0.4) return '⬣'; return '⬡';}
 
+// Egg + attended larva + pupa take about 1.3 game days; the extra quarter-day absorbs travel and
+// a poorly tended larva. Succession starts from remaining lifetime, not from an arbitrary age ratio.
+const QUEEN_SUCCESSOR_LEAD_DAYS=1.55;
+function _royalDevelopmentRemaining(b){
+  if(!b) return Infinity;
+  const left=Math.max(0,100-(Number(b.progress)||0));
+  if(b.type==='egg') return left/0.00345 + 100/0.00235 + 100/0.00325;
+  if(b.type==='larva') return left/0.00235 + 100/0.00325;
+  if(b.type==='pupa') return left/0.00325;
+  return Infinity;
+}
+function _prepareSuccessor(q){
+  if(queens.length!==1) return null;
+  const existing=brood.find(b=>b.isQueen);
+  if(existing){ q._successionPlanned=true; return existing; }
+  const remaining=(q.maxAge||0)-(q.age||0), lead=DAY_LENGTH*QUEEN_SUCCESSOR_LEAD_DAYS;
+  if(remaining>lead&&(q.health||100)>=46) return null;
+  // Caste is still plastic in egg/larva. Prefer the youngest available brood so the timing remains
+  // legible; if there is none, reserve the queen's next egg and advance only that natural laying cycle.
+  const candidate=brood.filter(b=>!b.isQueen&&(b.type==='egg'||b.type==='larva'))
+    .sort((a,b)=>(a.type==='egg'?0:1)-(b.type==='egg'?0:1)||(a.progress||0)-(b.progress||0))[0];
+  if(candidate) candidate.isQueen=true;
+  else { q._royalNext=true; q.progress=Math.max(q.progress||0,84); }
+  if(!q._successionAnnounced){
+    q._successionAnnounced=true;
+    pushEvent('evo','👑 La colonia prepara heredera antes de la vejez',`Quedan ${(Math.max(0,remaining)/DAY_LENGTH).toFixed(1)} días; desarrollo real ≈${QUEEN_SUCCESSOR_LEAD_DAYS} días`);
+    notifyCanon('👑 SUCESIÓN', 'La colonia alimenta una heredera antes de que muera la reina', 5200);
+  }
+  q._successionPlanned=true;
+  return candidate||null;
+}
+
 function updateQueen(dt){
   // === FÍSICA REINA - Topo: ya no flota, cae y busca suelo como en la vida real ===
   for(let qi=queens.length-1; qi>=0; qi--){
@@ -2516,8 +2993,19 @@ function updateQueen(dt){
         }
       }
     }
-    // gravedad si no hay suelo debajo o hay agua que la hace flotar un poco
-    if(!belowSolid || waterHere){
+    // Una reina inundada no se deja caer más hondo: busca la costa seca conectada y evacúa. Las
+    // obreras reciben a la vez la alarma para sellar la brecha mediante updateFloodResponse().
+    if(waterHere){
+      q.state='HUIR_INUNDACION'; q.vy=0;
+      const shore=findWaterEscapeStep(q,900,true);
+      if(shore){
+        const ang=Math.atan2(shore.y-q.y,shore.x-q.x),step=Math.min(4.2,0.055*dt+0.8);
+        const nx=q.x+Math.cos(ang)*step,ny=q.y+Math.sin(ang)*step;
+        if(canMove(nx,ny)&&waterAtPixel(nx,ny)<=waterHere+0.015){ q.x=nx; q.y=ny; }
+      }
+      if(q.mood){ q.mood.fear=Math.min(1,(q.mood.fear||0)+0.04); q.mood.stress=Math.min(1,(q.mood.stress||0)+0.02); }
+    // gravedad si no hay suelo debajo
+    } else if(!belowSolid){
       q.vy = (q.vy||0) + 0.52*dt*0.065;
       q.y += q.vy*dt*0.09;
       // tope suelo
@@ -2527,7 +3015,6 @@ function updateQueen(dt){
         q.y=(nr2+1)*CELL - 4; // 4px sobre el suelo (pies de la reina)
         q.vy=0;
       }
-      if(waterHere) q.vy*=0.92; // agua frena caída
       if(q.y>H-12){ q.y=H-12; q.vy=0; }
       if(q.y<SURFACE_Y-20){ q.y=SURFACE_Y-8; q.vy=0; }
     } else {
@@ -2554,18 +3041,20 @@ function updateQueen(dt){
       }
     }
     q.age+=dt;
+    _prepareSuccessor(q);
     // fertilidad decae con la edad
     const ageFactor = Math.max(0.25, 1 - (q.age/q.maxAge)*0.7);
-    // La corona no se apaga si no hay quien la coja: una reina vieja o agotada aguanta una semana
-    // mas mientras no haya heredera en el nido, porque "se muere la ultima" es el fin de la partida
-    // y eso no lo decide la edad, lo decide la despensa (el jugador puede darle miel: el panel ya
-    // permite ponerle comida encima y sube +20). Si hay sucesora, muere cuando le toca.
-    const _sinHeredera = !queens.some(x=>x!==q && (x.isQueen||x.isQueenLarva))
-                      && !brood.some(b=>b.isRoyal||b.isQueenLarva);
-    if(_sinHeredera && workers.length>0 && (q.edadPospuesta||0) < DAY_LENGTH*7){
-      q.edadPospuesta = (q.edadPospuesta||0) + dt;
-      if(!q._avisoAguante){ q._avisoAguante=true; pushEvent('evo', '♛ la reina se aguanta: no hay heredera'); }
-    } else if(q.age > q.maxAge || (q._agonia||0) > DAY_LENGTH*0.7){
+    // La vieja no consume su prórroga desde el nacimiento (ese era el fallo: los siete días se
+    // agotaban mucho antes de envejecer). Sólo espera una vez llegada la muerte y únicamente hasta
+    // que la heredera viva pueda tomar el relevo. `isQueen` es la propiedad real de la cría.
+    const _sucesoraViva = queens.some(x=>x!==q);
+    const _realEnCamino = brood.some(b=>b.isQueen);
+    const _muriendo = q.age>q.maxAge || (q._agonia||0)>DAY_LENGTH*0.7;
+    const _maxAguante = _realEnCamino ? DAY_LENGTH*2.2 : DAY_LENGTH*7;
+    if(_muriendo && !_sucesoraViva && (q.edadPospuesta||0)<_maxAguante){
+      q.edadPospuesta=(q.edadPospuesta||0)+dt;
+      if(!q._avisoAguante){ q._avisoAguante=true; pushEvent('evo', _realEnCamino?'♛ la reina espera a la heredera que ya crece':'♛ la reina se aguanta: aún no hay heredera'); }
+    } else if(_muriendo){
       // muerte por vejez, o porque llevaba demasiado tiempo a cero de salud
       const _agonia = (q._agonia||0) > DAY_LENGTH*0.7 && q.age <= q.maxAge;
       if(_agonia) pushEvent('evo', `♛ ${q.name||q.id||'Reina'} se apaga`, 'Llevaba un día entero sin fuerzas - la colonia da paso a la heredera');
@@ -2622,8 +3111,8 @@ function updateQueen(dt){
     // Hasta diez obreras la fundadora puede completar la puesta con sus reservas corporales. No
     // inventa comida: la parte que falta se paga en salud, mientras las cinco raciones vitales se
     // quedan en la despensa. Así la primera cohorte reemplaza a las fundadoras antes de su vejez.
-    const _puestaCorporal = workers.length<10 && colonyFood>=_reservaVital() && (q.health||0)>18;
-    if((colonyFood>=_sostiene || _puestaCorporal) && _sitio){
+    const _puestaCorporal = workers.length<10 && economyLedger.food>=_reservaVital() && (q.health||0)>18;
+    if((economyLedger.food>=_sostiene || _puestaCorporal) && _sitio){
       // FERTILIDAD EVOLUTIVA REALISTA - Lasius 4-7k (100/d pico), Atta 5M (30k/d), argentina billones
       // En juego: base 2.19/d, con evolución GEN30 puede llegar a 18/d por reina (como Atta joven), 4 reinas = 72/d → N=72*18=1296
       const _evoFert = 1 + gen*0.13 + Math.max(0, colonyIQ-108)*0.009 + (q.personality?.fertilidad? (q.personality.fertilidad-50)*0.006:0) + (fungusGardens.filter(f=>f.health>0.62).length*0.12) + (typeof inventions!=='undefined' && inventions.fungus?0.22:0);
@@ -2643,13 +3132,14 @@ function updateQueen(dt){
         // madre todavia en pie para poder alimentarla (esperar a que moria era lo que apagaba la
         // dinastia: sin larva real en ese momento no habia rescate posible).
         const _hayHeredera = brood.some(b=>b.isQueen) || queens.length>1;
-        const _necesitaHeredera = queens.length===1 && !_hayHeredera && workers.length>=6 &&
-          ( q.age > q.maxAge*0.45 || (q.health||100) < 46 ) && colonyFood>5;
-        const isQueenLarva = _necesitaHeredera || (workers.length>=6 && colonyFood>8 && queens.length < reinasPermitidas() && Math.random()<0.04 + gen*0.002);
+        const _enVentana = (q.maxAge-q.age)<=DAY_LENGTH*QUEEN_SUCCESSOR_LEAD_DAYS || (q.health||100)<46;
+        // La sucesión programada no exige seis obreras ni gastar la reserva vital: precisamente debe
+        // salvar una colonia SMALL debilitada. q._royalNext fue reservado por _prepareSuccessor().
+        const _necesitaHeredera = queens.length===1&&!_hayHeredera&&(_enVentana||q._royalNext);
+        const isQueenLarva = !!q._royalNext || _necesitaHeredera || (workers.length>=6 && economyLedger.food>8 && queens.length < reinasPermitidas() && Math.random()<0.04 + gen*0.002);
+        if(isQueenLarva) q._royalNext=false;
         brood.push({type:'egg', progress:0, genome:mutated.genome, time:0, isQueen:isQueenLarva, faction:q.faction, parents:[q.name||q.id, best?best.id:'-'], parentGenomes:[q.genome.id, best?best.genome.id:'-'], x:q.x+(Math.random()-0.5)*22, y:q.y+(Math.random()-0.5)*14, hunger:0});
-        const _excedente=Math.max(0,colonyFood-_reservaVital());
-        const _pagoPuesta=Math.min(need,_excedente);
-        colonyFood-= _pagoPuesta;
+        const _pagoPuesta=economyLedger.debitFood(need,{floor:_reservaVital(),partial:true,reason:'queen lays egg'});
         if(_pagoPuesta<need) q.health=Math.max(4,(q.health||100)-(need-_pagoPuesta)*1.8);
         const eggIcon2=isQueenLarva?'👑':'🥚';
         // === reina: crecimiento y personalidad ===
@@ -2673,11 +3163,11 @@ function updateQueen(dt){
         if(isQueenLarva) notifyCanon('👑 HUEVO REAL', `${q.name} gesta una futura reina`, 5000);
       }
     } else q.progress=Math.max(0, q.progress - dt*0.04);
-    q.state= colonyFood>=3? 'GRÁVIDA' : 'HAMBRIENTA';
+    q.state= economyLedger.food>=3? 'GRÁVIDA' : 'HAMBRIENTA';
     // salud de reina. Topo: la vida de la corona NO era un numero que hiciera nada - bajaba de cero
     // (se leia -69 en el panel) y la reina seguia poniendo: un cadaver util que bloqueaba la
     // succession, porque la heredera solo se buscaba CUANDO la reina moria, y ella nunca mora.
-    if(colonyFood===0 && Math.random()<0.001) q.health=Math.max(0, (q.health||100)-0.5);
+    if(economyLedger.food===0 && Math.random()<0.001) q.health=Math.max(0, (q.health||100)-0.5);
     q.health=Math.max(0, q.health||0);
     if(q.health<=0) q._agonia=(q._agonia||0)+dt; else q._agonia=Math.max(0,(q._agonia||0)-dt*0.5);
   }
@@ -2718,8 +3208,8 @@ function updateBrood(dt){
       const nido = {x:bxp, y:byp};
       const nodriza = workers.filter(w=> dist(w,nido)<64 && (w.crop||0)>0.14 && w.role==='NODRIZA').length;
       const cualquiera = workers.some(w=> dist(w,nido)<44 && (w.crop||0)>0.12);
-      const real = queens.length>0 && dist(queens[0],nido)<96 && (colonyFood>=0.5 || (queens[0].crop||0)>0.1);
-      const nivel = nodriza>0 ? 1 : (cualquiera || workers.some(w=>w.caste==='minim' && (w.crop||0)>0.1 && dist(w,nido)<48)) ? 2 : real ? 3 : colonyFood>0.6 ? 4 : 0;
+      const real = queens.length>0 && dist(queens[0],nido)<96 && (economyLedger.food>=0.5 || (queens[0].crop||0)>0.1);
+      const nivel = nodriza>0 ? 1 : (cualquiera || workers.some(w=>w.caste==='minim' && (w.crop||0)>0.1 && dist(w,nido)<48)) ? 2 : real ? 3 : economyLedger.food>0.6 ? 4 : 0;
       if(nivel>0){
         // El coste se paga EN PROPORCION al crecimiento de este paso, no por intentos al azar: el
         // bucle llama a esto decenas de veces por frame y un "-0.02 por sorteo" vaciaba la
@@ -2737,14 +3227,12 @@ function updateBrood(dt){
           // fundadora alimenta la larva con sus reservas corporales. Sin reina sí se permite usar
           // la despensa para que una cría ya puesta pueda refundar la colonia.
           const _sueloComida=queens.length>0?_reservaVital():0;
-          const _pagable=Math.max(0,colonyFood-_sueloComida);
-          const _pagado=Math.min(_costeCria,_pagable);
-          colonyFood = Math.max(_sueloComida>colonyFood?colonyFood:_sueloComida, colonyFood-_pagado);
+          const _pagado=economyLedger.debitFood(_costeCria,{floor:_sueloComida,partial:true,reason:'brood care'});
           // Criar sola le cuesta, SI: solo cuando la despensa no llega para lo que la cria pide.
           // Con el granero lleno quien alimenta es la colonia, y la reina no deveria estar pagando
           // 20 puntos de vida por jornada (medido: 100 -> 60 en dos dias con 7 obreras trabajando),
           // porque una reina que se apaga a la mitad de su vida es una sucesion forzada cada semana.
-          if(queens.length>0 && (_pagado<_costeCria || colonyFood < _sostieneCriar())) queens[0].health = Math.max(4, (queens[0].health||100) - _g*0.02);
+          if(queens.length>0 && (_pagado<_costeCria || economyLedger.food < _sostieneCriar())) queens[0].health = Math.max(4, (queens[0].health||100) - _g*0.02);
         }
         b.hunger=Math.max(0, b.hunger- dt*(nivel<=2?0.08:0.045));
         if(byp > (SURFACE_ROW+10)*CELL) b.progress+= dt*0.00042; // más cálido abajo
@@ -2767,7 +3255,8 @@ function updateBrood(dt){
       else if(b.type==='larva'){ b.type='pupa'; b.progress=0; }
       else if(b.type==='pupa'){
         
-if(workers.length < getMaxPopulation()){
+if(b.isQueen || workers.length < getMaxPopulation()){
+          // La corona no ocupa una plaza obrera: una heredera nunca queda bloqueada por el tope SMALL.
           // si es larva real -> nace reina, no obrera
           if(b.isQueen){
             let _qn2=genPersonalName({faction: (b.faction!==undefined? b.faction : (queens[0]? queens[0].faction : 0)), role:'REINA', affinity:'NODRIZA', caste:'media', parents:[b.genome.id], genome:b.genome, isQueen:true, rank:'LÍDER', ageDays:0, idCode:'Q'+(queens.length+1)+'-'+Math.random().toString(36).slice(2,4).toUpperCase()});
@@ -2820,7 +3309,15 @@ if(workers.length < getMaxPopulation()){
             if(silentQueenless) notifyCanon('🐣 REVIENTA EL HUEVO', `${ant.id} nace sin reina - las nodrizas la coronaran enseguida`, 5200);
           }
         } else {
-          pushEvent('evo',`Pupa espera: colonia en tope ${getMaxPopulation()} - cava más salas o evoluciona`,'Falta espacio/organizacion');
+          // A promised birth must not disappear at the cap. The mature pupa waits at 100% and hatches
+          // as soon as an old worker frees a place — the previous unconditional splice caused SMALL
+          // colonies to show future births, discard them, and then vanish in one ageing wave.
+          b.progress=100; b._capWaiting=true;
+          if(!b._capWarnedAt||time-b._capWarnedAt>DAY_LENGTH*0.5){
+            b._capWarnedAt=time||1;
+            pushEvent('evo',`Pupa espera: colonia en tope ${getMaxPopulation()} - cava más salas o evoluciona`,'No se pierde: eclosiona en cuanto quede una plaza');
+          }
+          continue;
         }
         brood.splice(i,1);
       }
@@ -2867,7 +3364,7 @@ function updateFungus(dt){
     } else {
       // mimims limpian y alimentan; con fibra rinden mas
       if(Math.random()<0.018*tenders){
-        if(worldMaterials.fiber>0 && Math.random()<0.5){ worldMaterials.fiber--; f.size=Math.min(4.2, f.size+0.018); }
+        if(economyLedger.materials.fiber>0 && Math.random()<0.5){ economyLedger.debitMaterial('fiber',1,{reason:'fungus garden care'}); f.size=Math.min(4.2, f.size+0.018); }
         f.health=Math.min(1, f.health+0.035); f.fed++;
         // trofalaxia indirecta: las que estan comiendo hongo recargan buche
         workers.filter(w=>dist(w,f)<24).forEach(w=> w.crop=Math.min(w.cropMax, (w.crop||0)+0.07));
@@ -2899,7 +3396,7 @@ function updateFungus(dt){
   // comida ya pasa, y una colonia con mas gen e inteligencia lo aprende con menos ensayos - el oficio se
   // hereda, no se regala. Si los votos se acumulan sin tener el invento, es que ELLOAS lo descubren: el
   // invento de `fungus` se abre desde el contador, igual que se abrira el de los metales (ROADMAP 2.7).
-  if(fungusGardens.length<3+Math.floor(workers.length/18) && workers.length>=6 && colonyFood>4){
+  if(fungusGardens.length<3+Math.floor(workers.length/18) && workers.length>=6 && economyLedger.food>4){
     const _umbral = Math.max(2, Math.round(11 - gen*1.6 - Math.max(0,(colonyIQ-112))/9));
     let _mejor=null, _votos=0, _clave=null;
     for(const k in _huertoVotos){ if(_huertoVotos[k] > _votos){ const p=k.split(','); _mejor={c:+p[0], r:+p[1]}; _votos=_huertoVotos[k]; _clave=k; } }
@@ -3148,23 +3645,22 @@ function showAntProfile(ant){
   for(let k of ['exploracion','construccion','recoleccion','cuidado','comunica']){
     const v=ant.traits[k];
     const col=k==='exploracion'?'#00e5ff':k==='construccion'?'#ff3b30':k==='recoleccion'?'#2de67a':k==='cuidado'?'#b47aff':'#ffcc00';
-    const label=k==='exploracion'?'EXPL':k==='construccion'?'CAVA':k==='recoleccion'?'RECO':k==='cuidado'?'CUID':'TINT';
+    const label=k==='exploracion'?'EXPL':k==='construccion'?'DIG':k==='recoleccion'?'GATH':k==='cuidado'?'CARE':'COMM';
     const d=document.createElement('div');
     d.style.cssText='background:rgba(255,255,255,0.03);border:1px solid #1a1a1a;padding:4px';
     d.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;font-family:\'Press Start 2P\';font-size:6px;color:#c9b896;letter-spacing:0.3px"><span>${label}</span><span style="color:${col};font-size:7px">${v}</span></div><div style="height:8px;background:#0a0a0a;border:1px solid #000;margin-top:3px;position:relative;overflow:hidden"><div style="height:100%;width:${v}%;background:${col};box-shadow:inset 0 1px 0 rgba(255,255,255,0.2)"></div></div>`;
     tEl.appendChild(d);
   }
   hudText('profileFitness', (ant.fitness||0).toFixed(2));
-  hudText('profileDeliveries', `${ant.deliveries} entregas · ${ant.digsDone} pozos cavados · ${ant.commsSent} tintas pintadas`);
-  // y una frase que diga en que es buena esta hormiga, en vez de dejar que cada uno traduzca cinco barritas
+  hudText('profileDeliveries', `${ant.deliveries} deliveries · ${ant.digsDone} tunnels excavated · ${ant.commsSent} ink marks`);
   try{
-    const _tk = [['exploracion','explorar el nido'],['construccion','cavar y construir'],['recoleccion','recolectar comida'],['cuidado','cuidar la cría'],['comunica','comunicarse con otras']];
+    const _tk = [['exploracion','exploring the nest'],['construccion','digging and building'],['recoleccion','gathering food'],['cuidado','tending brood'],['comunica','communicating with others']];
     const _ord = _tk.map(k => ({ n: k[1], v: Math.round(ant.traits[k[0]] || 0) })).sort((a, b) => b.v - a.v);
     const _g = document.getElementById('profileTraitsGist');
-    if(_g) _g.textContent = 'Lo suyo: ' + _ord[0].n + ' (' + _ord[0].v + ' de 100). Lo que menos: ' + _ord[_ord.length - 1].n + ' (' + _ord[_ord.length - 1].v + ').';
+    if(_g) _g.textContent = 'Best trait: ' + _ord[0].n + ' (' + _ord[0].v + ' of 100). Weakest: ' + _ord[_ord.length - 1].n + ' (' + _ord[_ord.length - 1].v + ').';
   }catch(e){}
-  hudText('profileCrimes', `${ant.crimes} - ${ant.followers} seguidores`);
-  hudText('profileBelief', ant.belief? `cree en ${ant.belief}-ismo` : (ant.followers>0? `lider de ${ant.followers} ` : '- sin culto'));
+  hudText('profileCrimes', `${ant.crimes} fights · ${ant.followers} followers`);
+  hudText('profileBelief', ant.belief? `believes in ${ant.belief}-ism` : (ant.followers>0? `leads ${ant.followers}` : '— no cult'));
   // árbol
   const treeEl=document.getElementById('profileTree');
   let treeHtml='';
@@ -3384,9 +3880,18 @@ function updateAnt(ant, dt){
   // abajo encadena el siguiente bloque en vez de ser sustituida por otra que vuelve a empezar desde el
   // nido. Al abrir la primera losa se retira el encargo para siempre.
   if(ant._pozoPrincipal && umbralesRotos>0) ant._pozoPrincipal=false;
+  // Once the slab recruits a visible crew, ordinary job selection cannot dissolve it one tick later.
+  // Water, injury and carried soil still override this below; the reservation only protects active,
+  // healthy helpers for a short work shift.
+  if(ant._umbralSupport){
+    const t=ant.digTarget,valid=umbral&&t&&t.r===umbral.r&&soilType[t.r]&&soilType[t.r][t.c]===17&&time<(ant._obraUmbralHasta||0)&&ant.health>20&&(ant.fatigue||0)<88;
+    if(valid&&!ant.food&&!ant._magmaRetreat){ ant.targetFood=null; ant.wasteTarget=null; ant.buildTarget=null; ant.state='CAVANDO'; }
+    else if(!valid){ delete ant._umbralSupport; delete ant._obraUmbralHasta; }
+  }
   // La cuadrilla reservada no acepta una calada lateral por el reflejo de atasco mientras espera a
   // que vuelva la comida. Su único frente, hasta la losa, vive en las tres columnas de la boca.
-  if(ant._pozoPrincipal && umbralesRotos===0 && ant.digTarget && Math.abs(ant.digTarget.c-CENTER_COL)>1){
+  if(ant._pozoPrincipal && umbralesRotos===0 && ant.digTarget && Math.abs(ant.digTarget.c-CENTER_COL)>1 &&
+     !(soilType[ant.digTarget.r]&&soilType[ant.digTarget.r][ant.digTarget.c]===17)){
     ant.digTarget=null; ant.digProgress=0; if(ant.state==='CAVANDO') ant.state='EXPLORAR';
   }
   // Una tarea interrumpida no conserva objetivos fantasma. El descanso, la basura o una entrega
@@ -3407,6 +3912,30 @@ function updateAnt(ant, dt){
   // recupera el transporte en vez de pasear eternamente con un `wasteTarget` invisible.
   if(ant.wasteTarget && !(ant.food&&ant.food.isSoil) && ant.state!=='LLEVANDO_BASURA' && ant.state!=='DESCANSAR'){
     ant.targetFood=null; ant.digTarget=null; ant.digProgress=0; ant.state='LLEVANDO_BASURA';
+  }
+  // Emergencia acuática antes que cualquier oficio. Una obrera mojada puede cruzar agua para salir,
+  // pero elige siempre el primer paso hacia una celda seca; el movimiento ordinario no obtiene esa
+  // excepción. Así no se suicida entrando y tampoco queda encarcelada por la propia regla de evasión.
+  const _waterHere=waterAtPixel(ant.x,ant.y);
+  if(_waterHere>=WATER_ESCAPE_LEVEL){
+    if(ant.state!=='HUIR_AGUA') ant._stateBeforeWater=ant.state;
+    ant.state='HUIR_AGUA'; ant.targetFood=null; ant.digTarget=null; ant.digProgress=0; ant.buildTarget=null;
+    if(!ant.mood) ant.mood={joy:0.5,anger:0,fear:0,sadness:0,loyalty:0.6,stress:0};
+    ant.mood.fear=Math.min(1,(ant.mood.fear||0)+0.08); ant.mood.stress=Math.min(1,(ant.mood.stress||0)+0.025);
+    const shore=findWaterEscapeStep(ant);
+    if(shore){
+      const ang=Math.atan2(shore.y-ant.y,shore.x-ant.x); ant.angle+=((ang-ant.angle+Math.PI*3)%(Math.PI*2)-Math.PI)*0.42;
+      const swim=Math.min(7,1.7+Math.sqrt(Math.max(1,gameSpeed))*0.62);
+      const nx=ant.x+Math.cos(ant.angle)*swim, ny=ant.y+Math.sin(ant.angle)*swim;
+      // Geometry only here: canAntMove intentionally refuses wet cells, while an escape path may need
+      // several wet cells before reaching its shore.
+      if(canMove(nx,ny)){ ant.x=nx; ant.y=ny; ant.blocked=0; }
+      else { ant.angle=ang; const sx=ant.x+Math.cos(ang)*swim, sy=ant.y+Math.sin(ang)*swim; if(canMove(sx,sy)){ ant.x=sx; ant.y=sy; ant.blocked=0; } else ant.blocked++; }
+    } else ant.angle-=0.35;
+    ant.fatigue=Math.min(100,ant.fatigue+0.02*dt);
+    return;
+  } else if(ant.state==='HUIR_AGUA'){
+    ant.state=ant.floodTarget?'CONTROLAR_AGUA':'EXPLORAR'; delete ant._stateBeforeWater;
   }
   // SALIDA GLOBAL DEL ATASCO. El atasco no era un problema del forrajeo: una hormiga SIN objetivo puede
   // quedar encajada en una celda y contar blocked hasta 4.430 pasos, porque las unicas reglas que miran
@@ -3615,7 +4144,7 @@ function updateAnt(ant, dt){
       if(ant.vy===undefined) ant.vy=0;
       ant.vy += 0.62 * (gameSpeed>1?1.35:1);
       let fallX= ant.x + Math.cos(ant.angle)*0.28;
-      if(canMove(fallX, ant.y)) ant.x = fallX;
+      if(canAntMove(ant,fallX, ant.y)) ant.x = fallX;
       ant.y += ant.vy;
       let cr=Math.floor((ant.y+10)/CELL), cc=Math.floor(ant.x/CELL);
       if(cr>=ROWS) { ant.y=(ROWS-1)*CELL-10; ant.vy=0; }
@@ -3745,6 +4274,44 @@ function updateAnt(ant, dt){
   // herramienta
   if(ant.tool==='pick') speed*=1.16;
   if(ant.tool==='trowel') speed*=1.09;
+
+  // Ingeniería de emergencia: una sola obrera se acerca por celdas secas y tapona la brecha. No se
+  // mete en el agua para construir; si la geometría cambia, updateFloodResponse buscará otra cara.
+  if(ant.state==='CONTROLAR_AGUA'&&ant.floodTarget){
+    const target=ant.floodTarget;
+    if(!soil[target.r]||soil[target.r][target.c]!==0||waterAtCell(target.c,target.r)<0.14){
+      _clearFloodAssignment(ant); floodControl.target=null; floodControl.workerId=null; return;
+    }
+    let work=ant.floodWork;
+    if(!work||!isDryOpenCell(work.c,work.r,0.22)){
+      const cells=_floodWorkCells(target).sort((a,b)=>Math.hypot((a[0]+.5)*CELL-ant.x,(a[1]+.5)*CELL-ant.y)-Math.hypot((b[0]+.5)*CELL-ant.x,(b[1]+.5)*CELL-ant.y));
+      if(!cells.length){ _clearFloodAssignment(ant); floodControl.workerId=null; return; }
+      work=ant.floodWork={c:cells[0][0],r:cells[0][1]}; ant._routeUntil=0;
+    }
+    const workPos={x:(work.c+.5)*CELL,y:(work.r+.5)*CELL};
+    const inCell=Math.floor(ant.x/CELL)===work.c&&Math.floor(ant.y/CELL)===work.r;
+    const targetPos={x:(target.c+.5)*CELL,y:(target.r+.5)*CELL};
+    // A dry ant on either face can pack a grate into the wet cell. Previously only the preselected
+    // face counted; if water rose over that face while she travelled, a worker already touching the
+    // breach waited for days (and abandoned the first slab) instead of closing it.
+    const safeAdjacent=waterAtPixel(ant.x,ant.y)<WATER_AVOID_LEVEL&&dist(ant,targetPos)<CELL*1.8;
+    if(inCell||dist(ant,workPos)<8||safeAdjacent){
+      ant.angle=Math.atan2((target.r+.5)*CELL-ant.y,(target.c+.5)*CELL-ant.x);
+      ant.floodProgress=(ant.floodProgress||0)+dt*0.09*(ant.tool==='trowel'?1.28:1);
+      ant.fatigue=Math.min(100,ant.fatigue+0.03*dt);
+      if(Math.random()<0.22) particles.push({x:(target.c+.5)*CELL,y:(target.r+.5)*CELL,vx:(Math.random()-.5),vy:-.4,life:.7,decay:.05,color:'#82cde8'});
+      if(ant.floodProgress>=1) _sealFloodCell(ant,target);
+      return;
+    }
+    let waypoint=workPos;
+    const routed=routeStep(ant,workPos.x,workPos.y); if(routed) waypoint=routed;
+    const ang=Math.atan2(waypoint.y-ant.y,waypoint.x-ant.x); ant.angle+=((ang-ant.angle+Math.PI*3)%(Math.PI*2)-Math.PI)*0.24;
+    const nx=ant.x+Math.cos(ant.angle)*speed,ny=ant.y+Math.sin(ant.angle)*speed;
+    if(canAntMove(ant,nx,ny)){ ant.x=nx; ant.y=ny; ant.blocked=0; }
+    else { ant.blocked++; ant._routeUntil=0; ant.angle=ang; }
+    return;
+  }
+
   if(ant.state!=='DESCANSAR'){
     // Unidades: la fatiga se media por FRAME y el reloj simula en milisegundos escalados, asi que a
     // dt~42 (x64) o incluso a x1 la escala subia +1,7 por paso: cualquier obrera estaba al 100% en un
@@ -3758,12 +4325,14 @@ function updateAnt(ant, dt){
     else if(ant.fatigue>86 && Math.random()<0.02) ant.state='DESCANSAR';
   }else{
     ant.fatigue -= _fatUnidad*dt*14;   // la siesta devuelve el aire en ~1,7 horas de juego
-    if(ant.fatigue<=12) ant.state='EXPLORAR';
+    if(ant.fatigue<=12){
+      ant.state=ant.digTarget&&soil[ant.digTarget.r]&&soil[ant.digTarget.r][ant.digTarget.c]===1?'CAVANDO':'EXPLORAR';
+    }
     const deep={x:CENTER_COL*CELL, y:(SURFACE_ROW+12)*CELL};
     const ang=Math.atan2(deep.y-ant.y, deep.x-ant.x);
     ant.angle+=(((ang-ant.angle+Math.PI*3)%(Math.PI*2)-Math.PI)*0.04);
     const nx=ant.x+Math.cos(ant.angle)*speed*0.22, ny=ant.y+Math.sin(ant.angle)*speed*0.22;
-    if(canMove(nx,ny)){ant.x=nx;ant.y=ny;}
+    if(canAntMove(ant,nx,ny)){ant.x=nx;ant.y=ny;}
     return;
   }
   // El magma no se cava: se patea al lado. Si hay fuego a un bloque de distancia la fatiga sube y, si
@@ -3782,7 +4351,7 @@ function updateAnt(ant, dt){
     if(_fuego){
       ant.fatigue=Math.min(100, ant.fatigue+2.3); ant._quemando=time;
       if(ant.fatigue>84){
-        ant.digTarget=null; ant.digProgress=0; ant.state='VOLVER_TIERRA';
+        ant.digTarget=null; ant.digProgress=0; ant.buildTarget=null; ant._magmaRetreat=true; ant.state='VOLVER_TIERRA';
         if(Math.random()<0.06) pushToast(ant.x,ant.y-12,'🔥','#ff6a1e');
         if(!ant._fuegoAviso || time-ant._fuegoAviso>600){ ant._fuegoAviso=time; pushEvent('accident', `🔥 ${ant.id} sale escaldada del basalto`, `piso ${_ar-SURFACE_ROW} - fatiga ${Math.round(ant.fatigue)}`); }
       }
@@ -3804,7 +4373,7 @@ function updateAnt(ant, dt){
     const ang=Math.atan2(tgt.y-ant.y, tgt.x-ant.x);
     ant.angle+= ((ang-ant.angle+Math.PI*3)%(Math.PI*2)-Math.PI)*0.14;
     const nx=ant.x+Math.cos(ant.angle)* (1.02*gameSpeed), ny=ant.y+Math.sin(ant.angle)*(1.02*gameSpeed);
-    if(canMove(nx,ny)){ant.x=nx; ant.y=ny;}
+    if(canAntMove(ant,nx,ny)){ant.x=nx; ant.y=ny;}
     if(dist(ant,tgt)<10){ ant.state='VOLVER_COMIDA'; follower.state='EXPLORAR'; follower.tandemPartner=null; ant.tandemPartner=null; }
     if(Math.random()<0.09) pheromones.push({x:ant.x,y:ant.y,strength:0.48,life:1,type:'recruit'});
     return;
@@ -3819,7 +4388,7 @@ function updateAnt(ant, dt){
     const ang=Math.atan2(leader.y-ant.y, leader.x-ant.x);
     ant.angle+= ((ang-ant.angle+Math.PI*3)%(Math.PI*2)-Math.PI)*0.19;
     const nx=ant.x+Math.cos(ant.angle)* (1.18*gameSpeed), ny=ant.y+Math.sin(ant.angle)*(1.18*gameSpeed);
-    if(canMove(nx,ny)){ant.x=nx; ant.y=ny;} else ant.blocked++;
+    if(canAntMove(ant,nx,ny)){ant.x=nx; ant.y=ny;} else ant.blocked++;
     return;
   }
   if(ant.state==='LLEVANDO_BASURA' && ant.wasteTarget){
@@ -3827,7 +4396,7 @@ function updateAnt(ant, dt){
     const ang=Math.atan2(tgt.y-ant.y, tgt.x-ant.x);
     ant.angle+= ((ang-ant.angle+Math.PI*3)%(Math.PI*2)-Math.PI)*0.13;
     const nx=ant.x+Math.cos(ant.angle)*1.05*gameSpeed, ny=ant.y+Math.sin(ant.angle)*1.05*gameSpeed;
-    if(canMove(nx,ny)){ant.x=nx; ant.y=ny;} else ant.blocked++;
+    if(canAntMove(ant,nx,ny)){ant.x=nx; ant.y=ny;} else ant.blocked++;
     if(dist(ant,tgt)<10){
       // deja basura en cámara de desecho
       addWaste(tgt.x+(Math.random()-0.5)*12, tgt.y+(Math.random()-0.5)*10);
@@ -3840,7 +4409,10 @@ function updateAnt(ant, dt){
   if(ant.state==='CAVANDO' && ant.digTarget){
     // Cinco raciones son reserva, no combustible de obra. La cuadrilla conserva el frente y espera;
     // en cuanto entra una entrega continúa exactamente donde estaba, sin aceptar una calada lateral.
-    if(ant._pozoPrincipal && colonyFood<=_reservaVital()) return;
+    const _muerdeLosa=soilType[ant.digTarget.r]&&soilType[ant.digTarget.r][ant.digTarget.c]===17;
+    // The protected five rations stop opening new tunnels, not a crew already standing on the slab:
+    // biting it spends no food. Freezing that last metre at exactly 5 made viable SMALL seeds miss T4.
+    if(ant._pozoPrincipal&&economyLedger.food<=_reservaVital()&&!_muerdeLosa) return;
     const tx=(ant.digTarget.c+0.5)*CELL, ty=(ant.digTarget.r+0.5)*CELL;
     const d=dist(ant,{x:tx,y:ty});
     let _metaCava={x:tx,y:ty}, _cavaEnRuta=false;
@@ -3867,7 +4439,7 @@ function updateAnt(ant, dt){
       const _distPaso=dist(ant,_metaCava);
       const _velCava=_cavaEnRuta ? Math.min(speed*0.82,Math.max(2,_distPaso*0.72)) : speed*0.82;
       const nx=ant.x+Math.cos(ant.angle)*_velCava, ny=ant.y+Math.sin(ant.angle)*_velCava;
-      if(canMoveIgnoreTarget(nx,ny,ant.digTarget)){ant.x=nx;ant.y=ny;}else if(_cavaEnRuta && !isSolidPixel(nx,ny)){
+      if(canAntMoveIgnoreTarget(ant,nx,ny,ant.digTarget)){ant.x=nx;ant.y=ny;}else if(_cavaEnRuta && !isSolidPixel(nx,ny)){
         // El BFS trabaja por celdas abiertas, pero la física usa un radio de siete píxeles. Si una
         // obrera queda pegada a la arista de una galería de una celda, ese radio puede rechazar todos
         // los pasos aunque su centro y el siguiente nodo estén en aire. Déjala recentrarse dentro de
@@ -3877,13 +4449,19 @@ function updateAnt(ant, dt){
         // intentar deslizar por pared: probar solo X o solo Y (ignorando bloque objetivo)
         const sx=ant.x+Math.cos(ant.angle)*_velCava*0.55;
         const sy=ant.y+Math.sin(ant.angle)*_velCava*0.55;
-        if(canMoveIgnoreTarget(sx,ant.y,ant.digTarget)) ant.x=sx;
-        else if(canMoveIgnoreTarget(ant.x,sy,ant.digTarget)) ant.y=sy;
+        if(canAntMoveIgnoreTarget(ant,sx,ant.y,ant.digTarget)) ant.x=sx;
+        else if(canAntMoveIgnoreTarget(ant,ant.x,sy,ant.digTarget)) ant.y=sy;
         else ant.angle+=(Math.random()-0.5)*0.7;
       }
     }else{
       const toolDig = ant.tool==='pick'?1.38 : ant.tool==='trowel'?1.18 : 1;
-      ant.digProgress+=(1.6+ (ant.role==='EXCAVADORA'?0.28:0.12)*10)*Math.max(1, gameSpeed*0.85)*toolDig;
+      const _digGain=(1.6+(ant.role==='EXCAVADORA'?0.28:0.12)*10)*Math.max(1,gameSpeed*0.85)*toolDig;
+      const _esLosa=soilType[ant.digTarget.r]&&soilType[ant.digTarget.r][ant.digTarget.c]===17;
+      const _esApoyoUmbral=ant._umbralSupport&&_esLosa;
+      const _esLiderUmbral=ant._umbralLead&&_esLosa;
+      // Support is mostly visual; the lead advances steadily but still slowly enough for the communal
+      // effort to remain visible instead of deleting a fresh slab in a single high-speed frame.
+      ant.digProgress+=_esApoyoUmbral?Math.min(_digGain,0.055):(_esLiderUmbral?Math.min(_digGain,0.65):_digGain);
       if(Math.random()<0.65) particles.push({x:tx+(Math.random()-0.5)*10,y:ty+(Math.random()-0.5)*10,vx:(Math.random()-0.5)*1.4,vy:-Math.random()*1.4,life:1,decay:0.04,color:'#8b5a2b'});
       if(Math.random()<0.18) particles.push({x:tx,y:ty-8,vx:(Math.random()-0.5)*0.6,vy:-0.9,life:1,decay:0.03,color:'#ffcc00'});
       if(ant.digProgress>=ant.digNeeded){
@@ -3902,16 +4480,20 @@ function updateAnt(ant, dt){
         if(_mt===8 || _mt===9 || _mt===10){
           const _mat = _mt===8?'cobre':_mt===9?'hierro':'oro';
           const _amt = 1 + (ant.tool==='pick'?1:0) + (colonyIQ>132?1:0);
-          worldMaterials[_mat]=(worldMaterials[_mat]||0)+_amt;
+          economyLedger.creditMaterial(_mat,_amt,'ore extraction');
           if(!materialUso[_mat]) materialUso[_mat]={mina:0, carga:0, tocado:0};
           materialUso[_mat].mina += _amt;
           pushToast(ant.digTarget.c*CELL+8, ant.digTarget.r*CELL+8, _mat==='cobre'?'\u{1F7E0}':(_mat==='hierro'?'\u2699\u{FE0E}':'\u{1F7E1}'), '#ffd76a', 1.4);
-          pushEvent('discover', `\u26CF ${ant.id} saca ${_mat} x${_amt} de la roca`, `veta en [${ant.digTarget.c},${ant.digTarget.r}] - la colonia atesora ${worldMaterials[_mat]}`);
+          pushEvent('discover', `\u26CF ${ant.id} saca ${_mat} x${_amt} de la roca`, `veta en [${ant.digTarget.c},${ant.digTarget.r}] - la colonia atesora ${economyLedger.materials[_mat]}`);
           logAntHistory(ant, `extrajo ${_mat} x${_amt}`);
           colonyFitness += _mat==='oro'?0.9:0.55;
         } if(_mt===17){                                  // la losa: el bloque NO se quita, se agrieta
-          ant.digTarget=null; ant.digProgress=0; ant.food=null; ant.state='CAVANDO';
-          golpearUmbral(ant);
+          const _objetivoLosa={r:ant.digTarget.r,c:ant.digTarget.c};
+          ant.digTarget=null; ant.digProgress=0; ant.food=null; ant.state='CAVANDO'; ant._pozoPrincipal=true;
+          const _abierta=golpearUmbral(ant);
+          // A bite is one work cycle, not the end of the assignment. Keeping the same reachable face
+          // lets the leader and helpers continue; dropping it here left the leader idle after one hit.
+          if(!_abierta&&umbral&&soilType[_objetivoLosa.r]&&soilType[_objetivoLosa.r][_objetivoLosa.c]===17) ant.digTarget=_objetivoLosa;
           return;
         } if(_mt===15){                                   // el magma no se cava: achicharra y ya esta
           ant.digTarget=null; ant.digProgress=0; ant.state='VOLVER_TIERRA'; ant.fatigue=Math.min(100,ant.fatigue+9);
@@ -3926,10 +4508,10 @@ function updateAnt(ant, dt){
         // residuo real: la tierra excavada va a basurero, no desaparece
         if(Math.random()<0.52){ addWaste(tx, ty, _mt); }
         // cosecha de material según estrato
-        if(_mt===2 && Math.random()<0.72){ worldMaterials.clay+=1; if(inventions.clay) colonyFitness+=0.06; }
-        else if(_mt===3 && Math.random()<0.62){ worldMaterials.sand+=1; }
-        else if(_mt===4 && Math.random()<0.55){ worldMaterials.stone+=1; if(inventions.stone) colonyFitness+=0.05; }
-        else if(_mt===1 && Math.random()<0.22){ worldMaterials.fiber+=1; } // raíces
+        if(_mt===2 && Math.random()<0.72){ economyLedger.creditMaterial('clay',1,'soil excavation'); if(inventions.clay) colonyFitness+=0.06; }
+        else if(_mt===3 && Math.random()<0.62){ economyLedger.creditMaterial('sand',1,'soil excavation'); }
+        else if(_mt===4 && Math.random()<0.55){ economyLedger.creditMaterial('stone',1,'soil excavation'); if(inventions.stone) colonyFitness+=0.05; }
+        else if(_mt===1 && Math.random()<0.22){ economyLedger.creditMaterial('fiber',1,'root excavation'); } // raíces
         if(_mt===4) pushToast(tx,ty-16,'⛏ PIEDRA','#8a8a8a',1.3);
         else if(_mt===2) pushToast(tx,ty-16,'✓ TÚNEL','#d4a574',1.3);
         else pushToast(tx,ty-16,'✓ TÚNEL','#2de67a',1.3);
@@ -3981,8 +4563,9 @@ function updateAnt(ant, dt){
     return;
   }
   if(ant.state==='VOLVER_TIERRA'){
-    // decidir si construir una pared estratégica en vez de solo tirar tierra en la entrada
-    if(!ant.buildTarget){
+    // decidir si construir una pared estratégica en vez de solo tirar tierra en la entrada. Una
+    // obrera escaldada no se detiene a construir: primero sale del basalto y recupera el aliento.
+    if(!ant.buildTarget && !ant._magmaRetreat){
       const buildChance = 0.16 + (ant.traits.construccion/100)*0.22 + Math.min(0.14, (colonyIQ-100)/520) + gen*0.009; // más lento al inicio
       const canBuild = ant.role==='EXCAVADORA' || ant.role==='NODRIZA' || ant.traits.construccion>48;
       if(canBuild && Math.random()<buildChance){
@@ -3990,13 +4573,13 @@ function updateAnt(ant, dt){
         if(site){ ant.buildTarget=site; ant.buildProgress=0; }
       }
     }
-    const tgt = ant.buildTarget ? {x:ant.buildTarget.c*CELL+8, y:ant.buildTarget.r*CELL+8} : surfaceEntrance();
+    const tgt = ant.buildTarget && !ant._magmaRetreat ? {x:ant.buildTarget.c*CELL+8, y:ant.buildTarget.r*CELL+8} : surfaceEntrance();
     const ang=Math.atan2(tgt.y-ant.y, tgt.x-ant.x);
     const bias=steer*0.22;
     ant.angle+=(((ang-ant.angle+Math.PI*3)%(Math.PI*2)-Math.PI)*0.11 + bias*0.07);
     const nx=ant.x+Math.cos(ant.angle)*speed, ny=ant.y+Math.sin(ant.angle)*speed;
     // al construir, ignorar el propio bloque destino si es túnel (vacío) - necesita llegar
-    const can = ant.buildTarget ? canMove(nx,ny) : canMove(nx,ny);
+    const can = ant.buildTarget ? canAntMove(ant,nx,ny) : canAntMove(ant,nx,ny);
     if(can){ant.x=nx;ant.y=ny;ant.blocked=0;}else{ant.blocked++; ant.angle+=0.32; if(ant.blocked>44){ant.state='EXPLORAR';ant.blocked=0; ant.buildTarget=null;}}
     if(dist(ant,tgt)<10){
       if(ant.buildTarget){
@@ -4018,10 +4601,10 @@ function updateAnt(ant, dt){
           soil[r][c]=1; markSoilDirty(c,r);
           // material usado: si son inteligentes usan piedra/arcilla/madera según stock
           let usedType=1;
-          if(inventions.wood && worldMaterials.wood>0 && ant.traits.construccion>62 && Math.random()<0.28){ worldMaterials.wood--; usedType=1; decoSet.add(dkey(c,r)); }
-          else if(inventions.stone && worldMaterials.stone>2 && Math.random()<0.32){ worldMaterials.stone-=2; usedType=4; }
-          else if(inventions.clay && worldMaterials.clay>1 && Math.random()<0.38){ worldMaterials.clay-=1; usedType=2; }
-          else if(worldMaterials.sand>1 && Math.random()<0.18){ worldMaterials.sand-=1; usedType=3; }
+          if(inventions.wood && economyLedger.materials.wood>0 && ant.traits.construccion>62 && Math.random()<0.28){ economyLedger.debitMaterial('wood',1,{reason:'wall decoration'}); usedType=1; decoSet.add(dkey(c,r)); }
+          else if(inventions.stone && economyLedger.materials.stone>2 && Math.random()<0.32){ economyLedger.debitMaterial('stone',2,{reason:'wall construction'}); usedType=4; }
+          else if(inventions.clay && economyLedger.materials.clay>1 && Math.random()<0.38){ economyLedger.debitMaterial('clay',1,{reason:'wall construction'}); usedType=2; }
+          else if(economyLedger.materials.sand>1 && Math.random()<0.18){ economyLedger.debitMaterial('sand',1,{reason:'wall construction'}); usedType=3; }
           if(soilType[r]) soilType[r][c]=usedType;
           if(usedType===4) pushToast(tgt.x,tgt.y-10,'🧱 PIEDRA','#8a8a8a',1.4);
           else if(usedType===2) pushToast(tgt.x,tgt.y-10,'🏺 ARCILLA','#c2a080',1.4);
@@ -4059,7 +4642,9 @@ function updateAnt(ant, dt){
           }
           if(best){
             soil[best.r][best.c]=1; soilType[best.r][best.c]=1; markSoilDirty(best.c,best.r);
-            ant.food=null; ant.state='EXPLORAR'; ant.blocked=0;
+            ant.food=null;
+            if(ant._magmaRetreat){ ant._magmaRetreat=false; ant.state='DESCANSAR'; } else ant.state='EXPLORAR';
+            ant.blocked=0;
             for(let i=0;i<5;i++) particles.push({x:best.c*CELL+8,y:best.r*CELL+8,vx:(Math.random()-0.5)*1,vy:-0.4,life:0.6,decay:0.04,color:'#6b3a1f'});
             pushEvent('build',`${ant.id} rellena [${best.c},${best.r}] con tierra (Terraria)`, `Reconstrucción - GEN${gen}`);
             return;
@@ -4068,7 +4653,10 @@ function updateAnt(ant, dt){
         mound.push({x:tgt.x+(Math.random()-0.5)*22,y:SURFACE_Y-2,h:4+Math.random()*5});
         if(mound.length>30) mound.shift();
       }
-      ant.food=null; ant.state='EXPLORAR'; ant.blocked=0;
+      ant.food=null;
+      if(ant._magmaRetreat){ ant._magmaRetreat=false; ant.state='DESCANSAR'; }
+      else ant.state='EXPLORAR';
+      ant.blocked=0;
     }
     return;
   }
@@ -4089,7 +4677,7 @@ function updateAnt(ant, dt){
     ant.angle+= diff*0.07 + steerBias*0.08;
     if(Math.abs(ant.sensors.commIn1)>0.5) ant.angle+= ant.sensors.commIn1*0.04;
     const nx=ant.x+Math.cos(ant.angle)*speed, ny=ant.y+Math.sin(ant.angle)*speed;
-    if(canMove(nx,ny)){ant.x=nx;ant.y=ny;ant.blocked=0;}else{ ant.blocked++; ant.angle+=(Math.random()-0.5)*0.9 + 0.12; if(ant.blocked>32){ ant.angle+=Math.PI*0.45; ant.blocked=0; /* no abandonar miel: seguir intentando VOLVER_COMIDA */ } }
+    if(canAntMove(ant,nx,ny)){ant.x=nx;ant.y=ny;ant.blocked=0;}else{ ant.blocked++; ant.angle+=(Math.random()-0.5)*0.9 + 0.12; if(ant.blocked>32){ ant.angle+=Math.PI*0.45; ant.blocked=0; /* no abandonar miel: seguir intentando VOLVER_COMIDA */ } }
     if(time-ant.lastPhero>11){ const isRecruit=!!ant.food && !ant.food.isSoil; const amt=isRecruit?(ant.food.amount||1):1; pheromones.push({x:ant.x,y:ant.y,strength: isRecruit? 0.92+amt*0.18 : 0.38, life:1, type: isRecruit?'recruit':'explore', quality: amt}); ant.lastPhero=time; }
     let _guarda = dist(ant,tgt)<14;
     // Una obrera que lleva media jornada dando vueltas DENTRO del nido no esta perdida: esta en un
@@ -4124,14 +4712,14 @@ function updateAnt(ant, dt){
       // no es el unico camino (antes, sin el click, la colonia solo huertea por un dado de 0,0016/tick junto
       // a la camara de la cria, amonton los jardines en un rincon y el resto del nido se quedaba sin cosecha).
       _votaHuerto(ant.x, ant.y, (ant.food.type==='mushroom'||ant.food.type==='seed'||ant.food.type==='berry') ? 2 : 1);
-      ant.food=null; ant.targetFood=null; ant.deliveries++; deliveries++; colonyFood+=amt;
+      ant.food=null; ant.targetFood=null; ant.deliveries++; deliveries++; economyLedger.creditFood(amt,'worker delivery');
       // trofalaxia: la forrajera llena su buche y comparte luego
       ant.crop=Math.min(ant.cropMax||1.6, (ant.crop||0)+ amt*0.38);
       const xpGain=amt*14+7; stats.xp+=xpGain; // -40% XP, lleva tiempo
-      pushEvent('food',`${ant.id} entrega x${amt} → despensa (total ${colonyFood})`, `GIRO ${(steer ?? 0).toFixed(2)} - TINTA [${(comm1 ?? 0).toFixed(1)},${(comm2 ?? 0).toFixed(1)}]`);
+      pushEvent('food',`${ant.id} entrega x${amt} → despensa (total ${economyLedger.food})`, `GIRO ${(steer ?? 0).toFixed(2)} - TINTA [${(comm1 ?? 0).toFixed(1)},${(comm2 ?? 0).toFixed(1)}]`);
       logAntHistory(ant, `entregó ${amt} miel`); ant.mood.joy=Math.min(1, ant.mood.joy+0.12);
       pushToast(tgt.x,tgt.y-18,`+${amt} 🍯`,'#ffcc00',1.8);
-      setNarration(`<b>${ant.id} entregó ${amt} 🍯</b> - despensa <b>${colonyFood}</b>.`);
+      setNarration(`<b>${ant.id} entregó ${amt} 🍯</b> - despensa <b>${economyLedger.food}</b>.`);
       colonyFitness+=1.0; ant.fitness+=1.0;
       ant.fatigue=Math.max(0,ant.fatigue-14);
       // Topo: la superficie se reabastece segun el tamano de la colonia, no con un fijo de 3: con
@@ -4150,7 +4738,7 @@ function updateAnt(ant, dt){
   // no explora nunca, se queda abajo y deja el techo lleno de migajas. Las ganas las pone el rasgo EXPL
   // (18..100) y el oficio; un cupo de una de cada cuatro evita dejar el nido vacio.
   if(!ant.isQueen && !ant.food && !ant.targetFood && !ant.digTarget && !ant.wasteTarget
-     && colonyFood > 4 && (ant._excursionHasta||0) < time
+     && economyLedger.food > 4 && (ant._excursionHasta||0) < time
      // ...y es una salida de ADULTA, no de fundadora: con la colonia corta de manos o la hormiga cansada, la
      // excursion cuesta la colonia entera (medido: la semilla 2 se apagaba al dia 4 con 8 obreras despues de
      // mandarla a una gota a 200 px, cuando antes llegaba al dia 21). Solo sale la que sobra, la que esta
@@ -4181,8 +4769,27 @@ function updateAnt(ant, dt){
   // vista y la otra llego a 55 obreras - la diferencia era si la colonia juntaba comida a tiempo. Si
   // aprieta el hambre, TODAS salen y el enfriamiento no existe; mientras haya colchon se mantiene la
   // regla de media colonia para que el hormiguero siga creciendo.
-  const _aprieto = colonyFood < 1.5;
-  const _pocaComida = colonyFood <= 5; // T1: al tocar el suelo, se come antes de abrir otro frente
+  const _aprieto = economyLedger.food < 1.5;
+  const _pocaComida = economyLedger.food <= 5; // T1: al tocar el suelo, se come antes de abrir otro frente
+  // Five rations remain untouchable, but once GEN1 has six workers the colony can spare exactly one
+  // fresh worker to keep the founding shaft alive. Digging spends no food; everyone else keeps the
+  // forage assignment. Without this relief all workers could hold the same distant food target while
+  // the shaft stayed abandoned forever at the protected floor.
+  const _obraConReserva=umbralesRotos===0&&gen>=1&&workers.length>=6&&economyLedger.food>=_reservaVital();
+  const _pozoReservado=workers.some(w=>w.health>20&&(w.fatigue||0)<88&&!w._magmaRetreat&&w.state!=='DESCANSAR'&&w.state!=='CONTROLAR_AGUA'&&w._pozoPrincipal);
+  let _relevoReserva=null;
+  if(_obraConReserva&&_pocaComida&&!_pozoReservado){
+    let _mejor=Infinity;
+    for(const w of workers){
+      if(w.health<=35||(w.fatigue||0)>=72||w.food||w.digTarget||w.wasteTarget||w._magmaRetreat||w.state!=='EXPLORAR') continue;
+      const _fila=(w.y/CELL)|0, _construccion=w.traits&&w.traits.construccion||0;
+      const _coste=(w.fatigue||0)-_fila*1.4-_construccion*0.08;
+      if(_coste<_mejor){ _mejor=_coste; _relevoReserva=w; }
+    }
+    if(_relevoReserva===ant){
+      ant.targetFood=null; ant._excursion=false; ant._pozoPrincipal=true; ant.state='EXPLORAR';
+    }
+  }
   // La cuadrilla profunda se detiene en la reserva, pero no conserva una excursión a la superficie
   // cuando la despensa ya se recuperó: ese doble objetivo dejaba su calada congelada durante días.
   if(ant._pozoPrincipal && ant.targetFood && !ant.food && !_aprieto) ant.targetFood=null;
@@ -4218,11 +4825,13 @@ function updateAnt(ant, dt){
       // Esto evita que un linaje viable se quede en cero por heredar todas una salida «cavar» baja.
       let _constructoraTurno=null;
       const _hayFrenteActivo=workers.some(w=>w.health>0 && w.state==='CAVANDO' && w.digTarget);
-      const _hayFrentePozo=workers.some(w=>w.health>0 && w.state==='CAVANDO' && w.digTarget && w._pozoPrincipal);
+      const _hayFrentePozo=workers.some(w=>w.health>0&&(w.fatigue||0)<88&&!w._magmaRetreat&&w.state==='CAVANDO'&&w.digTarget&&w._pozoPrincipal);
       const _primerUmbralPendiente=umbralesRotos===0;
       const _puedePozo=_primerUmbralPendiente && (gen>=1 || day>=3);
-      const _cuadrillaPozo=_primerUmbralPendiente ? workers.find(w=>w.health>0 && w._pozoPrincipal) : null;
-      if(!_pocaComida && (!_hayFrenteActivo || (_puedePozo && !_hayFrentePozo))){
+      // An exhausted/flood-fighting pioneer keeps her history marker but no longer monopolises the
+      // shaft. A fresh worker may take over, so one tired founder cannot stall T4 for the whole colony.
+      const _cuadrillaPozo=_primerUmbralPendiente ? workers.find(w=>w.health>0&&(w.fatigue||0)<88&&!w._magmaRetreat&&w.state!=='DESCANSAR'&&w.state!=='CONTROLAR_AGUA'&&w._pozoPrincipal) : null;
+      if((!_pocaComida||_obraConReserva) && (!_hayFrenteActivo || (_puedePozo && !_hayFrentePozo))){
         // Si ya hay una integrante de la cuadrilla y está libre, conserva ella el relevo: normalmente
         // sigue junto al último bloque abierto y no tiene que atravesar de nuevo todo el hormiguero.
         if(_cuadrillaPozo && !_cuadrillaPozo.food && !_cuadrillaPozo.targetFood && !_cuadrillaPozo.digTarget &&
@@ -4233,8 +4842,12 @@ function updateAnt(ant, dt){
         }
       }
       const _instintoObra = _constructoraTurno===ant;
-      const _pozoPuedeCavar = !ant._pozoPrincipal || (_instintoObra && _puedePozo && !_pocaComida);
-      if(_pozoPuedeCavar && !_aprieto && (_frustrada || _instintoObra || (!_pocaComida && digIntent>0.48 && wallAvg>0.18 && Math.random()<0.11 && (ant.role==='EXCAVADORA' || Math.random()<0.38)))){
+      const _pozoPuedeCavar = !ant._pozoPrincipal || (_instintoObra && _puedePozo && (!_pocaComida||_obraConReserva));
+      // Al llegar juntas al umbral, las constructoras reconocen la obra común sin volver a sortear
+      // su impulso neuronal. Así se forma un frente visible antes del primer mordisco, no una obrera
+      // solitaria que por azar toca la losa mientras las demás pasean por la misma galería.
+      const _juntoAlUmbral=!!(umbral && puedeGolpearUmbral() && Math.abs(((ant.y/CELL)|0)-umbral.r)<=1);
+      if(_pozoPuedeCavar && !_aprieto && (_juntoAlUmbral || _frustrada || _instintoObra || (!_pocaComida && digIntent>0.48 && wallAvg>0.18 && Math.random()<0.11 && (ant.role==='EXCAVADORA' || Math.random()<0.38)))){
         const frontier=findFrontier();
         if(frontier.length){
           // Topo: muestrear en vez de filtrar las miles de celdas del frontier (coste fijo por hormiga
@@ -4280,7 +4893,9 @@ function updateAnt(ant, dt){
           // Las obras del umbral: si la losa esta a tiro y la colonia ya puede morderla, parte de las
           // excavadoras dejan el frente y van a ella. Sin esto el avance depende de que el azar ponga
           // una hormiga encima de la losa, y eso no es una decision de la colonia, es una ruleta.
-          if(umbral && puedeGolpearUmbral() && (ant.role==='EXCAVADORA'||(ant.traits&&ant.traits.construccion>52)) && Math.random()<0.5){
+          const _yaEnUmbral=umbral?workers.filter(w=>w.digTarget&&w.digTarget.r===umbral.r&&soilType[umbral.r]&&soilType[umbral.r][w.digTarget.c]===17).length:0;
+          const _cupoUmbral=Math.min(8,Math.max(4,Math.floor(workers.length*0.24)));
+          if(umbral && _yaEnUmbral<_cupoUmbral && puedeGolpearUmbral() && (ant.role==='EXCAVADORA'||(ant.traits&&ant.traits.construccion>52)) && (_juntoAlUmbral||Math.random()<0.5)){
             // para morder la losa hay que tener donde pararse: una casilla de aire justo encima. Se busca la
             // columna con hueco MAS CERCANA a la hormiga (antes se usaba la columna de la propia hormiga y,
             // si ahi arriba aun no habian cavado, la obra de la losa no empezaba nunca).
@@ -4304,11 +4919,24 @@ function updateAnt(ant, dt){
             // frente, que es el mecanismo normal de la colonia.
             if(_cLos>=0 && Math.abs(((ant.y/CELL)|0) - umbral.r)<=1) pick={r:umbral.r, c:_cLos};
           }
+          // The slab is also part of the generic frontier. Once the visible crew is full, reject a
+          // random frontier pick that happens to land on it; otherwise the generic path bypasses the
+          // recruitment cap and drafts nearly every nearby worker.
+          if(pick&&soilType[pick.r]&&soilType[pick.r][pick.c]===17){
+            const onSlabNow=workers.filter(w=>w.digTarget&&w.digTarget.r===pick.r&&soilType[pick.r][w.digTarget.c]===17).length;
+            if(onSlabNow>=_cupoUmbral) pick=null;
+          }
           if(pick){
           // cavado más rápido si es excavadora, tiene rasgo alto o colonia evolucionada
           const bonus = (ant.role==='EXCAVADORA'? 8:0) + Math.floor(ant.traits.construccion/18) + Math.floor(colonyIQ/45) + Math.min(6, gen);
           ant.digTarget=pick; ant.digProgress=0;
           const _type=soilType[pick.r]&&soilType[pick.r][pick.c]; const _hard = durezaDe(_type); // la tabla vive en BANDAS/DUREZA_EXTRA: bedrock 38, magma 999, y cada banda lo suyo
+          if(_type===17){
+            const lead=workers.find(w=>w!==ant&&w._umbralLead&&w.digTarget&&w.digTarget.r===pick.r);
+            if(lead){ ant._umbralSupport=true; delete ant._umbralLead; }
+            else { ant._umbralLead=true; delete ant._umbralSupport; }
+            ant._obraUmbralHasta=time+DAY_LENGTH*0.12; ant._pozoPrincipal=true;
+          }
           // LEY REAL: piedra necesita herramienta/poder. Sin pico, 3x más lento y con chance de fallar
           const _np={4:1.2, 6:2.2, 8:1.9, 9:2.6, 10:3.0, 7:3.5, 11:2.8, 12:3.2, 13:3.6, 14:3.9, 16:3.1, 18:2.0};
           const needPower = _np[_type]||0;
@@ -4319,7 +4947,7 @@ function updateAnt(ant, dt){
           // haza colectiva, no de un numero que sube solo. Magma (15) y roca madre (7) siguen cerrados.
           ant.digNeeded= _type===17 ? Math.max(5, 11 - Math.min(6,gen*0.5))
                        : (_type===15 || (_type===7 && (gen<8 || colonyIQ<148 || !inventions.masonry)))? 999
-                       : Math.max(9, Math.floor((26 - bonus + _hard)*hardMult)/(1+bonusCava)); ant.state='CAVANDO'; 
+                       : Math.max(9, Math.floor((26 - bonus + _hard)*hardMult)/(1+bonusCava)); ant.state='CAVANDO';
           // Topo - solo icono ⛏ en la hormiga, texto va al strip inferior (no lluvia de texto)
           pushToast(pick.c*CELL+8,pick.r*CELL+8,'⛏',_hard>5?'#8a8a8a':'#ff7a00',0.9);
           try{ const lab=_hard>5?'PIEDRA DURA':_hard>2?'ARCILLA':'VA A CAVAR'; pushImportant('invention', `⛏ ${lab} [${pick.c},${pick.r}]`, `${ant.id} [${ant.role}] → ${lab.toLowerCase()} - ${workers.filter(w=>w.state==='CAVANDO').length} activas`); }catch(e){}
@@ -4404,9 +5032,9 @@ function updateAnt(ant, dt){
       if(ant.sensors.wallRight>0.7) ant.angle-=0.18;
     }
     const nx=ant.x+Math.cos(ant.angle)*speed, ny=ant.y+Math.sin(ant.angle)*speed;
-    if(canMove(nx,ny)){ant.x=nx;ant.y=ny;ant.blocked=0;}else{
-      if(canMove(ant.x+Math.cos(ant.angle)*speed, ant.y)) ant.x+=Math.cos(ant.angle)*speed*0.45;
-      else if(canMove(ant.x, ant.y+Math.sin(ant.angle)*speed)) ant.y+=Math.sin(ant.angle)*speed*0.45;
+    if(canAntMove(ant,nx,ny)){ant.x=nx;ant.y=ny;ant.blocked=0;}else{
+      if(canAntMove(ant,ant.x+Math.cos(ant.angle)*speed, ant.y)) ant.x+=Math.cos(ant.angle)*speed*0.45;
+      else if(canAntMove(ant,ant.x, ant.y+Math.sin(ant.angle)*speed)) ant.y+=Math.sin(ant.angle)*speed*0.45;
       else {ant.blocked++; ant.angle+=(Math.random()-0.5)*1.0; if(ant.blocked>36 && ant.y<SURFACE_Y+10) ant.targetFood=null;}
     }
     if(dist(ant,targ)< (targ.r? targ.r+14:16)){
@@ -4430,7 +5058,7 @@ function updateAnt(ant, dt){
     if(ant.sensors.wallRight>0.65) ant.angle-=0.22;
     if(ant.sensors.wallCenter>0.75) ant.angle+= (Math.random()-0.5)*1.2;
     const nx=ant.x+Math.cos(ant.angle)*speed*0.84, ny=ant.y+Math.sin(ant.angle)*speed*0.84;
-    if(canMove(nx,ny)){ant.x=nx;ant.y=ny;ant.blocked=0;}else{ant.angle+=(Math.random()-0.5)*1.2; ant.blocked++; if(ant.blocked>26) ant.angle+=Math.PI*0.5;}
+    if(canAntMove(ant,nx,ny)){ant.x=nx;ant.y=ny;ant.blocked=0;}else{ant.angle+=(Math.random()-0.5)*1.2; ant.blocked++; if(ant.blocked>26) ant.angle+=Math.PI*0.5;}
   }
   ant.x=Math.max(8,Math.min(W-8,ant.x)); ant.y=Math.max(8,Math.min(H-8,ant.y));
   // corrección física: si quedó dentro de tierra sólida (no en superficie ni cavando su bloque), empujar a túnel cercano
@@ -4595,7 +5223,9 @@ function rebuildSoilCache(isMini){
     }
   }
   soilCacheCtx.clearRect(0,0,W,H);
-  for(let r=SURFACE_ROW;r<ROWS;r++) for(let c=0;c<COLS;c++) paintCacheCell(c,r,isMini);
+  let _sawWater=false;
+  for(let r=SURFACE_ROW;r<ROWS;r++) for(let c=0;c<COLS;c++){ paintCacheCell(c,r,isMini); if(water&&water[r]&&water[r][c]>0.0001) _sawWater=true; }
+  if(!isMini) _waterActive=_sawWater;
   // el lote pendiente del cache principal NO se lo come una pasada mini (mini pinta el mismo
   // lienzo sin microdetalles; si consumiera la lista, la siguiente calada no se repintaria)
   if(!isMini){ soilCacheDirty=false; soilDirtyCells=null; }
@@ -4889,8 +5519,8 @@ function pintarHuecoVoxel(g, c, r, det){
   let t = 0;
   const _vec = [[-1,0],[1,0],[0,-1],[0,1]];
   for(let i=0;i<4;i++){ const rr=r+_vec[i][0], cc=c+_vec[i][1];
-    if(rr>=0 && rr<ROWS && cc>=0 && cc<COLS && soil[rr] && soil[rr][cc]===1 && soilType[rr] && soilType[rr][cc]>0){ t = soilType[rr][cc]; break; } }
-  if(!t){ try{ t = tipoDePiso(Math.max(0, r-SURFACE_ROW)); }catch(e){ t = 1; } if(!t) t = 1; }
+    if(rr>=0 && rr<ROWS && cc>=0 && cc<COLS && soil[rr] && soil[rr][cc]===1 && soilType[rr] && soilType[rr][cc]>0){ t = _visualHost(soilType[rr][cc],cc,rr); break; } }
+  if(!t){ try{ t = _geoHost(c,r); }catch(e){ t = 1; } if(!t) t = 1; }
   const base = _paredDe(t);
   const up = _soil1(r-1,c), down = _soil1(r+1,c), izq = _soil1(r,c-1), der = _soil1(r,c+1);
   const abiertos = (!up?1:0)+(!down?1:0)+(!izq?1:0)+(!der?1:0);
@@ -4947,43 +5577,76 @@ function pintarHuecoVoxel(g, c, r, det){
   if(izq) g.fillRect(x, y+2, 1, CELL-4);
   if(der) g.fillRect(x+CELL-1, y+2, 1, CELL-4);
   if(soilType[r] && (soilType[r][c-1]===17 || soilType[r][c+1]===17)){ g.fillStyle='#57536b'; g.fillRect(x,y,CELL,1); }
+  _paintAncientEvidence(g,c,r,false);
 }
 
 // El agua de los charcos y de la lluvia: la dibujaba SOLO el camino de emergencia de drawFarm, o sea
 // que aparecia y desaparecia segun si habia o no repintado pendiente. Misma razon, misma solucion: un
 // ayudante que llaman las dos rutas. Se pinta ENCIMA del cache (es lo unico del terreno que se mueve).
 function pintarAguaVoxel(g,c,r){
-  const x=c*CELL, y=r*CELL;
-  if(!water || !water[r] || !(water[r][c]>0.08)) return;
-  // OJO: no se puede leer la `time` de fuera aunque exista mas abajo: es un `let` de ambito y dentro de
-  // la funcion cae en su zona muerta (medido: renderLoop ReferenceError cada cuadro). performance.now().
-  const time=performance.now();
-  const wa=water[r][c];
-  const leftW = c>0 && water[r][c-1]>0.08 ? water[r][c-1] : 0;
-  const rightW = c<COLS-1 && water[r][c+1]>0.08 ? water[r][c+1] : 0;
-  const upW = r>0 && water[r-1] && water[r-1][c]>0.08 ? water[r-1][c] : 0;
-  const downW = r+1<ROWS && water[r+1] && water[r+1][c]>0.08 ? water[r+1][c] : 0;
-  let col = wa>0.62? '#1a4a7a' : wa>0.38? '#2e6ea6' : wa>0.18? '#4a8fcc' : '#7ec8e3';
-  if(r<SURFACE_ROW+2 && wa<0.3) col='#8ec8f0';
-  const isSurface = !upW || upW < 0.12;
-  g.fillStyle=col; g.fillRect(x-1, y-1, CELL+2, CELL+2);
-  if(leftW>0.08) g.fillRect(x-1, y, 1, CELL);
-  if(rightW>0.08) g.fillRect(x+CELL, y, 1, CELL);
-  if(upW>0.08) g.fillRect(x, y-1, CELL, 1);
-  if(downW>0.08) g.fillRect(x, y+CELL, CELL, 1);
-  g.fillStyle='rgba(0,0,0,0.18)';
-  if(!downW) g.fillRect(x-1, y+CELL, CELL+2, 1);
-  if(!leftW) g.fillRect(x-1, y-1, 1, CELL+2);
-  if(!rightW) g.fillRect(x+CELL, y-1, 1, CELL+2);
-  if(isSurface){
-    const wave = Math.sin(time*0.022 + c*0.85 + r*0.2)*1.6;
-    const w2 = Math.sin(time*0.018 + c*1.1)*0.9;
-    g.fillStyle='rgba(255,255,255,0.38)'; g.fillRect(x+1+wave, y+1, CELL-2, 1);
-    g.fillStyle='rgba(255,255,255,0.22)'; g.fillRect(x+2+w2, y+3, CELL-4, 1);
-    if(wa>0.42){ g.fillStyle='rgba(255,255,255,0.16)'; g.fillRect(x+3, y+2, 2,1); }
-  } else {
-    if((c+r)%3===0){ g.fillStyle='rgba(255,255,255,0.08)'; g.fillRect(x+4, y+6, 3,1); }
+  const x=c*CELL,y=r*CELL,now=performance.now();
+  if(!waterVisual[r]) waterVisual[r]=Array(COLS).fill(0);
+  const actual=water&&water[r]?Math.max(0,Number(water[r][c])||0):0;
+  const target=Math.min(1,actual), old=Math.max(0,Number(waterVisual[r][c])||0);
+  // Visual mass follows physical mass instead of snapping to it. A finite pocket can therefore be
+  // watched draining cell by cell even when several conservative transfers happened between frames.
+  let vis=old+(target-old)*(target>old?0.28:0.16);
+  if(Math.abs(vis-target)<0.008) vis=target;
+  waterVisual[r][c]=vis;
+  if(vis<=0.006&&actual<=0.006) return;
+  _waterVisualActive=true;
+  const amount=Math.max(actual,vis);
+  const leftW=c>0?Math.max(water[r][c-1]||0,(waterVisual[r]&&waterVisual[r][c-1])||0):0;
+  const rightW=c<COLS-1?Math.max(water[r][c+1]||0,(waterVisual[r]&&waterVisual[r][c+1])||0):0;
+  const upW=r>0&&water[r-1]?Math.max(water[r-1][c]||0,(waterVisual[r-1]&&waterVisual[r-1][c])||0):0;
+  const downW=r+1<ROWS&&water[r+1]?Math.max(water[r+1][c]||0,(waterVisual[r+1]&&waterVisual[r+1][c])||0):0;
+  const flow=waterFlow.get(c+','+r),recent=flow&&now-flow.at<760?flow:null;
+  const belowOpen=r+1<ROWS&&soil[r+1]&&soil[r+1][c]===0;
+  const falling=belowOpen&&downW<0.72&&(amount>0.025)&&((recent&&recent.dy>0)||downW<0.16);
+  let col=amount>0.72?'#174a78':amount>0.40?'#2b6fa8':amount>0.18?'#4b91ca':'#79bee5';
+  if(r<SURFACE_ROW+2&&amount<0.30) col='#86c8ee';
+  if(falling){
+    const strength=Math.max(amount,recent?Math.min(1,recent.amount*2.2):0),w=Math.max(2,Math.min(9,Math.round(2+strength*6)));
+    const sx=x+Math.round((CELL-w)/2)+(recent?Math.sign(recent.dx||0):0);
+    g.fillStyle='rgba(5,22,38,0.32)'; g.fillRect(sx-1,y-1,w+2,CELL+2);
+    g.fillStyle=col; g.fillRect(sx,y-1,w,CELL+2);
+    const dash=((now*0.018+r*5+c*3)|0)%7;
+    g.fillStyle='rgba(220,245,255,0.52)'; g.fillRect(sx+1,y-2+dash,Math.max(1,w-3),3);
+    g.fillStyle='rgba(255,255,255,0.20)'; g.fillRect(sx+w-2,y+((dash+8)%13),1,4);
+    // The donor still has a visible lip while it empties; the stream does not masquerade as a full tile.
+    if(vis>0.18){ const cap=Math.max(1,Math.round(vis*4)); g.fillStyle=col; g.fillRect(x+2,y,CELL-4,cap); }
+    return;
   }
+  const h=Math.max(1,Math.min(CELL,Math.round(vis*CELL))),top=y+CELL-h;
+  g.fillStyle='rgba(4,22,40,0.28)'; g.fillRect(x-1,top-1,CELL+2,h+2);
+  g.fillStyle=col; g.fillRect(x,top,CELL,h);
+  // Neighbouring partial levels join at their shared edge instead of showing disconnected blue cubes.
+  if(leftW>0.02){ const lh=Math.max(1,Math.round(Math.min(vis,leftW,1)*CELL)); g.fillRect(x-1,y+CELL-lh,1,lh); }
+  if(rightW>0.02){ const rh=Math.max(1,Math.round(Math.min(vis,rightW,1)*CELL)); g.fillRect(x+CELL,y+CELL-rh,1,rh); }
+  if(downW>0.08){ g.fillRect(x,y+CELL,CELL,1); }
+  g.fillStyle='rgba(0,0,0,0.20)'; g.fillRect(x,y+CELL-1,CELL,1);
+  const exposed=upW<0.08||upW+0.08<vis;
+  if(exposed){
+    const wave=Math.round(Math.sin(now*0.020+c*0.83+r*0.17));
+    g.fillStyle='rgba(235,250,255,0.52)'; g.fillRect(x+1+wave,top,Math.max(2,CELL-2-Math.abs(wave)),1);
+    if(h>5){ g.fillStyle='rgba(255,255,255,0.18)'; g.fillRect(x+3-wave,top+2,4,1); }
+  }
+  if(recent&&Math.abs(recent.dx)>Math.abs(recent.dy)&&exposed){
+    const dir=Math.sign(recent.dx),tongue=Math.max(2,Math.min(7,Math.round(recent.amount*10)));
+    g.fillStyle='rgba(126,200,235,0.72)'; g.fillRect(dir>0?x+CELL-1:x-tongue+1,top+1,tongue,2);
+  }
+  if(actual>1.001||(recent&&recent.dy<0)){
+    g.fillStyle='rgba(230,248,255,0.42)'; g.fillRect(x+4+((c+r)&3),top+3,2,2); g.fillRect(x+10-((c*3+r)&3),top+7,1,1);
+  }
+}
+
+function pintarBarreraAgua(g,c,r){
+  if(!floodBarriers.has(c+','+r)) return;
+  const x=c*CELL,y=r*CELL;
+  g.fillStyle='rgba(20,12,5,0.72)'; g.fillRect(x,y+2,CELL,3); g.fillRect(x,y+11,CELL,3);
+  g.fillStyle='#9a6b38'; for(let k=1;k<CELL;k+=5) g.fillRect(x+k,y+1,2,CELL-2);
+  g.fillStyle='#d6ae73'; g.fillRect(x+1,y+2,CELL-2,1);
+  g.fillStyle='#79c9e8'; g.fillRect(x+3,y+7,3,2); g.fillRect(x+10,y+7,3,2);
 }
 
 function paintCacheCellTextured(c,r){
@@ -4995,7 +5658,8 @@ function paintCacheCellTextured(c,r){
     return;
   }
   const t=(soilType[r]&&soilType[r][c])||1;
-  const d=_VOX[t]||_VOX[1];
+  const hostT=_visualHost(t,c,r);
+  const d=_VOX[hostT]||_VOX[1];
   const exp = (r===SURFACE_ROW) || (r>0 && soil[r-1] && soil[r-1][c]===0);   // en contacto con el aire
   // cada bloque lleva su media tilde de tono (-2..+2) y sus marcas en su sitio: dos casillas seguidas del
   // mismo material no pueden salir calcadas, que era la queja. Establecido por coordenada, no al azar.
@@ -5057,8 +5721,19 @@ function paintCacheCellTextured(c,r){
     if(_rot>0.58){ g.fillRect(x+12,y+2,1,9); }
     if(_rot>0.80){ g.fillStyle='#ffcc00'; g.fillRect(x+2,y+13,CELL-4,1); }   // a un mordisco de ceder
   }
+  // Ore is an inclusion in host rock, not a whole perfectly coloured cube. The seam crosses a few
+  // pixels and can continue into neighbouring host types, which makes it readable without looking tiled.
+  if(_isDepositType(t)){
+    const ore=t===8?'#c87842':t===9?'#c2c8d0':t===10?'#e8c94f':t===18?'#e8eef2':'#b999e8';
+    const oreHi=t===8?'#e6a06a':t===9?'#eef2f4':t===10?'#fff09a':t===18?'#ffffff':'#e2ccff';
+    const sl=((c*5+r*3+t)&3), oy=4+((c*7+r*11)%6);
+    g.fillStyle=adjust(ore,-28); g.fillRect(x+1,y+oy+1,4,1); g.fillRect(x+5,y+oy,4,1); g.fillRect(x+9,y+oy-1+sl%2,5,1);
+    g.fillStyle=ore; g.fillRect(x+3+sl,y+3,2,2); g.fillRect(x+10-sl,y+9,2,2);
+    g.fillStyle=oreHi; g.fillRect(x+4+sl,y+3,1,1); if(((c+r+t)&1)===0) g.fillRect(x+11-sl,y+9,1,1);
+  }
+  _paintAncientEvidence(g,c,r,true);
   // el pasto: encima del bloque, 4 px de color de estacion y dos o tres pixeles de hoja que asoman
-  if(exp && (r===SURFACE_ROW || t===1)){
+  if(exp && (r===SURFACE_ROW || hostT===1)){
     let hcol=_HIERBA[(_soilSeason|0)%4]||_HIERBA[0];
     if((_soilSeason|0)===1 && !_soilWet) hcol=_HIERBA_SECA;
     if(_soilWet && (_soilSeason|0)!==3) hcol=adjust(hcol,-14);
@@ -5594,7 +6269,12 @@ function drawFarm(ctx,W,H,isMini=false){
       try{ rebuildSoilCache(); }catch(e){ console.warn('rebuild fail',e); soilCacheDirty=false; }
     }
     ctx.imageSmoothingEnabled=false; ctx.drawImage(soilCacheCanvas, 0, 0);
-    for(let r=rStart;r<rEnd;r++) for(let c=cStart;c<cEnd;c++){ if(water && water[r] && water[r][c]>0.08) pintarAguaVoxel(ctx,c,r); }
+    const _drawWater=_waterActive||_waterVisualActive; _waterVisualActive=false;
+    if(_drawWater) for(let r=SURFACE_ROW;r<ROWS;r++) for(let c=0;c<COLS;c++){
+      const _wa=water&&water[r]?(water[r][c]||0):0,_wv=waterVisual&&waterVisual[r]?(waterVisual[r][c]||0):0;
+      if(_wa>0.006||_wv>0.006) pintarAguaVoxel(ctx,c,r);
+    }
+    if(floodBarriers.size) for(let r=rStart;r<rEnd;r++) for(let c=cStart;c<cEnd;c++){ if(floodBarriers.has(c+','+r)) pintarBarreraAgua(ctx,c,r); }
   }
   if(isMini || !soilCacheCanvas){
   for(let r=rStart;r<rEnd;r++) for(let c=cStart;c<cEnd;c++){
@@ -5642,8 +6322,9 @@ function drawFarm(ctx,W,H,isMini=false){
     }else{
       // El hueco y el agua del minimapa salen de los mismos ayudantes que la cache: si manana se pinta
       // distinto en uno y otro lado, se ve. Hoy no se puede.
-      if(water && water[r] && water[r][c]>0.08){ pintarAguaVoxel(ctx,c,r); }
-      else{ pintarHuecoVoxel(ctx,c,r,false); }
+      pintarHuecoVoxel(ctx,c,r,false);
+      if((_waterActive||_waterVisualActive)&&((water&&water[r]&&water[r][c]>0.006)||(waterVisual&&waterVisual[r]&&waterVisual[r][c]>0.006))) pintarAguaVoxel(ctx,c,r);
+      if(floodBarriers.size&&floodBarriers.has(c+','+r)) pintarBarreraAgua(ctx,c,r);
     }
   }
   // hongos de cueva en túneles húmedos - atlas
@@ -6251,7 +6932,7 @@ function drawFarm(ctx,W,H,isMini=false){
         } else { ant.phraseTime=0; }
       }
       if(!hasLang){
-        if(ant.state==='CAVANDO' && (_cavandoAhora<=3 || ant.selected)){ 
+        if(ant.state==='CAVANDO' && (_cavandoAhora<=3 || ant.selected)){
           // Topo - si hay >3 cavando, no llover ⛏ individuales; se resume abajo en el strip
           const digCount = _cavandoAhora;
           if(digCount>3 && !ant.selected){ icon=""; col=''; } else { icon="⛏"; col='#2a0a0a'; tcol='#ff9a6e'; bcol='#ff3b30'; }
@@ -6361,7 +7042,7 @@ function drawFarm(ctx,W,H,isMini=false){
       ctx.fillStyle='rgba(0,0,0,0.30)'; ctx.fillRect(_x,_y+_sz-1,_sz,1);
     }
   }
-  
+
   // === LO QUE ARDE ABAJO Y LA LOSA QUE LOS TAPA ===
   // El magma se pinta en el cache del suelo (es estable) pero aqui va el RESPLANDOR, que parpadea: si se
   // congelara en el cache dejaria de ser lumbre. Solo se recorre la lista de casillas de fuego, no el mapa.
@@ -6648,7 +7329,7 @@ function tickStep(dt){
     } else if(workers.length>=3) window._immigTimer=0;
     // 5) Comida de rescate: si 0 comida y 0 honey en mapa durante 0.75 día (~15 min)
     window._foodlessTimer=(window._foodlessTimer||0)+dt;
-    if(foods.length===0 && colonyFood===0 && workers.length>0){
+    if(foods.length===0 && economyLedger.food===0 && workers.length>0){
       if(window._foodlessTimer> DAY_LENGTH*0.75){
         window._foodlessTimer=0;
         spawnFoodSurface(CENTER_COL*CELL+8 + (Math.random()-0.5)*260,1);
@@ -6656,7 +7337,7 @@ function tickStep(dt){
         pushEvent('evo','🍯 Comida salvaje brota','La naturaleza evita extinción');
           notifyCanon('🍯 RESCATE', 'Brota comida salvaje - la naturaleza ayuda', 5000);
       }
-    } else if(foods.length>0 || colonyFood>0) window._foodlessTimer=0;
+    } else if(foods.length>0 || economyLedger.food>0) window._foodlessTimer=0;
 
     // envejecimiento y muerte por vejez / hambre
     for(let i=workers.length-1;i>=0;i--){
@@ -6672,7 +7353,7 @@ function tickStep(dt){
       // hambre extrema
       // RESCATE: con 1-2 hormigas, no mueren de hambre el primer día de hambruna y trabajan 1.5x (polivalente)
       if(workers.length<=2){ w._rescueTurbo = 1.5; w.health = Math.min(100, w.health+0.02); } else { w._rescueTurbo = 1; }
-      if(colonyFood===0 && w.age>300 && Math.random()<(workers.length<=2?0.00018:0.0006)) { w.health-=0.8; if(w.health<=0 && workers.length>2) handleDeath(w,'hambre'); else if(w.health<=0) w.health=8; }
+      if(economyLedger.food===0 && w.age>300 && Math.random()<(workers.length<=2?0.00018:0.0006)) { w.health-=0.8; if(w.health<=0 && workers.length>2) handleDeath(w,'hambre'); else if(w.health<=0) w.health=8; }
       // depresión severa puede llevar a muerte
       if(w.mood.sadness>0.92 && w.mood.joy<0.12 && Math.random()<0.0004) handleDeath(w,'tristeza');
     }
@@ -6817,6 +7498,12 @@ function loop(now){
     // solo mantener UI de menú, no avanzar tiempo
     _cuadroCorriendo=false; pedirCuadro(); return;
   }
+  // passDays owns simulation while its fast-forward is running. Letting this regular loop call
+  // tickStep at the same time made a “+1 day” jump race two clocks and sometimes overshoot by days.
+  // Keep painting so the UI stays responsive, but leave every simulation step to fastStep().
+  if(typeof _fastForwarding!=='undefined' && _fastForwarding){
+    renderLoop(); _cuadroCorriendo=false; pedirCuadro(); return;
+  }
   const rawDt=now-last; last=now; const dtMs=Math.min(rawDt, 42); // clamp 42ms evita lag spike
   let dt=dtMs*0.06 * gameSpeed;
   const wallNow=Date.now();
@@ -6910,19 +7597,19 @@ function updateColonyUIInner(){
   if(!shouldUpdateUI()) return;
   if(!_topoHasWorld) return; // sin mundo no hay colonia que pintar (evita leer queen.state cuando es null)
   try{ hudText('hPop', workers.length+'/'+getMaxPopulation()); }catch(e){ hudText('hPop', workers.length); }
-  hudText('hFood', colonyFood);
+  hudText('hFood', economyLedger.food);
   hudText('hGen', gen);
   hudText('hFit', (colonyFitness||0).toFixed(2));
   hudText('hIQ', colonyIQ);
   hudText('hQueen', queen.state);
   // Topo - economía visible con iconos
   try{
-    const ef=document.getElementById('ecoFood'); if(ef) ef.textContent=colonyFood;
-    const efi=document.getElementById('ecoFiber'); if(efi) efi.textContent=worldMaterials.fiber||0;
-    const es=document.getElementById('ecoStone'); if(es) es.textContent=worldMaterials.stone||0;
-    const ec=document.getElementById('ecoClay'); if(ec) ec.textContent=worldMaterials.clay||0;
-    const ew=document.getElementById('ecoWood'); if(ew) ew.textContent=worldMaterials.wood||0;
-    const bar=document.getElementById('economyBar'); if(bar){ bar.title=`🍯${colonyFood} 🌿${worldMaterials.fiber||0} 🪨${worldMaterials.stone||0} 🧱${worldMaterials.clay||0} 🪵${worldMaterials.wood||0}`; }
+    const ef=document.getElementById('ecoFood'); if(ef) ef.textContent=economyLedger.food;
+    const efi=document.getElementById('ecoFiber'); if(efi) efi.textContent=economyLedger.materials.fiber||0;
+    const es=document.getElementById('ecoStone'); if(es) es.textContent=economyLedger.materials.stone||0;
+    const ec=document.getElementById('ecoClay'); if(ec) ec.textContent=economyLedger.materials.clay||0;
+    const ew=document.getElementById('ecoWood'); if(ew) ew.textContent=economyLedger.materials.wood||0;
+    const bar=document.getElementById('economyBar'); if(bar){ bar.title=`🍯${economyLedger.food} 🌿${economyLedger.materials.fiber||0} 🪨${economyLedger.materials.stone||0} 🧱${economyLedger.materials.clay||0} 🪵${economyLedger.materials.wood||0}`; }
   }catch(e){}
   hudText('hLvl', stats.nivel);
   hudText('hXpText', `${Math.floor(stats.xp)}/${stats.xpToNext}`);
@@ -6935,7 +7622,7 @@ function updateColonyUIInner(){
   // (el #timeLabel lo escribe updateCalendarWidget: un solo dueno, y ahi lleva tambien el glifo del clima)
   try{ hudText('cPop', workers.length+'/'+getMaxPopulation()+' +'+queens.length+'♛'); }catch(e){ document.getElementById('cPop').textContent=workers.length + ' +1♛'; }
   try{ hudText('cPopDetail', workers.length+'/'+getMaxPopulation()+' obreras + '+queens.length+' reina(s) - ' + brood.length + ' crías - tope '+getMaxPopulation()); }catch(e){ document.getElementById('cPopDetail').textContent=workers.length+' obreras + 1 reina - ' + brood.length + ' crías'; }
-  hudText('cFood', colonyFood);
+  hudText('cFood', economyLedger.food);
   hudText('cFit', (colonyFitness||0).toFixed(2));
   hudText('cIQ', colonyIQ);
   renderSociety();
@@ -6951,7 +7638,7 @@ function updateColonyUIInner(){
   hudText('cComms', commInks.length);
   hudText('qGen', queen.genome.gen);
   hudText('qEggs', brood.filter(b=>b.type==='egg').length);
-  hudText('qFert', colonyFood>=3? 'ALTA':'BAJA');
+  hudText('qFert', economyLedger.food>=3? 'ALTA':'BAJA');
   hudStyle('qProgress', 'width', queen.progress+'%');
   hudText('qProgressLabel', queen.progress>=100? '¡listo!': `próximo ${Math.floor(queen.progress)}%`);
   hudText('queenStatus', queen.state);
@@ -7049,7 +7736,7 @@ function updateColonyUIInner(){
     const seas=['primavera','verano','otoño','invierno'][Math.floor((day/12)%4)]||'primavera';
     const sEl=document.getElementById('ecoSeason'); if(sEl) sEl.textContent=seas+' - día '+(worldAge.toFixed(1));
     const ageEl=document.getElementById('ecoAge'); if(ageEl) ageEl.textContent='día '+day+' - '+seas;
-    const wNom={clear:'claro', cloudy:'nublado', rain:'lluvia', storm:'tormenta', snow:'nieve'};
+    const wNom={clear:'clear', cloudy:'cloudy', rain:'rain', storm:'storm', snow:'snow'};
     const wEl=document.getElementById('ecoWeather'); if(wEl) wEl.textContent=glifoClima(weather.type)+' '+(wNom[weather.type]||weather.type);
     const rEl=document.getElementById('ecoRain'); if(rEl) rEl.textContent=(weather.type==='rain'||weather.type==='storm')? 'húmedo +fert':'seco';
     const plEl=document.getElementById('ecoPlants'); if(plEl) plEl.textContent=plants.length+' 🌿';
@@ -7093,13 +7780,13 @@ function updateColonyUIInner(){
       }
     }catch(e){}
 
-    const mS=document.getElementById('matStone'); if(mS) mS.textContent=worldMaterials.stone;
-    const mC=document.getElementById('matClay'); if(mC) mC.textContent=worldMaterials.clay;
-    const mSa=document.getElementById('matSand'); if(mSa) mSa.textContent=worldMaterials.sand;
-    const mF=document.getElementById('matFiber'); if(mF) mF.textContent=worldMaterials.fiber;
-    const mW=document.getElementById('matWood'); if(mW) mW.textContent=worldMaterials.wood;
+    const mS=document.getElementById('matStone'); if(mS) mS.textContent=economyLedger.materials.stone;
+    const mC=document.getElementById('matClay'); if(mC) mC.textContent=economyLedger.materials.clay;
+    const mSa=document.getElementById('matSand'); if(mSa) mSa.textContent=economyLedger.materials.sand;
+    const mF=document.getElementById('matFiber'); if(mF) mF.textContent=economyLedger.materials.fiber;
+    const mW=document.getElementById('matWood'); if(mW) mW.textContent=economyLedger.materials.wood;
     const matsBox=document.getElementById('ecoMats'); if(matsBox){
-      const hasAny = worldMaterials.stone+worldMaterials.clay+worldMaterials.sand+worldMaterials.fiber+worldMaterials.wood>0;
+      const hasAny = economyLedger.materials.stone+economyLedger.materials.clay+economyLedger.materials.sand+economyLedger.materials.fiber+economyLedger.materials.wood>0;
       matsBox.style.opacity=hasAny? '1':'0.55';
     }
     const invEl=document.getElementById('ecoInv'); if(invEl){
@@ -7302,14 +7989,14 @@ function drawChart(){
 // suspensivos, y en el cerebro son el resumen de una linea. La tarea larga, si alguien la quiere leida, esta
 // en el `title` de la fila.
 const MENTE_TAREAS = {
-  EXPLORAR:'explora el nido', CAVANDO:'cava', VOLVER_COMIDA:'vuelve con comida', VOLVER_TIERRA:'saca tierra',
-  DESCANSAR:'descansa', BUSCAR:'busca algo', TANDEM_LEADER:'guía a otra', TANDEM_FOLLOWER:'se deja guiar',
-  LLEVANDO_BASURA:'saca basura', TRABAJAR_JARDIN:'en el jardín', IDLE:'sin faena', ALIMENTAR_REINA:'come de otra',
-  CUIDAR_CRIA:'cuida cría', PELEAR:'pelea', HUÍR:'huye',
+  EXPLORAR:'explores the nest', CAVANDO:'digs', VOLVER_COMIDA:'returns with food', VOLVER_TIERRA:'hauls soil',
+  DESCANSAR:'rests', BUSCAR:'searches', TANDEM_LEADER:'guides another ant', TANDEM_FOLLOWER:'follows a guide',
+  LLEVANDO_BASURA:'hauls waste', TRABAJAR_JARDIN:'tends the garden', IDLE:'has no task', ALIMENTAR_REINA:'shares food',
+  CUIDAR_CRIA:'tends brood', PELEAR:'fights', HUÍR:'flees', CONTROLAR_AGUA:'controls a flood', HUIR_AGUA:'escapes water',
 };
 const _pctv = v => Math.max(0, Math.min(100, Math.round((isFinite(v)?v:0)*100)));
-const _lado = a => a>0.22 ? 'a la derecha' : (a<-0.22 ? 'a la izquierda' : 'de frente');
-const _grado = v => v>0.72 ? 'muy fuerte' : (v>0.45 ? 'con ganas' : (v>0.2 ? 'un poco' : 'nada'));
+const _lado = a => a>0.22 ? 'to the right' : (a<-0.22 ? 'to the left' : 'straight ahead');
+const _grado = v => v>0.72 ? 'strongly' : (v>0.45 ? 'decisively' : (v>0.2 ? 'slightly' : 'not at all'));
 function _franja(pct, col){
   return '<div class="lm-barra"><div style="width:' + pct + '%;background:' + col + '"></div></div>';
 }
@@ -7325,50 +8012,50 @@ function cerebroEnPalabras(ant){
   // ---- lo que entra por las antenas y los ojos ----
   const dFood = Math.round((1-(s.foodDist||0))*280/casillas);
   if((s.foodDist||0) > 0.02){
-    filas.push(_lineaMente('HOCICO', 'Huele comida ' + _lado(s.foodAngle||0) + ', a unas ' + dFood + ' casillas' + (dFood<=5?' — la tiene encima':(dFood>24?' — queda lejos':'')), _pctv(s.foodDist||0), '#2de67a'));
-    gist.push('la comida le tira ' + _lado(s.foodAngle||0));
+    filas.push(_lineaMente('SCENT', 'Smells food ' + _lado(s.foodAngle||0) + ', about ' + dFood + ' cells away' + (dFood<=5?' — almost on top of it':(dFood>24?' — still far away':'')), _pctv(s.foodDist||0), '#2de67a'));
+    gist.push('food pulls her ' + _lado(s.foodAngle||0));
   } else {
-    filas.push(_lineaMente('HOCICO', 'No huele ninguna comida cerca', 2, '#2de67a'));
-    gist.push('no huele comida');
+    filas.push(_lineaMente('SCENT', 'No food scent nearby', 2, '#2de67a'));
+    gist.push('smells no food');
   }
   const ph = s.pheroStr || 0;
   if(ph > 0.1){
-    filas.push(_lineaMente('RASTRO', 'Pisa un rastro ' + _lado(s.pheroAng||0) + ' (' + _pctv(ph) + '% de fuerza): por ahí pasó otra', _pctv(ph), '#b47aff'));
-    gist.push('un rastro la llama ' + _lado(s.pheroAng||0));
-  } else filas.push(_lineaMente('RASTRO', 'No hay rastros olorosos por aquí', Math.max(2, _pctv(ph)), '#b47aff'));
-  const ojos = [['izquierda', s.wallLeft||0], ['en frente', s.wallCenter||0], ['derecha', s.wallRight||0]];
+    filas.push(_lineaMente('TRAIL', 'Follows a trail ' + _lado(s.pheroAng||0) + ' (' + _pctv(ph) + '% strength): another ant passed here', _pctv(ph), '#b47aff'));
+    gist.push('a trail calls her ' + _lado(s.pheroAng||0));
+  } else filas.push(_lineaMente('TRAIL', 'No pheromone trail nearby', Math.max(2, _pctv(ph)), '#b47aff'));
+  const ojos = [['left', s.wallLeft||0], ['ahead', s.wallCenter||0], ['right', s.wallRight||0]];
   const ciego = ojos.map(o => ({k:o[0], v:o[1]})).sort((a,b) => b.v-a.v)[0];
   const libres = ojos.filter(o => o[1] < 0.35).map(o => o[0]);
-  const vista = ciego.v > 0.7 ? ('Tiene la <b style="color:#ff3b30">pared pegada</b> ' + ciego.k)
-            : ciego.v > 0.4  ? ('La pared se acerca ' + ciego.k)
-            : 'Ve terreno libre';
-  filas.push(_lineaMente('OJOS', vista + (libres.length ? ' · puede meterse ' + libres.join(' y ') : ''), _pctv(ciego.v), '#ffcc00'));
-  if(libres.length) gist.push('ve hueco ' + libres.join(' y ')); else gist.push('está entre paredes');
+  const vista = ciego.v > 0.7 ? ('A <b style="color:#ff3b30">wall is touching her</b> on the ' + ciego.k)
+            : ciego.v > 0.4  ? ('A wall is approaching on the ' + ciego.k)
+            : 'Sees open ground';
+  filas.push(_lineaMente('EYES', vista + (libres.length ? ' · can move ' + libres.join(' and ') : ''), _pctv(ciego.v), '#ffcc00'));
+  if(libres.length) gist.push('sees space ' + libres.join(' and ')); else gist.push('is between walls');
   const fat = s.fatigue || 0;
-  filas.push(_lineaMente('CUERPO', 'Va ' + (fat>0.66?'muy cansada':(fat>0.33?'cansada':'fresca')) + ' (' + _pctv(fat) + '% de cansancio)' + (ant.food?' · lleva comida en las mandíbulas':''), Math.max(2, fat), '#00e5ff'));
-  if(ant.food) gist.push('va cargada'); else if(fat>0.55) gist.push('va justa de fuerzas');
+  filas.push(_lineaMente('BODY', 'Feels ' + (fat>0.66?'very tired':(fat>0.33?'tired':'fresh')) + ' (' + _pctv(fat) + '% fatigue)' + (ant.food?' · carries food in her mandibles':''), Math.max(2, fat), '#00e5ff'));
+  if(ant.food) gist.push('is carrying food'); else if(fat>0.55) gist.push('is low on energy');
   const oye = Math.max(Math.abs(s.commIn1||0), Math.abs(s.commIn2||0));
-  filas.push(_lineaMente('TINTA', oye>0.35 ? 'Le llega el aviso de otra hormiga y lo está leyendo' : 'No le llega ningún aviso', Math.max(2, oye), '#ff8c00'));
+  filas.push(_lineaMente('INK', oye>0.35 ? 'Receives and reads another ant’s signal' : 'Receives no signal', Math.max(2, oye), '#ff8c00'));
   // ---- lo que decide ----
   const giro = out[0]||0, paso = ((out[1]||0)+1)/2, cava = ((out[2]||0)+1)/2, c1 = out[3]||0, c2 = out[4]||0;
-  filas.push('<div class="linea-mente" style="background:#000"><b style="color:#ffcc00">DECIDE</b><div><span>'
-    + (Math.abs(giro)<0.15 ? 'Sigue recto' : 'Gira ' + (giro>0?'a la derecha':'a la izquierda') + ' ' + _grado(Math.abs(giro)))
-    + ' · anda ' + (paso>0.78?'rápido':(paso>0.5?'a buen paso':(paso>0.25?'de paseo':'a paso de tortuga')))
-    + ' · ' + (cava>0.6 ? 'con ganas de cavar' : (cava>0.35 ? 'antojo de cavar' : 'sin ganas de cavar'))
+  filas.push('<div class="linea-mente" style="background:#000"><b style="color:#ffcc00">DECIDES</b><div><span>'
+    + (Math.abs(giro)<0.15 ? 'Keeps straight' : 'Turns ' + (giro>0?'right':'left') + ' ' + _grado(Math.abs(giro)))
+    + ' · moves ' + (paso>0.78?'quickly':(paso>0.5?'at a steady pace':(paso>0.25?'at a stroll':'at a crawl')))
+    + ' · ' + (cava>0.6 ? 'strong urge to dig' : (cava>0.35 ? 'mild urge to dig' : 'no urge to dig'))
     + '</span>' + _franja(Math.round(paso*100), '#2de67a') + '</div></div>');
-  const concept = c1>0.6 ? 'COMIDA' : (c2>0.6 ? 'CASA' : (Math.abs(c1)>0.4 ? 'PELIGRO' : 'AYUDA'));
+  const concept = c1>0.6 ? 'FOOD' : (c2>0.6 ? 'HOME' : (Math.abs(c1)>0.4 ? 'DANGER' : 'HELP'));
   const muy = Math.max(Math.abs(c1), Math.abs(c2)) > 0.52;
-  filas.push(_lineaMente('LLAMA', muy ? 'Va a pintar un símbolo de <b style="color:#00e5ff">' + concept + '</b> para avisar a las demás' : 'No está llamando a nadie', Math.max(2, Math.round(Math.max(Math.abs(c1),Math.abs(c2))*100)), '#00e5ff'));
-  if(muy) gist.push('quiere avisar ' + concept.toLowerCase());
+  filas.push(_lineaMente('CALLS', muy ? 'Will paint a <b style="color:#00e5ff">' + concept + '</b> symbol to alert the others' : 'Is not calling anyone', Math.max(2, Math.round(Math.max(Math.abs(c1),Math.abs(c2))*100)), '#00e5ff'));
+  if(muy) gist.push('wants to signal ' + concept.toLowerCase());
   // ---- los numeros, para el que los quiera ----
-  const clave = [['foodAngle','ángulo de la comida'],['foodDist','cercanía de la comida'],['pheroStr','fuerza del rastro'],['pheroAng','ángulo del rastro'],['wallLeft','ojo izquierdo -45°'],['wallCenter','ojo central 0°'],['wallRight','ojo derecho +45°'],['fatigue','fatiga'],['carrying','carga'],['commIn1','tinta 1'],['commIn2','tinta 2']];
-  nums.push('ENTRADA (los 11 sensores, -1 a 1)');
+  const clave = [['foodAngle','food angle'],['foodDist','food proximity'],['pheroStr','trail strength'],['pheroAng','trail angle'],['wallLeft','left eye -45°'],['wallCenter','center eye 0°'],['wallRight','right eye +45°'],['fatigue','fatigue'],['carrying','carrying'],['commIn1','ink 1'],['commIn2','ink 2']];
+  nums.push('INPUT (11 sensors, -1 to 1)');
   for(const k of clave) nums.push('  ' + k[1] + ' = ' + ((s[k[0]]||0)).toFixed(2));
-  nums.push('SALIDA (5 decisiones)');
-  nums.push('  giro = ' + giro.toFixed(2) + '   paso = ' + paso.toFixed(2) + '   cavar = ' + cava.toFixed(2) + '   t1 = ' + c1.toFixed(2) + '   t2 = ' + c2.toFixed(2));
-  nums.push('CABLEADO: ' + INPUT_SIZE + ' entradas → ' + ((ant.genome&&ant.genome.hiddenSize)||0) + ' ocultas → ' + OUTPUT_SIZE + ' salidas · GEN ' + ((ant.genome&&ant.genome.gen)||0));
-  if(gameSpeed > 8) nums.push('ojo: a x16 el juego salta el paso de las neuronas, así que el ojo izquierdo y el derecho salen aproximados (0,52) en vez de medidos');
-  return { html: filas.join(''), nums: nums.join('\n'), gist: (MENTE_TAREAS[ant.state] ? (ant.role||'').toLowerCase() + ' que ' + MENTE_TAREAS[ant.state] : (ant.role||'OBRERA').toLowerCase() + ' en movimiento') + ', y ' + gist.join(', ') + '.' };
+  nums.push('OUTPUT (5 decisions)');
+  nums.push('  turn = ' + giro.toFixed(2) + '   stride = ' + paso.toFixed(2) + '   dig = ' + cava.toFixed(2) + '   t1 = ' + c1.toFixed(2) + '   t2 = ' + c2.toFixed(2));
+  nums.push('WIRING: ' + INPUT_SIZE + ' inputs → ' + ((ant.genome&&ant.genome.hiddenSize)||0) + ' hidden → ' + OUTPUT_SIZE + ' outputs · GEN ' + ((ant.genome&&ant.genome.gen)||0));
+  if(gameSpeed > 8) nums.push('At x16, neural steps are skipped; left and right eye values are approximate (0.52) instead of measured.');
+  return { html: filas.join(''), nums: nums.join('\n'), gist: (MENTE_TAREAS[ant.state] ? (ant.role||'worker').toLowerCase() + ' ' + MENTE_TAREAS[ant.state] : (ant.role||'worker').toLowerCase() + ' moving') + ', and ' + gist.join(', ') + '.' };
 }
 let _cerebroNums = false;
 function _hojaPerfilAbierta(id){
@@ -7597,7 +8284,7 @@ canvas.addEventListener('click',e=>{
     selectedQueenIndex=clickedQueenIdx;
     // feedback narración
     pushEvent('evo',`👑 ${queenDisplayName(clickedQueen)} seleccionada - REINA F${clickedQueen.faction}`, `GEN${clickedQueen.genome.gen} - ${clickedQueen.genome.hiddenSize} nodos - 👑 ${clickedQueen.eggsLaid||0} huevos - ❤ ${Math.floor(clickedQueen.health)}%`);
-    setNarration(`<b>👑 ${queenDisplayName(clickedQueen)} [REINA F${clickedQueen.faction}]</b> - ${clickedQueen.personality? clickedQueen.personality.fertilidad+' fertilidad - '+clickedQueen.personality.feromona+' feromona':''} - <b>${Math.max(0,3-colonyFood)} 🍯</b> para huevo. <small>Click abre ficha única.</small>`);
+    setNarration(`<b>👑 ${queenDisplayName(clickedQueen)} [REINA F${clickedQueen.faction}]</b> - ${clickedQueen.personality? clickedQueen.personality.fertilidad+' fertilidad - '+clickedQueen.personality.feromona+' feromona':''} - <b>${Math.max(0,3-economyLedger.food)} 🍯</b> para huevo. <small>Click abre ficha única.</small>`);
     // abrir ficha reina tras 70ms (como hormiga)
     setTimeout(()=> showQueenProfile(clickedQueen), 70);
     return;
@@ -7663,7 +8350,7 @@ document.getElementById('btnFood').onclick=()=>{
   pushEvent('food',`Miel en vista [${Math.floor(cx)},${Math.floor(cy)}]`);
   pushToast(cx,cy,'🍯 MIEL','#ffcc00');
 };
-document.getElementById('btnBreed').onclick=()=>{ if(colonyFood<3){showNotify('error','¡FALTA COMIDA!','Necesitas <b>3 🍯</b>. Tienes <b>'+colonyFood+' 🍯</b>. <small>Suelta miel y espera entregas.</small>'); pushToast(queen.x,queen.y-22,'♛ 3 🍯 REQUERIDOS','#ff3b30'); return;} queen.progress=100; showNotify('ok','¡Huevo en camino!','Reina gestando.'); };
+document.getElementById('btnBreed').onclick=()=>{ if(economyLedger.food<3){showNotify('error','¡FALTA COMIDA!','Necesitas <b>3 🍯</b>. Tienes <b>'+economyLedger.food+' 🍯</b>. <small>Suelta miel y espera entregas.</small>'); pushToast(queen.x,queen.y-22,'♛ 3 🍯 REQUERIDOS','#ff3b30'); return;} queen.progress=100; showNotify('ok','¡Huevo en camino!','Reina gestando.'); };
 document.getElementById('btnMut').onclick=()=>{
   const sel=workers[selectedAntIndex]||workers[0];
   if(!sel) return;
@@ -7675,7 +8362,7 @@ document.getElementById('btnMut').onclick=()=>{
   mutations++; gen++; fitnessHistory.push(colonyFitness); if(fitnessHistory.length>36) fitnessHistory.shift();
   colonyIQ=100 + Math.floor(gen*3.8) + Math.floor((sel.genome.hiddenSize-8)*3.5) + Math.floor(Math.min(colonyFitness,8.5)*2.1);
 };
-document.getElementById('btnLay').onclick=()=>{if(colonyFood>=3){queen.progress=100; showNotify('ok','¡Huevo encargado!','Gastaste 3 🍯.');}else{showNotify('error','No puedes poner huevo','Te faltan <b>'+(3-colonyFood)+' 🍯</b>. Tienes '+colonyFood+'/3.'); pushToast(queen.x,queen.y-18,'♛ FALTAN '+(3-colonyFood)+' 🍯','#ff3b30');}};
+document.getElementById('btnLay').onclick=()=>{if(economyLedger.food>=3){queen.progress=100; showNotify('ok','¡Huevo encargado!','Gastaste 3 🍯.');}else{showNotify('error','No puedes poner huevo','Te faltan <b>'+(3-economyLedger.food)+' 🍯</b>. Tienes '+economyLedger.food+'/3.'); pushToast(queen.x,queen.y-18,'♛ FALTAN '+(3-economyLedger.food)+' 🍯','#ff3b30');}};
 document.getElementById('btnHatch').onclick=()=>{ if(brood.length===0){showNotify('warn','No hay crías','La reina aún no puso huevos.'); return;} brood.forEach(b=> b.progress=100); pushToast(queen.x,queen.y-10,'⏩ ¡ECLOSIÓN!','#b47aff'); showNotify('ok','¡Eclosión!',''+brood.length+' crías.'); };
 document.getElementById('btnPause').onclick=()=>{paused=!paused; hudText('btnPause', paused?'▶':'⏸');};
 function syncCorner(n){
@@ -7776,13 +8463,14 @@ function passDays(nDays=1){
   // Fast-forward real: corre el loop a x64 sin renderizar cada frame para no lagear
   const targetTime = time + nDays*DAY_LENGTH;
   const prevSpeed = gameSpeed;
+  const prevTurbo = turbo;
   const wasPaused = paused;
   paused=false;
   // El progreso de cada calada se multiplica por gameSpeed (linea ~2989), no por dt. Si el salto
   // acelera solo el reloj, las obreras trabajan a x1 durante un dia simulado y no abren nada:
   // por eso el fast-forward pone la velocidad de verdad y la devuelve al terminar.
-  gameSpeed=16;
-  // Desactivar render para ir rápido, solo lógica
+  gameSpeed=16; turbo=true;
+  // The regular loop keeps rendering but does not simulate while this fast-forward owns the clock.
   let steps=0;
   let _ffWarned=false;
   const maxStepsPerFrame = 12; // para no congelar la interfaz
@@ -7817,7 +8505,7 @@ function passDays(nDays=1){
       if(btn){ btn.textContent='⏩ +1 DÍA'; btn.disabled=false; btn.style.opacity='1'; }
       // Solo devuelvo la velocidad si el salto la sigue teniendo: si el jugador cambio de
       // velocidad MIENTRAS saltaba el dia, gana la eleccion del jugador, no mi prevSpeed.
-      if(gameSpeed===16) gameSpeed=prevSpeed;
+      if(gameSpeed===16){ gameSpeed=prevSpeed; turbo=prevTurbo; }
       if(wasPaused) paused=true;
       try{ if(typeof serializeSave==='function') serializeSave(true); }catch(e){}
       pushToast(W/2, H/2-10, '✅ +1 DÍA simulado', '#2de67a', 1.2);
@@ -7879,24 +8567,24 @@ window.addEventListener('keydown',e=>{
 function buildOnSteps(){
   return [
     {
-      title: "🐜 TU GRANJA",
-      body: `<div style="display:flex;gap:12px;align-items:center"><div style="width:52px;height:52px;background:#fff8dc;border:3px solid #000;display:grid;place-items:center;font-size:24px;box-shadow:3px 3px 0 #000">🌍</div><div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#ffcc00">3 HORMIGAS + REINA</div><div style="font-family:'VT323',monospace;font-size:18px;color:#fff8dc;margin-top:6px;line-height:1.25">Este es tu vidrio. Obsérvalas, aliméntalas y ve cómo construyen su mundo.</div></div></div>`,
-      hint: "Tu colonia te espera"
+      title: "🐜 YOUR FARM",
+      body: `<div style="display:flex;gap:12px;align-items:center"><div style="width:52px;height:52px;background:#fff8dc;border:3px solid #000;display:grid;place-items:center;font-size:24px;box-shadow:3px 3px 0 #000">🌍</div><div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#ffcc00">3 ANTS + QUEEN</div><div style="font-family:'VT323',monospace;font-size:18px;color:#fff8dc;margin-top:6px;line-height:1.25">This is your observation glass. Watch them, feed them, and see how they build their world.</div></div></div>`,
+      hint: "Your colony is waiting"
     },
     {
-      title: "🍯 COMIDA",
-      body: `<div style="display:flex;gap:12px;align-items:center"><div style="width:52px;height:52px;background:#ffcc00;border:3px solid #000;display:grid;place-items:center;font-size:24px;box-shadow:3px 3px 0 #000">🍯</div><div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#ffcc00">TOCA EL PASTO</div><div style="font-family:'VT323',monospace;font-size:18px;color:#fff8dc;margin-top:6px;line-height:1.25">Toca el pasto de arriba para soltar miel. La llevan a casa y la reina podrá poner huevos.</div></div></div>`,
-      hint: "Toca el pasto"
+      title: "🍯 FOOD",
+      body: `<div style="display:flex;gap:12px;align-items:center"><div style="width:52px;height:52px;background:#ffcc00;border:3px solid #000;display:grid;place-items:center;font-size:24px;box-shadow:3px 3px 0 #000">🍯</div><div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#ffcc00">TAP THE MEADOW</div><div style="font-family:'VT323',monospace;font-size:18px;color:#fff8dc;margin-top:6px;line-height:1.25">Tap the meadow above to drop honey. Workers carry it home so the queen can lay eggs.</div></div></div>`,
+      hint: "Tap the meadow"
     },
     {
-      title: "💬 MÍRALAS",
-      body: `<div style="display:flex;gap:12px;align-items:center"><div style="width:52px;height:52px;background:#000;border:3px solid #000;display:grid;place-items:center;font-size:20px;box-shadow:3px 3px 0 #000">👁️</div><div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#2de67a">CADA UNA HABLA</div><div style="font-family:'VT323',monospace;font-size:18px;color:#fff8dc;margin-top:6px;line-height:1.25">Sobre su cabeza verás qué hace. Toca una para ver su ficha y seguirla.</div></div></div>`,
-      hint: "Toca una hormiga"
+      title: "💬 WATCH THEM",
+      body: `<div style="display:flex;gap:12px;align-items:center"><div style="width:52px;height:52px;background:#000;border:3px solid #000;display:grid;place-items:center;font-size:20px;box-shadow:3px 3px 0 #000">👁️</div><div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#2de67a">EVERY ANT SPEAKS</div><div style="font-family:'VT323',monospace;font-size:18px;color:#fff8dc;margin-top:6px;line-height:1.25">Her bubble shows what she is doing. Tap an ant to open her profile and follow her.</div></div></div>`,
+      hint: "Tap an ant"
     },
     {
-      title: "🌧️ UN MUNDO VIVO",
-      body: `<div style="display:flex;gap:12px;align-items:center"><div style="width:52px;height:52px;background:#7ec8e3;border:3px solid #000;display:grid;place-items:center;font-size:22px;box-shadow:3px 3px 0 #000">🌦️</div><div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#7ec8e3">CLIMA Y TIEMPO REAL</div><div style="font-family:'VT323',monospace;font-size:18px;color:#fff8dc;margin-top:6px;line-height:1.25">Llueve, hace viento y pasa el tiempo. Todo sigue aunque no estés mirando.</div></div></div>`,
-      hint: "Vive solo"
+      title: "🌧️ A LIVING WORLD",
+      body: `<div style="display:flex;gap:12px;align-items:center"><div style="width:52px;height:52px;background:#7ec8e3;border:3px solid #000;display:grid;place-items:center;font-size:22px;box-shadow:3px 3px 0 #000">🌦️</div><div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#7ec8e3">REAL WEATHER AND TIME</div><div style="font-family:'VT323',monospace;font-size:18px;color:#fff8dc;margin-top:6px;line-height:1.25">Rain falls, wind blows, and time passes. The world keeps living while you are away.</div></div></div>`,
+      hint: "It lives on its own"
     }
   ];
 }
@@ -7908,7 +8596,7 @@ function renderOn(){
   hudHtml('onStep', `<div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#fff;margin-bottom:12px">${step.title}</div>${step.body}`);
   hudHtml('onDots', ON_STEPS.map((_,i)=>`<span style="width:${i===onIdx?18:10}px;height:10px;background:${i===onIdx?'#ffcc00':'#2a2012'};border:2px solid #000;display:inline-block;box-shadow:2px 2px 0 #000"></span>`).join(''));
   hudText('onHint', step.hint);
-  hudText('onNext', onIdx===ON_STEPS.length-1 ? 'EMPEZAR ✓' : 'SIGUIENTE →');
+  hudText('onNext', onIdx===ON_STEPS.length-1 ? 'START ✓' : 'NEXT →');
   hudStyle('onNext', 'background', onIdx===ON_STEPS.length-1 ? '#2de67a' : '#ffcc00');
   if(step.action) step.action();
 }
@@ -7937,7 +8625,7 @@ function attachOnHandlers(){
   setTimeout(()=>{
     const el=document.getElementById('onStep');
     if(el && !el.innerHTML.trim()){
-      el.innerHTML=`<div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#fff;margin-bottom:12px">🐜 TU GRANJA</div><div style="font-family:'VT323',monospace;font-size:18px;color:#fff8dc">Toca el pasto para soltar miel y mira cómo la llevan a casa. Toca una hormiga para ver su ficha.</div>`;
+      el.innerHTML=`<div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#fff;margin-bottom:12px">🐜 YOUR FARM</div><div style="font-family:'VT323',monospace;font-size:18px;color:#fff8dc">Tap the meadow to drop honey and watch the workers carry it home. Tap an ant to open her profile.</div>`;
       console.warn('onboarding fallback injected');
     }
   }, 680);
@@ -8107,8 +8795,8 @@ function showQueenProfile(q){
   };
   const btnFeed=document.getElementById('btnFeedQueen');
   if(btnFeed) btnFeed.onclick=()=>{
-    if(colonyFood>=2){
-      colonyFood-=2; q.health=Math.min(100,q.health+18); q.mood.joy=Math.min(1,q.mood.joy+0.08); q.progress=Math.min(100,q.progress+18);
+    if(economyLedger.food>=2){
+      economyLedger.debitFood(2,{reason:'player feeds queen'}); q.health=Math.min(100,q.health+18); q.mood.joy=Math.min(1,q.mood.joy+0.08); q.progress=Math.min(100,q.progress+18);
       if(!q.history) q.history=[]; q.history.unshift({day:day,time:q.age/3600,msg:'🍯 Alimentada por cuidadora +18% vida'});
       if(q.history.length>20) q.history.pop();
       pushEvent('food',`🍯 Reina ${queenDisplayName(q)} alimentada +18%`, `2 🍯 gastadas`);
@@ -8197,13 +8885,13 @@ function showQueenProfile(q){
 // Estudiado Stardew: 28 días/estación, 4 estaciones/año, 112 días/año, calendario mural con 28 casillas y HUD fecha+hora.
 // Nuestro sistema único: 12 días/estación, 4 estaciones, 48 días/año, semana de 6 días (roles hormiga), HUD compacto + modal 3x4.
 let calViewYear=1, calViewSeason=0;
-const CAL_WEEKDAYS = ['OBRERA','EXCAVADORA','EXPLORADORA','NODRIZA','TEJEDORA','REPOSO'];
-const CAL_WEEK_ABBR = ['OBR','EXC','EXP','NOD','TEJ','REP'];
+const CAL_WEEKDAYS = ['WORKER','DIGGER','SCOUT','NURSE','WEAVER','REST'];
+const CAL_WEEK_ABBR = ['WRK','DIG','SCT','NUR','WVE','RST'];
 const CAL_SEASONS = [
-  {id:'brote', name:'BROTE', long:'Primavera', icon:'🌱', color:'#2de67a', bg:'#1e3a1e', desc:'Brote - todo germina'},
-  {id:'sol', name:'SOL', long:'Verano', icon:'☀️', color:'#ffcc00', bg:'#3a2d0a', desc:'Sol - calor y cosecha rápida'},
-  {id:'cosecha', name:'COSECHA', long:'Otoño', icon:'🍂', color:'#c2a080', bg:'#3a1e0a', desc:'Cosecha - bayas y hongos'},
-  {id:'escarcha', name:'ESCARCHA', long:'Invierno', icon:'❄️', color:'#7ec8e3', bg:'#1a2a3a', desc:'Escarcha - lento y frío'}
+  {id:'brote', name:'SPROUT', long:'Spring', icon:'🌱', color:'#2de67a', bg:'#1e3a1e', desc:'Sprout — everything germinates'},
+  {id:'sol', name:'SUN', long:'Summer', icon:'☀️', color:'#ffcc00', bg:'#3a2d0a', desc:'Sun — heat and quick harvests'},
+  {id:'cosecha', name:'HARVEST', long:'Autumn', icon:'🍂', color:'#c2a080', bg:'#3a1e0a', desc:'Harvest — berries and mushrooms'},
+  {id:'escarcha', name:'FROST', long:'Winter', icon:'❄️', color:'#7ec8e3', bg:'#1a2a3a', desc:'Frost — slow and cold'}
 ];
 function getCalendarData(atDay=null, atTime=null){
   const d = atDay!==null? atDay : (typeof day!=='undefined'? day : 1);
@@ -8292,8 +8980,8 @@ function updateCalendarWidget(){
     }
     if(dayNumEl) dayNumEl.textContent=cal.dayOfSeason;
     if(weekEl) weekEl.textContent=cal.weekDay;
-    if(seasonDayEl) seasonDayEl.innerHTML='Season day<br><b>'+cal.dayOfSeason+'/12 Sem '+cal.weekOfSeason+'</b>';
-    if(dateFullEl) dateFullEl.textContent='DÍA '+cal.dayOfSeason+' - AÑO '+cal.year;
+    if(seasonDayEl) seasonDayEl.innerHTML='Season day<br><b>'+cal.dayOfSeason+'/12 Week '+cal.weekOfSeason+'</b>';
+    if(dateFullEl) dateFullEl.textContent='DAY '+cal.dayOfSeason+' — YEAR '+cal.year;
     if(worldAgeEl){
       // fiel a tu arte: World Age: 39 039 in world (usa tiempo total)
       const wAge = Math.floor(time/10).toLocaleString();
@@ -8311,11 +8999,11 @@ function updateCalendarWidget(){
       timeEl.style.color= cal.isDay? '#ffcc00' : '#7ec8e3';
     }
     if(dayNightEl){
-      let label='DÍA';
-      if(cal.gameHour<4.5 || cal.gameHour>19.5) label='NOCHE';
-      else if(cal.gameHour<6) label='AMANECER';
-      else if(cal.gameHour>19) label='ANOCHECER';
-      else if(cal.gameHour>=12 && cal.gameHour<14) label='MEDIODÍA';
+      let label='DAY';
+      if(cal.gameHour<4.5 || cal.gameHour>19.5) label='NIGHT';
+      else if(cal.gameHour<6) label='DAWN';
+      else if(cal.gameHour>19) label='DUSK';
+      else if(cal.gameHour>=12 && cal.gameHour<14) label='NOON';
       dayNightEl.textContent=label;
       dayNightEl.style.color= cal.isDay? '#ffcc00' : '#7ec8e3';
     }
@@ -8327,22 +9015,22 @@ function updateCalendarWidget(){
       const hh=String(cal.hour).padStart(2,'0'), mm=String(cal.minute).padStart(2,'0');
       // un solo dueno escribe #timeLabel: la hora, sin huecos. El tiempo que hace vive en MUNDO VIVO.
       tl.textContent=hh+':'+mm;
-      tl.title= 'Día ' + cal.d + ' - ' + cal.season.long + ' - ' + (cal.isDay? 'día' : 'noche');
+      tl.title= 'Day ' + cal.d + ' — ' + cal.season.long + ' — ' + (cal.isDay? 'day' : 'night');
       tl.style.color= cal.isDay? '#ffcc00' : '#7ec8e3';
     }
     const ecoAge=document.getElementById('ecoAge');
-    if(ecoAge) ecoAge.textContent='Año '+cal.year+' - Día '+cal.dayOfSeason+' '+cal.season.name;
+    if(ecoAge) ecoAge.textContent='Year '+cal.year+' — Day '+cal.dayOfSeason+' '+cal.season.name;
   }catch(e){ /* no crash */ }
 }
 
 // === RELOJ DE LA COLONIA - INTEGRADO 444x244 escalado a 360x198 + MINIMIZADO ===
 (() => {
-  const CFG_RC = { DAYS_PER_SEASON: 12, DAYS_PER_WEEK: 3, CASTES: ['OBRERA','SOLDADO','EXPLORADORA'] };
+  const CFG_RC = { DAYS_PER_SEASON: 12, DAYS_PER_WEEK: 3, CASTES: ['WORKER','SOLDIER','SCOUT'] };
   const SEASONS_RC = [
-    { id:'brote',    name:'BROTE',    icon:'sprout', bn:'#3fa07a', bh:'#6fd0a4', bd:'#1f5c45', bar:'#58c042' },
-    { id:'sol',      name:'SOL',      icon:'sun',    bn:'#f3c326', bh:'#ffe36a', bd:'#b8860b', bar:'#f0b020' },
-    { id:'cosecha',  name:'COSECHA',  icon:'leaf',   bn:'#c0661a', bh:'#e8923f', bd:'#7a3b0c', bar:'#e0701e' },
-    { id:'escarcha', name:'ESCARCHA', icon:'flake',  bn:'#8fbfe0', bh:'#c4e4f7', bd:'#4f84ab', bar:'#6fc3e8' }
+    { id:'brote',    name:'SPROUT',  icon:'sprout', bn:'#3fa07a', bh:'#6fd0a4', bd:'#1f5c45', bar:'#58c042' },
+    { id:'sol',      name:'SUN',     icon:'sun',    bn:'#f3c326', bh:'#ffe36a', bd:'#b8860b', bar:'#f0b020' },
+    { id:'cosecha',  name:'HARVEST', icon:'leaf',   bn:'#c0661a', bh:'#e8923f', bd:'#7a3b0c', bar:'#e0701e' },
+    { id:'escarcha', name:'FROST',   icon:'flake',  bn:'#8fbfe0', bh:'#c4e4f7', bd:'#4f84ab', bar:'#6fc3e8' }
   ];
   function rcMakeSprite(rows,pal,scale=1){
     const h=rows.length,w=rows[0].length;
@@ -8429,7 +9117,7 @@ function updateCalendarWidget(){
     world:document.getElementById('rcWorldV'), pfill:document.getElementById('rcPfill'), snow:document.getElementById('rcSnowcap'), sun:rcSun, moon:rcMoon,
     miniTime:document.getElementById('rcMiniTime'), miniDay:document.getElementById('rcMiniDay'), miniSeason:document.getElementById('rcMiniSeason'), miniIcon:document.getElementById('rcMiniIcon'), miniWrap:document.getElementById('rcMini'), miniBar:document.getElementById('rcMiniBar')
   };
-  function rcPhaseOf(h){ if(h>=5&&h<10) return 'AMANECER'; if(h>=10&&h<16) return 'MEDIODÍA'; if(h>=16&&h<20) return 'TARDE'; return 'NOCHE'; }
+  function rcPhaseOf(h){ if(h>=5&&h<10) return 'DAWN'; if(h>=10&&h<16) return 'NOON'; if(h>=16&&h<20) return 'EVENING'; return 'NIGHT'; }
   function rcNightAmt(h){ if(h>=22||h<4) return 1; if(h>=20) return (h-20)/2; if(h<6) return 1-(h-4)/2; return 0; }
   const RC_P0=[17,46+30], RC_P1=[66,-8+30], RC_P2=[115,46+30];
   function rcArcPoint(t){ const u=1-t; const x=u*u*RC_P0[0]+2*u*t*RC_P1[0]+t*t*RC_P2[0]; const y=u*u*RC_P0[1]+2*u*t*RC_P1[1]+t*t*RC_P2[1]; const dx=2*u*(RC_P1[0]-RC_P0[0])+2*t*(RC_P2[0]-RC_P1[0]); const dy=2*u*(RC_P1[1]-RC_P0[1])+2*t*(RC_P2[1]-RC_P1[1]); return {x,y,a:Math.atan2(dy,dx)}; }
@@ -8466,7 +9154,7 @@ function updateCalendarWidget(){
         if(rcEl.caste) rcEl.caste.textContent=CFG_RC.CASTES[(dayInSeason-1)%CFG_RC.CASTES.length];
         if(rcEl.diaN) rcEl.diaN.textContent=cal.d;
         if(rcEl.anoN) rcEl.anoN.textContent=year;
-        if(rcEl.sday) rcEl.sday.textContent=`${dayInSeason}/12 Sem ${cal.weekOfSeason}`;
+        if(rcEl.sday) rcEl.sday.textContent=`${dayInSeason}/12 Week ${cal.weekOfSeason}`;
         if(rcEl.miniDay) rcEl.miniDay.textContent=dayInSeason;
         if(rcEl.miniSeason){
           const s=SEASONS_RC[season];
@@ -8484,7 +9172,7 @@ function updateCalendarWidget(){
         const ph=rcPhaseOf(hour);
         if(ph!==rcLastPhase){
           if(rcEl.phase) rcEl.phase.textContent=ph; rcLastPhase=ph;
-          const isNight=ph==='NOCHE';
+          const isNight=ph==='NIGHT';
           if(rcEl.sun) rcEl.sun.style.filter=isNight?'grayscale(1) brightness(.6)':'none';
           if(rcEl.moon) rcEl.moon.style.filter=isNight?'none':'grayscale(1) brightness(.7)';
         }
@@ -8526,7 +9214,7 @@ function renderCalendarGrid(viewYear, viewSeason){
   if(titleEl) titleEl.textContent=season.name+' - '+season.long;
   if(iconEl) iconEl.textContent=season.icon;
   if(subEl) subEl.textContent=season.desc;
-  if(yearEl) yearEl.textContent='AÑO '+viewYear;
+  if(yearEl) yearEl.textContent='YEAR '+viewYear;
   // tabs active
   document.querySelectorAll('.cal-tab').forEach(el=>{
     el.classList.toggle('active', parseInt(el.dataset.s)===viewSeason);
@@ -8548,11 +9236,11 @@ function renderCalendarGrid(viewYear, viewSeason){
     else if(absDay%7===0) icon='🌧';
     else if(absDay%11===0) icon='👑';
     cell.innerHTML=`<div class="cal-cell-num">${d}</div><div class="cal-cell-week">${dayData.weekAbbr}</div><div class="cal-cell-icon">${icon}</div>`;
-    cell.title=`Día ${absDay} (Año ${viewYear} - ${season.name} ${d}/12) - ${dayData.weekDay}${isToday?' - HOY':''}`;
+    cell.title=`Day ${absDay} (Year ${viewYear} — ${season.name} ${d}/12) — ${dayData.weekDay}${isToday?' — TODAY':''}`;
     grid.appendChild(cell);
   }
   if(infoEl){
-    infoEl.textContent=`${calNow.season.icon} Día ${calNow.dayOfSeason} de ${calNow.season.name} - Año ${calNow.year} - ${calNow.weekDay} (semana ${calNow.weekOfSeason}/2) - ${String(calNow.hour).padStart(2,'0')}:${String(calNow.minute).padStart(2,'0')} ${calNow.isDay?'☀️ día':'🌙 noche'}`;
+    infoEl.textContent=`${calNow.season.icon} Day ${calNow.dayOfSeason} of ${calNow.season.name} — Year ${calNow.year} — ${calNow.weekDay} (Week ${calNow.weekOfSeason}/2) — ${String(calNow.hour).padStart(2,'0')}:${String(calNow.minute).padStart(2,'0')} ${calNow.isDay?'☀️ day':'🌙 night'}`;
   }
   calViewYear=viewYear; calViewSeason=viewSeason;
 }
@@ -8702,7 +9390,7 @@ try{
 if(_topoHasWorld){
   try{
     foods.length=0;
-    colonyFood=startReserveFood(); // reserva proporcional al tamaño del terreno
+    economyLedger.setFood(startReserveFood(),'initial world adjustment'); // reserva proporcional al tamaño del terreno
     if(queen) queen.progress=0;
     digs=0; mound.length=0;
     const _sf3=startSurfaceFood(); const _sp3=Math.max(24, Math.round(38*worldAreaRatio()*0.9));
@@ -8714,14 +9402,35 @@ if(_topoHasWorld){
 
 // === SAVE PERSISTENTE - la granja sobrevive a recargar ===
 const SAVE_KEY='antFarm_fullSave_v2';
-const SAVE_VER='20261015a';
+const SAVE_VER='20261018a';
 const LS_ALIVE='antfarm_worldAlive';
 const LS_INGAME='antfarm_inGame';
 // grids a string de digitos: 8x menos bytes que JSON de arrays (BIG 96x48 entra en localStorage)
-function _encGrid(g){ try{ if(!Array.isArray(g)) return []; return g.map(r=>{ let s=''; for(let i=0;i<r.length;i++){ let v=r[i]|0; if(v<0)v=0; if(v>9)v=9; s+=v; } return s; }); }catch(e){ return []; } }
-function _decGrid(s, w, h){ if(!Array.isArray(s)||!s.length) return null; const out=[]; for(let r=0;r<s.length && r<h;r++){ const str=String(s[r]||''); const row=new Array(w).fill(1); for(let c=0;c<w;c++){ const ch=str.charCodeAt(c); row[c] = isNaN(ch)?0:(ch-48); } out.push(row); } while(out.length<h){ const row=new Array(w).fill(1); out.push(row); } return out; }
-function _encWater(g){ try{ if(!Array.isArray(g)) return []; return g.map(r=>{ let s=''; for(let i=0;i<r.length;i++){ let v=Math.round((r[i]||0)*9); if(v<0)v=0; if(v>9)v=9; s+=v; } return s; }); }catch(e){ return []; } }
-function _decWater(s, w, h){ if(!Array.isArray(s)||!s.length) return null; const out=[]; for(let r=0;r<s.length && r<h;r++){ const str=String(s[r]||''); const row=new Array(w).fill(0); for(let c=0;c<w;c++){ const ch=str.charCodeAt(c); row[c]= isNaN(ch)?0:Math.max(0,(ch-48))/9; } out.push(row); } while(out.length<h) out.push(new Array(w).fill(0)); return out; }
+// One base-20 character per cell keeps saves compact while preserving every physical type (0–18).
+// Decimal saves from earlier builds are a strict subset, so this is also their migration path.
+const _GRID_DIGITS='0123456789abcdefghij';
+function _encGrid(g){
+  try{
+    if(!Array.isArray(g)) return [];
+    return g.map(row=>{ let s=''; for(let i=0;i<row.length;i++){ const v=Math.max(0,Math.min(19,row[i]|0)); s+=_GRID_DIGITS[v]; } return s; });
+  }catch(_e){ return []; }
+}
+function _decGrid(encoded,w,h){
+  if(!Array.isArray(encoded)||!encoded.length) return null;
+  const out=[];
+  for(let r=0;r<encoded.length&&r<h;r++){
+    const str=String(encoded[r]||''),row=new Array(w).fill(1);
+    for(let c=0;c<w;c++){
+      const ch=(str[c]||'').toLowerCase(),v=_GRID_DIGITS.indexOf(ch);
+      row[c]=v<0?0:v;
+    }
+    out.push(row);
+  }
+  while(out.length<h) out.push(new Array(w).fill(1));
+  return out;
+}
+function _encWater(g){ try{ if(!Array.isArray(g)) return []; return g.map(r=>{ let s='~'; for(let i=0;i<r.length;i++){ let v=Math.round(Math.max(0,Number(r[i])||0)*8); if(v>35)v=35; s+=v.toString(36); } return s; }); }catch(e){ return []; } }
+function _decWater(s, w, h){ if(!Array.isArray(s)||!s.length) return null; const out=[]; for(let r=0;r<s.length && r<h;r++){ const str=String(s[r]||''), modern=str[0]==='~', off=modern?1:0; const row=new Array(w).fill(0); for(let c=0;c<w;c++){ const raw=str[c+off]; if(raw===undefined) continue; const n=modern?parseInt(raw,36):(raw.charCodeAt(0)-48); row[c]=Number.isFinite(n)?Math.max(0,n)/(modern?8:9):0; } out.push(row); } while(out.length<h) out.push(new Array(w).fill(0)); return out; }
 
 function topoHasSave(){
   try{
@@ -8744,9 +9453,12 @@ function serializeSave(force){
     if((!workers || workers.length===0) && (!queens || queens.length===0)) return false;
     const data={
       v:SAVE_VER, savedAt:Date.now(), day,
-      time, gen, colonyIQ, colonyFood, digs, deliveries, accidents, rewardsFound, mutations, commsCount, worldAge,
-      ROWS, COLS, SURFACE_ROW,
+      time, gen, colonyIQ, colonyFood:economyLedger.food, digs, deliveries, accidents, rewardsFound, mutations, commsCount, worldAge,
+      ROWS, COLS, SURFACE_ROW, worldSeed,
+      ancientSites:Array.isArray(ancientSites)?ancientSites.map(s=>({id:s.id,c:s.c,r:s.r,depth:s.depth,w:s.w,h:s.h,style:s.style,kind:s.kind,biome:s.biome,damage:s.damage,flood:s.flood,cycle:s.cycle,scar:s.scar,repairStyle:s.repairStyle,repairRate:s.repairRate,oddity:s.oddity||0,muralSeed:s.muralSeed})):[],
+      ancientMasonry:Array.isArray(ancientMasonry)?ancientMasonry.slice(0,1800).map(m=>({c:m.c,r:m.r,style:m.style,site:m.site,scar:m.scar||''})):[],
       soil:_encGrid(soil), soilType:_encGrid(soilType), water:_encWater(water),
+      floodBarriers:[...floodBarriers].slice(0,240),
       fertility: Array.isArray(fertility)? fertility.map(v=>Math.round((v||0)*100)) : [],
       plants: Array.isArray(plants)? plants.slice(0,160).map(p=>({c:p.c,x:p.x,y:p.y,type:p.type,growth:p.growth,age:p.age,fc:p.fruitCooldown,v:p.variant})) : [],
       hiddenRewards: Array.isArray(hiddenRewards)? hiddenRewards.map(h=>({c:h.c,r:h.r,type:h.type,found:!!h.found,x:h.x,y:h.y,tier:h.depthTier})) : [],
@@ -8759,7 +9471,7 @@ function serializeSave(force){
       // Topo: JSON.stringify ya serializa profundo; los spreads ({...w}) copiaban cada hormiga DOS veces
       workers, queens, brood, fungusGardens, wastePiles, structures,
       queen: queen|| null,
-      worldMaterials: {...worldMaterials},
+      worldMaterials: {...economyLedger.materials},
       inventions: {...inventions},
       society,
       pantryPos: {...pantryPos},
@@ -8770,7 +9482,7 @@ function serializeSave(force){
       events: events.slice(0,45).map(e=>({type:e.type,msg:e.msg,detail:e.detail,time:e.time,gen:e.gen})),
       sizeKey: (()=>{ try{ return localStorage.getItem('antfarm_worldSize')||''; }catch(e){ return ''; } })()
     };
-    const _sig=(time|0)+'|'+digs+'|'+colonyFood+'|'+workers.length+'|'+deliveries+'|'+_soilRev;
+    const _sig=(time|0)+'|'+digs+'|'+economyLedger.food+'|'+workers.length+'|'+deliveries+'|'+_soilRev;
     if(!force && _sig===_lastSaveSig){ // nada que contar: no volver a serializar el mundo entero
       try{ localStorage.setItem('antfarm_lastReal', String(Date.now())); localStorage.setItem('antfarm_time', String(time)); }catch(e){}
       return false;
@@ -8798,18 +9510,28 @@ function deserializeSave(){
     if(data.SURFACE_ROW) SURFACE_ROW = data.SURFACE_ROW;
     SURFACE_Y = SURFACE_ROW*CELL; CENTER_COL = Math.floor(COLS/2);
     W = COLS*CELL; H = ROWS*CELL;
+    worldSeed=worldSeed32(data.worldSeed||Math.floor(Math.random()*4294967296));
+    worldProfile=createWorldProfile(worldSeed,COLS);
+    ancientSites=Array.isArray(data.ancientSites)?data.ancientSites.map(s=>Object.assign({},s,{r:Number.isFinite(Number(s.r))?Number(s.r):SURFACE_ROW+(Number(s.depth)||0)})):[];
+    ancientMasonry=Array.isArray(data.ancientMasonry)?data.ancientMasonry.map(m=>({...m})):[];
+    rebuildAncientIndexes();
+    geologyHost=_buildGeologyRows(0,ROWS).hosts;
     try{ const cv=document.getElementById('farmCanvas'); if(cv){ cv.width=W; cv.height=H; if(cv.getContext) cv.getContext('2d').imageSmoothingEnabled=false; } }catch(e){}
     try{ initSoilCache(); if(soilCacheCanvas){ soilCacheCanvas.width=W; soilCacheCanvas.height=H; if(soilCacheCtx) soilCacheCtx.imageSmoothingEnabled=false; } }catch(e){}
     // 2) grids
     const s=_decGrid(data.soil, COLS, ROWS); if(!s) return false; soil=s;
     let st=_decGrid(data.soilType, COLS, ROWS); if(!st){ st=Array.from({length:ROWS},(_,r)=>Array.from({length:COLS},(_,c)=> r<SURFACE_ROW?0:1)); } soilType=st;
     let wt=_decWater(data.water, COLS, ROWS); if(!wt) wt=Array.from({length:ROWS},()=>new Array(COLS).fill(0)); water=wt;
+    waterVisual=water.map(row=>row.map(v=>Math.min(1,Math.max(0,Number(v)||0)))); waterFlow=new Map();
+    _waterActive=water.some(row=>row.some(v=>v>0.0001)); _waterVisualActive=_waterActive;
+    floodBarriers.clear(); if(Array.isArray(data.floodBarriers)) for(const key of data.floodBarriers){ const p=String(key).split(',').map(Number); if(p.length===2&&p.every(Number.isInteger)&&p[0]>=0&&p[0]<COLS&&p[1]>=0&&p[1]<ROWS) floodBarriers.add(p[0]+','+p[1]); }
     if(Array.isArray(data.fertility) && data.fertility.length) fertility=data.fertility.map(v=>(v||0)/100);
     else fertility=Array.from({length:COLS},()=>0.55);
     while(fertility.length<COLS) fertility.push(0.55);
     // 3) entidades
     workers = Array.isArray(data.workers)? data.workers : [];
-    workers.forEach(w=>{ w.selected=false; if(w.digTarget===undefined) w.digTarget=null; });
+    workers.forEach(w=>{ w.selected=false; if(w.digTarget===undefined) w.digTarget=null; delete w.floodTarget; delete w.floodWork; if(w.state==='CONTROLAR_AGUA'||w.state==='HUIR_AGUA') w.state='EXPLORAR'; });
+    try{ floodControl.target=null; floodControl.workerId=null; floodControl.scan=0; floodControl.worldKey=''; }catch(e){}
     queens = Array.isArray(data.queens)? data.queens : [];
     if(data.queen && !queens.length) queens=[data.queen];
     if(!queens.length){ // nunca sin reina: respawn de la fundadora
@@ -8826,7 +9548,7 @@ function deserializeSave(){
     // --- la escalera vuelve como estaba (o se repone la losa: un guardado viejo no la tiene y sin losa
     //     el mundo se queda sin techo, que es justo lo que el umbral evita) ---
     bandaMax = Math.max(0, data.bandaMax|0); umbralesRotos = Math.max(0, data.umbralesRotos|0);
-    reliquias = Array.isArray(data.reliquias)? data.reliquias.map(x=>({tipo:(LEGADO_RELIQUIA[x.tipo]||x.tipo),nombre:(LEGADO_RELIQUIA[x.tipo]||x.tipo),piso:x.piso|0,dia:x.dia|0,gen:x.gen|0,lore:x.lore||'',bonus:x.bonus||0.02})) : [];
+    reliquias = Array.isArray(data.reliquias)? data.reliquias.map(x=>{ const tipo=LEGADO_RELIQUIA[x.tipo]||(x.tipo==='Nest of the Old Colony'?'Worked Chamber Fragment':x.tipo); return {tipo,nombre:tipo,piso:x.piso|0,dia:x.dia|0,gen:x.gen|0,lore:x.lore||'',bonus:x.bonus||0.02}; }) : [];
     bonusCava = Math.min(0.30, Number(data.bonusCava)||reliquias.reduce((a,x)=>a+(x.bonus||0),0));
     umbral = null;
     try{
@@ -8839,13 +9561,13 @@ function deserializeSave(){
       reindexMagma();
     }catch(e){ console.warn('escalera al cargar', e); }
     mound = Array.isArray(data.mound)? data.mound.map(m=>({x:m.x,y:m.y,h:m.h})) : [];
-    worldMaterials = data.worldMaterials||worldMaterials; inventions = data.inventions||inventions;
+    economyLedger.replaceMaterials(data.worldMaterials||{},'load save'); inventions = data.inventions||inventions;
     society = data.society||society; pantryPos = data.pantryPos||{x:CENTER_COL*CELL+8,y:(SURFACE_ROW+8)*CELL+8};
     if(data.stats) stats = {...stats, ...data.stats};
     if(data.weather && typeof data.weather==='object'){ weather.type=data.weather.type||'clear'; weather.intensity=data.weather.intensity||0; weather.nextChange=data.weather.nextChange||800; weather.rainParticles=[]; }
     if(Array.isArray(data.events)){ events.length=0; data.events.forEach(e=>events.push(e)); }
     time = data.time||time; gen = data.gen||gen; colonyIQ = data.colonyIQ||colonyIQ;
-    colonyFood = data.colonyFood||colonyFood; digs = data.digs||digs;
+    if(data.colonyFood!==undefined) economyLedger.setFood(data.colonyFood,'load save'); digs = data.digs||digs;
     if(data.day) day = data.day; else day = Math.floor(time/DAY_LENGTH)+1;
     if(data.worldAge) worldAge = data.worldAge;
     deliveries = data.deliveries||deliveries; accidents = data.accidents||0; rewardsFound = data.rewardsFound||0;
@@ -9016,8 +9738,8 @@ setTimeout(_updateBothAntCounts, 1800);
       }
       const ago = meta.savedAt? Math.max(0, Date.now()-meta.savedAt) : 0;
       const mins=Math.floor(ago/60000);
-      const when = mins<1? 'hace segundos' : mins<60? 'hace '+mins+' min' : mins<1440? 'hace '+Math.floor(mins/60)+'h' : 'hace '+Math.floor(mins/1440)+'d';
-      btn.innerHTML='▶ CONTINUAR · DÍA '+meta.day+' · '+meta.cols+'×'+meta.rows+' · '+meta.pop+' 🐜 <span style=\"font-size:7px;color:#1a140f\">('+when+')</span>';
+      const when = mins<1? 'seconds ago' : mins<60? mins+' min ago' : mins<1440? Math.floor(mins/60)+'h ago' : Math.floor(mins/1440)+'d ago';
+      btn.innerHTML='▶ CONTINUE · DAY '+meta.day+' · '+meta.cols+'×'+meta.rows+' · '+meta.pop+' 🐜 <span style=\"font-size:7px;color:#1a140f\">('+when+')</span>';
     } else if(btn){ btn.remove(); }
   };
   if(splash && main){
@@ -9071,46 +9793,46 @@ setTimeout(_updateBothAntCounts, 1800);
         if(meta){
           const ago=meta.savedAt? Math.max(0,Date.now()-meta.savedAt):0;
           const mins=Math.floor(ago/60000);
-          const when = !meta.savedAt? '-' : mins<1? 'hace segundos' : mins<60? 'hace '+mins+' min' : mins<1440? 'hace '+Math.floor(mins/60)+'h' : new Date(meta.savedAt).toLocaleString('es-PE');
-          saves.push({key:SAVE_KEY, label:'MI GRANJA', size:meta.cols+'×'+meta.rows, day:meta.day, pop:meta.pop, when});
+          const when = !meta.savedAt? '-' : mins<1? 'seconds ago' : mins<60? mins+' min ago' : mins<1440? Math.floor(mins/60)+'h ago' : new Date(meta.savedAt).toLocaleString('en-US');
+          saves.push({key:SAVE_KEY, label:'MY FARM', size:meta.cols+'×'+meta.rows, day:meta.day, pop:meta.pop, when});
         }
         for(const k of ['antfarm_save_v4','antfarm_save_v3','antfarm_save_v2','antfarm_save']){
           const raw=localStorage.getItem(k); if(!raw) continue;
           try{ const d=JSON.parse(raw); if(!d || !Array.isArray(d.workers) || !d.workers.length) continue;
-            saves.push({key:k, label:'PARTIDA ANTIGUA', size:(d.COLS||64)+'×'+(d.ROWS||36), day:d.day||1, pop:d.workers.length, when:d.savedAt? new Date(d.savedAt).toLocaleString('es-PE') : 'sin fecha'});
+            saves.push({key:k, label:'LEGACY SAVE', size:(d.COLS||64)+'×'+(d.ROWS||36), day:d.day||1, pop:d.workers.length, when:d.savedAt? new Date(d.savedAt).toLocaleString('en-US') : 'no date'});
           }catch(e){}
         }
       }catch(e){ console.warn('loadList',e); }
       if(!saves.length){
         const empty=document.createElement('div');
         empty.style.cssText='padding:22px 10px;text-align:center;font-family:VT323,monospace;font-size:15px;color:#8a7a5a';
-        empty.innerHTML='No hay granjas guardadas todavía.<br><span style="color:#5a4a3a;font-size:12px">Crea una desde el menú y se guardará sola cada 4 segundos.</span>';
+        empty.innerHTML='There are no saved farms yet.<br><span style="color:#5a4a3a;font-size:12px">Create one from the menu; it will save itself every 4 seconds.</span>';
         list.appendChild(empty);
         const b=document.createElement('button');
-        b.className='pixel-btn primary'; b.style.cssText='width:100%;justify-content:center'; b.textContent='➕ CREAR GRANJA NUEVA';
+        b.className='pixel-btn primary'; b.style.cssText='width:100%;justify-content:center'; b.textContent='➕ CREATE NEW FARM';
         b.onclick=()=> show(createSc);
         list.appendChild(b);
       }
       topoListFarms().forEach(f=>{
         const ago=f.savedAt? Math.max(0,Date.now()-f.savedAt):0; const mins=Math.floor(ago/60000);
         saves.push({ key:'ARCHIVE:'+f.id, label:'📦 '+f.label, size:f.cols+'×'+f.rows, day:f.day, pop:f.pop,
-                     when: mins<1?'hace segundos': mins<60? 'hace '+mins+' min' : mins<1440? 'hace '+Math.floor(mins/60)+'h' : new Date(f.savedAt).toLocaleString('es-PE') });
+                     when: mins<1?'seconds ago': mins<60? mins+' min ago' : mins<1440? Math.floor(mins/60)+'h ago' : new Date(f.savedAt).toLocaleString('en-US') });
       });
       saves.forEach(s=>{
         const div=document.createElement('div');
         div.style.cssText='background:#000;border:2px solid #000;padding:8px;display:flex;flex-direction:column;gap:6px';
-        div.innerHTML=`<div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#ffcc00">${s.label} · ${s.size}</div><div style="font-family:'VT323',monospace;font-size:13px;color:#c9b896">Día ${s.day} · ${s.pop} hormigas · guardada ${s.when}</div><div style="display:flex;gap:6px"><button class="pixel-btn small" data-load="${s.key}" style="flex:1">▶ CARGAR</button><button class="pixel-btn small" data-del="${s.key}" style="background:#1a0f00;color:#8a7a5a">🗑</button></div>`;
+        div.innerHTML=`<div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#ffcc00">${s.label} · ${s.size}</div><div style="font-family:'VT323',monospace;font-size:13px;color:#c9b896">Day ${s.day} · ${s.pop} ants · saved ${s.when}</div><div style="display:flex;gap:6px"><button class="pixel-btn small" data-load="${s.key}" style="flex:1">▶ LOAD</button><button class="pixel-btn small" data-del="${s.key}" style="background:#1a0f00;color:#8a7a5a">🗑</button></div>`;
         list.appendChild(div);
       });
       setTimeout(()=>{
         list.querySelectorAll('[data-load]').forEach(b=>{
           b.onclick=()=>{
             let k=b.getAttribute('data-load');
-            b.textContent='⏳ CARGANDO...';
+            b.textContent='⏳ LOADING...';
             try{
               if(k && k.indexOf('ARCHIVE:')===0){
                 const id=k.slice(8);
-                if(!topoRestoreFarm(id)){ b.textContent='✕ ARCHIVO DAÑADO'; b.disabled=true; return; }
+                if(!topoRestoreFarm(id)){ b.textContent='✕ CORRUPTED ARCHIVE'; b.disabled=true; return; }
                 k=SAVE_KEY;
               }
               if(k && k!==SAVE_KEY){
@@ -9119,7 +9841,7 @@ setTimeout(_updateBothAntCounts, 1800);
               }
             }catch(e){}
             const ok = topoResumeGame({silent:false});
-            if(!ok){ b.textContent='✕ DAÑADA - CREA UNA'; b.disabled=true; console.warn('[TOPO] carga fallida', k); }
+            if(!ok){ b.textContent='✕ CORRUPTED — CREATE ONE'; b.disabled=true; console.warn('[TOPO] load failed', k); }
           };
         });
         list.querySelectorAll('[data-del]').forEach(b=>{
@@ -9143,31 +9865,31 @@ setTimeout(_updateBothAntCounts, 1800);
     const cur=(typeof topoHasSave==='function')? topoHasSave():null;
     const head=document.createElement('div');
     head.style.cssText="font-family:'Press Start 2P',monospace;font-size:7px;color:#ffcc00";
-    head.textContent='GRANJA ACTIVA';
+    head.textContent='ACTIVE FARM';
     box.appendChild(head);
     const a=document.createElement('div');
     a.style.cssText="font-family:'VT323',monospace;font-size:13px;color:#c9b896";
-    a.textContent = cur? ('Día '+cur.day+' · '+cur.pop+' hormigas · '+cur.cols+'×'+cur.rows) : 'ninguna todavía';
+    a.textContent = cur? ('Day '+cur.day+' · '+cur.pop+' ants · '+cur.cols+'×'+cur.rows) : 'none yet';
     box.appendChild(a);
     const list=(typeof topoListFarms==='function')? topoListFarms():[];
     if(list.length){
       const h2=document.createElement('div');
       h2.style.cssText="font-family:'Press Start 2P',monospace;font-size:7px;color:#ffcc00;margin-top:6px";
-      h2.textContent='ARCHIVADAS ('+list.length+')';
+      h2.textContent='ARCHIVED ('+list.length+')';
       box.appendChild(h2);
       list.forEach(f=>{
         const row=document.createElement('div');
         row.style.cssText='display:flex;gap:6px;align-items:center';
         row.innerHTML=`<span style="flex:1;font-family:'VT323',monospace;font-size:12px;color:#8a7a5a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.label}</span>`;
-        const lb=document.createElement('button'); lb.className='pixel-btn small'; lb.textContent='▶'; lb.title='Cambiar a esta granja';
+        const lb=document.createElement('button'); lb.className='pixel-btn small'; lb.textContent='▶'; lb.title='Switch to this farm';
         lb.onclick=()=>{ if(topoRestoreFarm(f.id)) topoResumeGame({silent:false}); };
-        const db=document.createElement('button'); db.className='pixel-btn small'; db.textContent='🗑'; db.style.cssText='background:#1a0f00;color:#8a7a5a'; db.title='Borrar del archivo';
+        const db=document.createElement('button'); db.className='pixel-btn small'; db.textContent='🗑'; db.style.cssText='background:#1a0f00;color:#8a7a5a'; db.title='Delete from archive';
         db.onclick=()=>{ topoDeleteFarm(f.id); renderSettingsFarms(); };
         row.appendChild(lb); row.appendChild(db); box.appendChild(row);
       });
     }
     const w=document.getElementById('btnWipeSave');
-    if(w) w.onclick=()=>{ gameConfirm('¿Borrar todo?', 'Se van la granja guardada y el archivo completo. No hay vuelta atrás.', ()=>{ try{ localStorage.removeItem(FARMS_KEY); }catch(e){} try{ if(window._clearSave) window._clearSave(); }catch(e){} try{ renderSettingsFarms(); }catch(e){} }); };
+    if(w) w.onclick=()=>{ gameConfirm('Delete everything?', 'The active farm and the entire archive will be erased. This cannot be undone.', ()=>{ try{ localStorage.removeItem(FARMS_KEY); }catch(e){} try{ if(window._clearSave) window._clearSave(); }catch(e){} try{ renderSettingsFarms(); }catch(e){} }); };
   }
   if(btnSettings) btnSettings.onclick=()=>{ show(settingsSc); try{ renderSettingsFarms(); }catch(e){} };
   if(btnCredits) btnCredits.onclick=()=> show(creditsSc);
@@ -9339,12 +10061,12 @@ function _ecoTxt(id, v){ const e=document.getElementById(id); if(e && e.textCont
 let _invAbierto=false;
 function updateEcoHud(){
   try{
-    _ecoTxt('velFoodCount', Math.max(0, Math.floor(colonyFood)));
-    _ecoTxt('velMatFiber', Math.max(0, Math.floor(worldMaterials.fiber||0)));
-    _ecoTxt('velMatStone', Math.max(0, Math.floor(worldMaterials.stone||0)));
-    _ecoTxt('velMatClay',  Math.max(0, Math.floor(worldMaterials.clay||0)));
-    _ecoTxt('velMatWood',  Math.max(0, Math.floor(worldMaterials.wood||0)));
-    _ecoTxt('velMatSand',  Math.max(0, Math.floor(worldMaterials.sand||0)));
+    _ecoTxt('velFoodCount', Math.max(0, Math.floor(economyLedger.food)));
+    _ecoTxt('velMatFiber', Math.max(0, Math.floor(economyLedger.materials.fiber||0)));
+    _ecoTxt('velMatStone', Math.max(0, Math.floor(economyLedger.materials.stone||0)));
+    _ecoTxt('velMatClay',  Math.max(0, Math.floor(economyLedger.materials.clay||0)));
+    _ecoTxt('velMatWood',  Math.max(0, Math.floor(economyLedger.materials.wood||0)));
+    _ecoTxt('velMatSand',  Math.max(0, Math.floor(economyLedger.materials.sand||0)));
     _ecoTxt('velMatRooms', storageCells().length);
     if(_invAbierto) pintarInventario();
   }catch(e){ /* un nodo que falte no puede parar el bucle */ }
@@ -9359,30 +10081,30 @@ function _filaInv(icono, nombre, valor, nota, color){
 function pintarInventario(){
   const body=document.getElementById('invBody'); if(!body) return;
   const celdas=storageCells(), p=storagePos(), cap=capacidadAlmacen();
-  const miel=Math.max(0, Math.floor(colonyFood));
+  const miel=Math.max(0, Math.floor(economyLedger.food));
   const lleno=Math.max(0, Math.min(100, Math.round(miel/Math.max(1,cap)*100)));
   let html='';
   html += '<div style="background:#2a0f00;border:3px solid #000;padding:7px 8px">'
     + '<div style="display:flex;align-items:baseline;gap:6px"><span style="font-size:16px">🍯</span>'
     + '<b style="font-family:\'Press Start 2P\',monospace;font-size:16px;color:#ffcc00;text-shadow:1px 1px 0 #000">'+miel+'</b>'
-    + '<span style="font-family:\'VT323\',monospace;font-size:13px;color:#c9b896">raciones · caben '+cap+'</span></div>'
+    + '<span style="font-family:\'VT323\',monospace;font-size:13px;color:#c9b896">rations · capacity '+cap+'</span></div>'
     + '<div style="height:7px;background:#000;border:2px solid #000;margin-top:6px"><div style="height:100%;width:'+lleno+'%;background:linear-gradient(90deg,#ffcc00,#ff8c00)"></div></div>'
     + '</div>';
-  html += '<div style="font-family:\'VT323\',monospace;font-size:12px;color:#7a6a4e;line-height:1.25">Guardado en '
-    + (celdas.length? '<b style="color:#c9b896">'+celdas.length+' celda'+(celdas.length===1?'':'s')+'</b> de la cámara <b style="color:#c9b896">['+Math.floor(p.x/CELL)+','+Math.floor(p.y/CELL)+']</b>' : '<b style="color:#ff8c00">sin cámara excavada</b>')
-    + (granerosConstruidos()? ' · graneros: '+granerosConstruidos() : '') + '</div>';
+  html += '<div style="font-family:\'VT323\',monospace;font-size:12px;color:#7a6a4e;line-height:1.25">Saved in '
+    + (celdas.length? '<b style="color:#c9b896">'+celdas.length+' '+(celdas.length===1?'cell':'cells')+'</b> of chamber <b style="color:#c9b896">['+Math.floor(p.x/CELL)+','+Math.floor(p.y/CELL)+']</b>' : '<b style="color:#ff8c00">no excavated chamber</b>')
+    + (granerosConstruidos()? ' · granaries: '+granerosConstruidos() : '') + '</div>';
   for(const d of _MAT_DEFS){
-    html += _filaInv(d.icon, d.n, Math.max(0, Math.floor(worldMaterials[d.k]||0)), d.sirve, '#fff8dc');
+    html += _filaInv(d.icon, d.n, Math.max(0, Math.floor(economyLedger.materials[d.k]||0)), d.sirve, '#fff8dc');
   }
   try{
-    const herramientas={pick:['⛏','PICO'],basket:['🧺','CESTA'],trowel:['🪝','PALETA']};
+    const herramientas={pick:['⛏','PICK'],basket:['🧺','BASKET'],trowel:['🪝','TROWEL']};
     const partes=[];
     for(const k in herramientas){ const n=workers.filter(w=>w.tool===k).length; if(n) partes.push(herramientas[k][0]+' '+herramientas[k][1]+' ×'+n); }
     const estructur=structures.filter(st=>st&&st.built!==false).length;
     if(partes.length||estructur) html += '<div style="font-family:\'VT323\',monospace;font-size:12px;color:#7a6a4e;line-height:1.3">'
-      + (partes.length? partes.join(' · ')+'<br>':'') + (estructur? 'construcciones en pie: <b style="color:#c9b896">'+estructur+'</b>' : '') + '</div>';
+      + (partes.length? partes.join(' · ')+'<br>':'') + (estructur? 'standing structures: <b style="color:#c9b896">'+estructur+'</b>' : '') + '</div>';
     const crias=brood.length;
-    html += '<div style="font-family:\'VT323\',monospace;font-size:12px;color:#7a6a4e">cría en la cámara: <b style="color:#c9b896">'+crias+'</b> · desecho acumulado: <b style="color:#c9b896">'+wastePiles.length+'</b></div>';
+    html += '<div style="font-family:\'VT323\',monospace;font-size:12px;color:#7a6a4e">brood in chamber: <b style="color:#c9b896">'+crias+'</b> · accumulated waste: <b style="color:#c9b896">'+wastePiles.length+'</b></div>';
   }catch(e){}
   if(body.dataset.stamp!==html){ body.innerHTML=html; body.dataset.stamp=html; }
 }

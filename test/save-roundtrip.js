@@ -141,7 +141,7 @@ if (loadErr) fail('app.js lanzó al cargar: ' + loadErr.message + '\n     ' + (l
 else ok('app.js cargado completo en el DOM falso, sin errores');
 
 const w = sandbox;
-const getVars = () => run('({soil,soilType,water,fertility,plants,hiddenRewards,foods,workers,queens,queen,brood,structures,COLS,ROWS,W,H,SURFACE_ROW,SURFACE_Y,day,time,digs,colonyFood,gen,_hasWorld:_topoHasWorld})');
+const getVars = () => run('({soil,soilType,geologyHost,water,waterVisual,floodBarriers:[...floodBarriers],fertility,plants,hiddenRewards,foods,workers,queens,queen,brood,structures,worldSeed,ancientSites,ancientMasonry,COLS,ROWS,W,H,SURFACE_ROW,SURFACE_Y,day,time,digs,colonyFood,worldMaterials,reliquias,gen,_hasWorld:_topoHasWorld})');
 
 try {
   w.topoCreateFreshWorld(48, 28);
@@ -149,9 +149,10 @@ try {
   const esperado = run('sizeProfile().founderWorkers');
   if (v.workers.length !== esperado) fail(`mundo fresco: esperadas ${esperado} obreras (perfil 48x28), hay ` + v.workers.length); else ok(`mundo fresco 48x28 · ${esperado} obreras (lo que manda el tamano) · reina ` + (v.queen ? v.queen.name : 'null'));
 
-  run('for(let i=0;i<7;i++){ soil[8][10+i]=0; soilType[8][10+i]=1; } water[8][10]=0.5; digs=42; colonyFood=9; gen=2;');
+  run("for(let i=0;i<7;i++){ soil[8][10+i]=0; soilType[8][10+i]=1; } [10,11,12,13,14,15,16,17,18].forEach((t,i)=>soilType[20][2+i]=t); water[8][10]=1.75; floodBarriers.add('12,8'); ancientSites=[{id:'test-site',c:7,r:25,depth:17,w:8,h:5,style:0,kind:'old_gallery',biome:'stone_fault',damage:0.4,muralSeed:123}]; ancientMasonry=[{c:7,r:20,siteId:'test-site',style:0,joint:'resin'}]; rebuildAncientIndexes(); digs=42; colonyFood=9; gen=2;");
   v = getVars();
   const carved = v.soil[8].filter(x => x === 0).length;
+  const seedBefore = v.worldSeed;
 
   const saved = w.serializeSave(true);
   if (!saved) fail('serializeSave devolvió false'); else ok('serializeSave OK');
@@ -160,13 +161,13 @@ try {
   else {
     ok('save persistido: ' + raw.length + ' bytes');
     const d = JSON.parse(raw);
-    for (const f of ['soil', 'soilType', 'workers', 'day', 'savedAt', 'COLS', 'ROWS', 'digs', 'colonyFood', 'gen', 'foods', 'water', 'hiddenRewards']) if (d[f] === undefined) fail('save sin campo ' + f);
+    for (const f of ['soil', 'soilType', 'workers', 'day', 'savedAt', 'COLS', 'ROWS', 'digs', 'colonyFood', 'gen', 'foods', 'water', 'floodBarriers', 'hiddenRewards', 'worldSeed', 'ancientSites', 'ancientMasonry']) if (d[f] === undefined) fail('save sin campo ' + f);
     if (d.COLS !== 48 || d.ROWS !== 28) fail('save con tamaño incorrecto ' + d.COLS + 'x' + d.ROWS); else ok('save guarda tamaño 48x28 · día ' + d.day + ' · digs ' + d.digs);
     if (typeof d.soil[0] !== 'string') fail('soil no codificado como string compacto');
     if (store.get('antfarm_worldAlive') !== '1') fail('no se marcó antfarm_worldAlive');
   }
 
-  run('soil=[]; soilType=[]; water=[]; fertility=[]; plants=[]; hiddenRewards=[]; foods=[]; workers=[]; queens=[]; queen=null; brood=[]; structures=[]; digs=0; colonyFood=0; gen=0; day=1; _topoHasWorld=false;');
+  run('soil=[]; soilType=[]; water=[]; floodBarriers.clear(); fertility=[]; plants=[]; hiddenRewards=[]; foods=[]; workers=[]; queens=[]; queen=null; brood=[]; structures=[]; digs=0; colonyFood=0; gen=0; day=1; _topoHasWorld=false;');
   v = getVars();
   if (v.soil.length !== 0) fail('no se pudo limpiar la memoria'); else ok('memoria limpiada (estado post-recarga en menú)');
 
@@ -184,12 +185,21 @@ try {
   if (v.W !== 48 * 16 || v.H !== 28 * 16) fail('W/H no recalculados: ' + v.W + 'x' + v.H); else ok('lienzo redimensionado a ' + v.W + 'x' + v.H);
   if (v.soil.length !== 28 || v.soil[0].length !== 48) fail('soil restaurado con forma ' + v.soil.length + 'x' + (v.soil[0] ? v.soil[0].length : '?'));
   if (v.soil[8].filter(x => x === 0).length !== carved) fail('túneles perdidos: ' + v.soil[8].filter(x => x === 0).length + ' vs ' + carved); else ok('túneles restaurados (' + carved + ' celdas abiertas en la fila 8)');
+  const deepTypes=v.soilType[20].slice(2,11).join(',');
+  if (deepTypes !== '10,11,12,13,14,15,16,17,18') fail('soilType profundo truncado al guardar: '+deepTypes); else ok('codificación base 20 conserva tipos profundos 10–18');
+  if (v.worldSeed !== seedBefore) fail('semilla mundial cambió al recargar: '+seedBefore+' → '+v.worldSeed); else ok('semilla mundial restaurada sin rerrollear geología');
+  if (v.ancientSites.length !== 1 || v.ancientSites[0].id !== 'test-site' || v.ancientMasonry.length !== 1) fail('vestigios antiguos no restaurados'); else ok('sitios y mampostería antigua restaurados');
+  const evidenceIndex=run('({art:_ancientArtCells.size,stone:_ancientMasonryCells.has("7,20"),generated:_generatedSiteIds.has("test-site")})');
+  if (!evidenceIndex.art || !evidenceIndex.stone || !evidenceIndex.generated) fail('índices visuales de vestigios no reconstruidos'); else ok('murales, fragmentos e IDs antiguos reindexados al cargar');
+  if (v.geologyHost.length !== 28 || v.geologyHost[20].length !== 48) fail('roca anfitriona no reconstruida desde la semilla'); else ok('roca anfitriona reconstruida para inclusiones minerales');
+  if (Math.abs(v.waterVisual[8][10]-1)>1e-9) fail('capa visual de agua no reconstruida: '+v.waterVisual[8][10]); else ok('agua visual reconstruida desde la presión física');
   if (v.workers.length !== run('sizeProfile().founderWorkers')) fail('obreras tras cargar: ' + v.workers.length); else ok(v.workers.length + ' obreras restauradas (el perfil del mapa)');
   if (!v.queen) fail('queen sigue null tras cargar (crash clásico de renderLoop)'); else ok('reina restaurada: ' + (v.queen.name || v.queen.id));
   if (v.digs !== 42) fail('digs no restaurado: ' + v.digs);
   if (v.colonyFood !== 9) fail('colonyFood no restaurado: ' + v.colonyFood);
   if (v.gen !== 2) fail('gen no restaurado: ' + v.gen);
-  if (Math.abs((v.water[8] ? v.water[8][10] : 0) - 0.5) > 0.08) fail('agua no restaurada: ' + (v.water[8] && v.water[8][10])); else ok('agua del subsuelo restaurada (' + v.water[8][10].toFixed(2) + ')');
+  if (Math.abs((v.water[8] ? v.water[8][10] : 0) - 1.75) > 0.08) fail('presión de agua no restaurada: ' + (v.water[8] && v.water[8][10])); else ok('presión de agua restaurada sin clamp (' + v.water[8][10].toFixed(2) + ')');
+  if (!v.floodBarriers.includes('12,8')) fail('cubierta antiinundación no restaurada'); else ok('cubierta antiinundación restaurada y transitable');
   if (v.foods.length === 0) fail('foods (miel) no se guardó'); else ok('comida del pasto restaurada: ' + v.foods.length);
   if (v.hiddenRewards.length === 0) fail('tesoros ocultos no restaurados'); else ok('tesoros restaurados: ' + v.hiddenRewards.length);
   if (v._hasWorld !== true) fail('_topoHasWorld sigue false tras cargar (el juego no arranca)'); else ok('_topoHasWorld=true tras cargar');
@@ -199,6 +209,28 @@ try {
 
   const tk = run("(function(){ try{ loop(performance.now()); return 'clean'; }catch(e){ return 'THREW '+e.message; } })()");
   if (tk !== 'clean') fail('loop() tras cargar: ' + tk); else ok('loop() corre limpio tras cargar');
+
+  // Compatibilidad real: una partida anterior puede traer comida cero, materiales y nombres de
+  // reliquia en español. El libro nuevo debe cargarlos sin convertir 0 en el saldo que hubiera antes.
+  const legacy = JSON.parse(store.get('antFarm_fullSave_v2'));
+  delete legacy.worldSeed; delete legacy.ancientSites; delete legacy.ancientMasonry;
+  legacy.colonyFood = 0;
+  legacy.worldMaterials = {stone:7, clay:2, fiber:1};
+  legacy.reliquias = [{tipo:'Fósil de hormiga león',piso:3,dia:2,gen:1,lore:'legado',bonus:0.02}];
+  store.set('antFarm_fullSave_v2', JSON.stringify(legacy));
+  run("colonyFood=99; worldMaterials={stone:99,wood:8}; reliquias=[];");
+  if (!w.deserializeSave()) fail('la partida española anterior no carga');
+  else {
+    const old = getVars();
+    if (old.colonyFood !== 0) fail('el saldo 0 del guardado se sustituyó por el saldo en memoria: '+old.colonyFood);
+    else ok('el libro restaura también una despensa a cero');
+    if (old.worldMaterials.stone !== 7 || old.worldMaterials.clay !== 2 || old.worldMaterials.wood !== 0) fail('materiales anteriores mal restaurados');
+    else ok('materiales anteriores restaurados por el libro (7 piedra, 2 arcilla)');
+    if (!old.reliquias[0] || old.reliquias[0].tipo !== 'Antlion Fossil') fail('LEGADO_RELIQUIA no tradujo el nombre español');
+    else ok('guardado español traduce «Fósil de hormiga león» → «Antlion Fossil»');
+    if (!Number.isInteger(old.worldSeed) || old.ancientSites.length || old.ancientMasonry.length) fail('migración sin campos de mundo dejó estado inválido');
+    else ok('guardado anterior sin semilla ni vestigios migra a un mundo válido');
+  }
 
   // guardado BIG para comprobar cuota
   w.topoCreateFreshWorld(96, 48);

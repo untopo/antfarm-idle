@@ -263,7 +263,7 @@ const GANCHO = `(()=>{
   // porteria deje pasar una -y si el texto jamas acompaña al clima, se sale por tiempo y falla igual.
   const eco = async () => {
     const lee = `(()=>{ const e2=document.getElementById('ecoWeather'); const t=document.getElementById('timeLabel'); return (e2&&e2.textContent||'?')+' // '+(t&&t.textContent||'?'); })()`;
-    const quiere = await page.evaluate(`(()=>{ const w={clear:'claro',cloudy:'nublado',rain:'lluvia',storm:'tormenta',snow:'nieve'}; return w[weather.type]||weather.type; })()`);
+    const quiere = await page.evaluate(`(()=>{ const w={clear:'clear',cloudy:'cloudy',rain:'rain',storm:'storm',snow:'snow'}; return w[weather.type]||weather.type; })()`);
     let txt = await page.evaluate(lee);
     for(let i=0; i<15 && txt.indexOf(quiere) < 0; i++){
       await new Promise(r=>setTimeout(r,100));
@@ -273,10 +273,10 @@ const GANCHO = `(()=>{
     return txt;
   };
   const iconoNieve = await eco();
-  ok(iconoNieve.indexOf('nieve') >= 0, 'el panel del mundo dice NIEVE (antes caia nieve y el cartel seguia con su solecito)', JSON.stringify(iconoNieve));
+  ok(/snow|nieve/i.test(iconoNieve), 'el panel del mundo dice NIEVE (antes caia nieve y el cartel seguia con su solecito)', JSON.stringify(iconoNieve));
   await fijar(13.0, 'rain', 40);
   const iconoLluvia = await eco();
-  ok(iconoLluvia.indexOf('lluvia') >= 0 && iconoLluvia.indexOf('nieve') < 0, 'y con lluvia dice lluvia, sin que la nieve se la robe', JSON.stringify(iconoLluvia));
+  ok(/rain|lluvia/i.test(iconoLluvia) && !/snow|nieve/i.test(iconoLluvia), 'y con lluvia dice lluvia, sin que la nieve se la robe', JSON.stringify(iconoLluvia));
 
   console.log('\n· el cielo no parpadea con el reloj parado');
   const quieta = await page.evaluate(`(async()=>{ paused=true; weather.type='cloudy'; weather.intensity=0.4;

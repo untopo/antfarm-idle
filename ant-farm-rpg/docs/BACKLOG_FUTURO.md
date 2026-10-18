@@ -11,6 +11,7 @@
 - **Mundos de migración**: nuevos mapas de la capa 2 que se publican como expansión gratuita (o de contenido, ver MONETIZACION.md).
 - **Códigos de regalo** (como Obelisk Miner): recompensas de comunidad, sin caducidad o con caducidad larga.
 - **Notas de versión dentro del juego**: un registro de cambios que el jugador puede leer al volver.
+- **La colonia actual como estrato futuro**: conservar sólo marcas nacidas de hechos reales (línea de una inundación sellada, hollín de una sala perdida, pigmento donde hubo tráfico o duelo, reparación con el material disponible). Cuando una cámara quede abandonada durante suficiente tiempo, desgaste y derrumbes deben convertir esas huellas —sin texto explicativo— en las ruinas que verá una colonia futura. No inventar una historia retrospectiva: evento real → marca física → deterioro → inferencia del jugador.
 
 ## Reglas para todo lo de aquí
 

@@ -274,6 +274,10 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ok   ' + m); } else { fai
   // y la comparación entre los dos tratos es justa. En el intento anterior el agua se iba al fondo de la
   // galeria y los dos tratos llevaban agua: la resta salia ~0, que era un fallo del bote, no del juego.
   const agua = await page.evaluate(async () => {
+    // This section measures rendering, not simulation. Freeze ants and cache churn so both samples
+    // differ only by the water overlay; otherwise random digging can add more fillRect calls to the
+    // dry half and hide water that was in fact painted every frame.
+    const wasPaused = paused; paused = true;
     const ANCHO = 8, ALTO = 3;
     const c0 = Math.max(2, Math.min(COLS - ANCHO - 2, 38));
     const r0 = Math.max(SURFACE_ROW + 4, Math.min(ROWS - ALTO - 2, SURFACE_ROW + 13));
@@ -281,7 +285,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ok   ' + m); } else { fai
     for (let r = r0 - 1; r <= r0 + ALTO; r++) for (let c = c0 - 1; c <= c0 + ANCHO; c++) { if (r < 0 || r >= ROWS || c < 0 || c >= COLS) continue; guarda.push([r, c, soil[r][c], soilType[r] && soilType[r][c]]); }
     // camara sellada por roca por los cuatro lados: el agua no puede irse y la medida es estable
     for (let r = r0; r < r0 + ALTO; r++) for (let c = c0; c < c0 + ANCHO; c++) {
-      soil[r][c] = 0; if (soilType[r]) soilType[r][c] = 0; water[r][c] = 0.6;
+      soil[r][c] = 0; if (soilType[r]) soilType[r][c] = 0; addWater(c, r, 0.6);
     }
     soilCacheDirty = true; rebuildSoilCache();
     const cuentaAgua = () => { let n = 0; for (let r = SURFACE_ROW; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (water[r][c] > 0.08) n++; return n; };
@@ -302,7 +306,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ok   ' + m); } else { fai
     await new Promise(r => setTimeout(r, 2600));
     ctx.fillRect = real;
     for (const q of guarda) { soil[q[0]][q[1]] = q[2]; if (soilType[q[0]]) soilType[q[0]][q[1]] = q[3]; }
-    soilCacheDirty = true; rebuildSoilCache();
+    soilCacheDirty = true; rebuildSoilCache(); paused = wasPaused;
     return { conAgua: +(s1 / (c1 || 1)).toFixed(1), sinAgua: +(s2 / (c2 || 1)).toFixed(1),
       casillas: +(a1 / (c1 || 1)).toFixed(1), casillas2: +(a2 / (c2 || 1)).toFixed(1), cuadros1: c1, cuadros2: c2 };
   });

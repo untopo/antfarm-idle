@@ -6,7 +6,7 @@ if [ -d /tmp/libs ]; then export LD_LIBRARY_PATH="/tmp/libs${LD_LIBRARY_PATH:+:$
 # Uso: bash test/run-all.sh
 cd "$(dirname "$0")/.." || exit 1
 fail=0
-for t in no-orphans create-farm-flow world-size-rules brood-hatch foundacion-dias paron-fundacion salida-superficie tandem-objetivo expansion-agua primera-losa save-roundtrip reload-simulation; do
+for t in no-orphans create-farm-flow economia-integracion core-agua core-agua-flujo core-mundo geologia-integracion agua-sucesion-integracion agua-visual vestigios-ambientales world-size-rules brood-hatch foundacion-dias paron-fundacion salida-superficie tandem-objetivo expansion-agua primera-losa save-roundtrip reload-simulation; do
   printf '\n=== test/%s.js ===\n' "$t"
   if node "test/$t.js" > /tmp/_t.out 2>&1; then
     tail -n 3 /tmp/_t.out
@@ -35,6 +35,8 @@ done
 
 printf '\n=== sintaxis ===\n'
 node --check ant-farm-rpg/js/app.js && echo "app.js OK"
+node --check ant-farm-rpg/core/mundo.js && echo "mundo.js OK"
+node --check ant-farm-rpg/core/agua.js && echo "agua.js OK"
 node -e '
 const fs=require("fs");
 const h=fs.readFileSync("ant-farm-rpg/index.html","utf8");

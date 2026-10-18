@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
   <link rel="icon" href="data:,">
 
@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ANT FARM — Pixel Real v4 · 16-BIT</title>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache">
-<link rel="stylesheet" href="css/style.css?v=20261017a">
+<link rel="stylesheet" href="css/style.css?v=20261018d">
 
 <style id="topoHideUntilStart">
   #appRoot{display:none !important}
@@ -270,7 +270,7 @@
             <span style="flex:1;background:#000;border:3px solid #000;padding:8px;text-align:center;font-family:'Press Start 2P',monospace;font-size:7px">RECOMP <b id="cRew" style="color:var(--amber)">0/3</b></span>
           </div>
           <div class="explain">
-            <b>Lee sin leer:</b> Cada hormiga lleva <b style="background:var(--amber);color:#000;padding:2px 4px">BURBUJA</b> gigante encima. <span style="background:var(--green);color:#000;padding:2px 4px">🍯→CASA</span> = lleva miel. <span style="background:var(--red);color:#fff;padding:2px 4px">⛏ CAVA 60%</span> = picando. <span style="background:var(--cyan);color:#000;padding:2px 4px">⬢ CIAN</span> = grita comida. Todo pixel art, sin letras raras.
+            <b>Read at a glance:</b> Every ant carries a large <b style="background:var(--amber);color:#000;padding:2px 4px">STATUS BUBBLE</b>. <span style="background:var(--green);color:#000;padding:2px 4px">🍯→HOME</span> means she carries honey. <span style="background:var(--red);color:#fff;padding:2px 4px">⛏ DIG 60%</span> means she is excavating. <span style="background:var(--cyan);color:#000;padding:2px 4px">⬢ CYAN</span> calls out food. Pure readable pixel art.
           </div>
         </div>
         <div class="ai-section">
@@ -419,7 +419,7 @@
           <div class="ai-head"><span>📜 HISTORIAL</span><span><button class="pixel-btn small" id="btnClearHist" style="padding:6px 8px;font-size:7px">LIMPIAR</button></span></div>
           <div class="event-log" id="eventLog"></div>
           <div class="explain">
-            <b>Tinta:</b> <span style="color:var(--cyan)">⬢ CIAN = comida</span>, <span style="color:#ffdd57">⬣ AMARILLO = ayuda</span>, <span style="color:#ff6b9d">◆ MAGENTA</span> — pintan el suelo y otras la leen.
+            <b>Ink:</b> <span style="color:var(--cyan)">⬢ CYAN = food</span>, <span style="color:#ffdd57">⬣ YELLOW = help</span>, <span style="color:#ff6b9d">◆ MAGENTA = discovery</span> — ants paint the ground and others read it.
           </div>
         </div>
         <div class="ai-section">
@@ -522,7 +522,7 @@
       </div>
       <div id="profileTab_rasgos">
         <div style="background:#000;border:2px solid #000;padding:6px">
-          <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#8a7a5a;letter-spacing:0.3px">RASGOS · de 0 a 100</div>
+          <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#8a7a5a;letter-spacing:0.3px">TRAITS · from 0 to 100</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:6px" id="profileTraits"></div>
           <div id="profileTraitsGist" style="font-family:'VT323',monospace;font-size:15px;color:#c9b896;line-height:1.2;margin-top:6px;padding-top:5px;border-top:2px solid #1a1a1a">—</div>
         </div>
@@ -532,7 +532,7 @@
           <div style="background:#000;border:2px solid #000;padding:6px;text-align:center">
             <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#8a7a5a">QUÉ TAN BIEN LE VA</div>
             <div style="font-family:'Press Start 2P',monospace;font-size:17px;color:#2de67a;line-height:1;margin-top:2px" id="profileFitness">1.24</div>
-            <div style="font-family:'VT323',monospace;font-size:14px;color:#8a7a5a;line-height:1" id="profileDeliveries">3 ent • 2 exc</div>
+            <div style="font-family:'VT323',monospace;font-size:14px;color:#8a7a5a;line-height:1" id="profileDeliveries">3 deliveries • 2 digs</div>
           </div>
           <div style="background:#000;border:2px solid #000;padding:6px;text-align:center">
             <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#8a7a5a">PELEAS • SEGUIDORAS</div>
@@ -557,7 +557,7 @@
           <div id="profileMindGist" style="font-family:'VT323',monospace;font-size:17px;color:#fff8dc;line-height:1.2;margin-top:6px;background:#2a0f00;border:2px solid #000;padding:6px 7px">—</div>
           <div id="profileMind" style="margin-top:6px;display:flex;flex-direction:column;gap:3px"></div>
           <canvas id="profileNn" width="300" height="120" style="width:100%;height:120px;display:block;margin-top:7px;image-rendering:pixelated;background:#050505;border:2px solid #000"></canvas>
-          <div style="font-family:'VT323',monospace;font-size:13px;color:#7a6a4e;line-height:1.2;margin-top:4px">Cada cuadro es una neurona. Las lineas <b style="color:#2de67a">verdes</b> empujan y las <b style="color:#ff3b30">rojas</b> frenan: cuanto mas gruesa, mas manda. IZQUIERDA = lo que percibe · CENTRO = como lo mezcla · DERECHA = lo que decide (<span style="color:#ffcc00">GIRO</span>, <span style="color:#2de67a">VEL</span>, <span style="color:#ff3b30">CAVA</span>, <span style="color:#00e5ff">T1</span>, <span style="color:#b47aff">T2</span>).</div>
+          <div style="font-family:'VT323',monospace;font-size:13px;color:#7a6a4e;line-height:1.2;margin-top:4px">Each box is a neuron. <b style="color:#2de67a">Green</b> lines excite and <b style="color:#ff3b30">red</b> lines inhibit; thicker lines have more influence. LEFT = perception · CENTER = integration · RIGHT = decision (<span style="color:#ffcc00">TURN</span>, <span style="color:#2de67a">SPEED</span>, <span style="color:#ff3b30">DIG</span>, <span style="color:#00e5ff">T1</span>, <span style="color:#b47aff">T2</span>).</div>
           <div id="profileMindNums" style="display:none;margin-top:6px;font-family:'VT323',monospace;font-size:14px;color:#c9b896;line-height:1.25;white-space:pre-wrap"></div>
         </div>
       </div>
@@ -689,7 +689,7 @@
     <div style="position:relative;width:3px;background:#000;flex-shrink:0;z-index:1;margin:3px 0;box-shadow:inset 1px 0 0 rgba(255,255,255,0.08)"></div>
     <!-- OBRERAS -->
     <button id="btnRoster" title="Ver la lista de todas las hormigas activas (tecla L)" aria-label="Lista de hormigas activas" style="position:relative;width:104px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:2px 4px;flex-shrink:0;z-index:1;background:transparent;border:none;color:inherit;font:inherit;cursor:pointer">
-      
+
       <div style="display:flex;align-items:center;gap:5px">
         <span style="width:22px;height:16px;display:inline-flex;align-items:center;justify-content:center;font-size:22px;line-height:1;filter:drop-shadow(1px 1px 0 #000) drop-shadow(0 0 2px rgba(255,255,255,0.5))">🐜</span>
         <span id="velAntCount" style="font-family:'Press Start 2P',monospace;font-size:19px;color:#fffef0;line-height:1;text-shadow:1px 1px 0 #000, 0 0 6px rgba(255,255,255,0.35);min-width:30px">0</span>
@@ -808,11 +808,14 @@
   <!-- Motor del juego — núcleo profesional modular -->
   
 
-<script src="core/bandas.js?v=20261017a"></script>
-<script src="core/tesoros.js?v=20261017a"></script>
-<script src="core/economia.js?v=20261017a"></script>
-<script src="js/app.js?v=20261017a"></script>
-<script src="js/splash-topo.js?v=20261017a"></script>
+<script src="core/bandas.js?v=20261018d"></script>
+<script src="core/mundo.js?v=20261018d"></script>
+<script src="core/tesoros.js?v=20261018d"></script>
+<script src="core/economia.js?v=20261018d"></script>
+<script src="core/agua.js?v=20261018d"></script>
+<script src="js/i18n-en.js?v=20261018d"></script>
+<script src="js/app.js?v=20261018d"></script>
+<script src="js/splash-topo.js?v=20261018d"></script>
 <script>
 // Vigia del arranque: si js/app.js no termino de cargar, decirlo en pantalla en vez de dejar
 // botones sordos. Es lo unico que vive en el HTML; el juego entero esta en js/app.js.
@@ -822,12 +825,12 @@
     const d=document.createElement('div');
     d.id='topoBootFail';
     d.style.cssText='position:fixed;inset:0;z-index:10099;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box';
-    d.innerHTML='<div style="max-width:440px;background:#1a140f;border:4px solid #000;box-shadow:8px 8px 0 #000;padding:18px;text-align:center"><div style="font-family:\'Press Start 2P\',monospace;font-size:11px;color:#ff8c00;line-height:1.6">EL MOTOR NO ARRANCO</div><div style="font-family:\'VT323\',monospace;font-size:15px;color:#c9b896;margin-top:10px;line-height:1.4">'+msg+'</div><button id="topoBootReload" class="pixel-btn primary" style="margin-top:14px;justify-content:center">RECARGAR</button></div>';
+    d.innerHTML='<div style="max-width:440px;background:#1a140f;border:4px solid #000;box-shadow:8px 8px 0 #000;padding:18px;text-align:center"><div style="font-family:\'Press Start 2P\',monospace;font-size:11px;color:#ff8c00;line-height:1.6">THE ENGINE DID NOT START</div><div style="font-family:\'VT323\',monospace;font-size:15px;color:#c9b896;margin-top:10px;line-height:1.4">'+msg+'</div><button id="topoBootReload" class="pixel-btn primary" style="margin-top:14px;justify-content:center">RELOAD</button></div>';
     document.body.appendChild(d);
     const b=document.getElementById('topoBootReload'); if(b) b.onclick=function(){ location.reload(); };
   }
-  window.addEventListener('error', function(e){ if(!window._topoFlowReady) fail(String((e&&e.message)||'error de carga')+' · '+((e&&e.filename)?String(e.filename).split('/').pop():'js/app.js')); });
-  setTimeout(function(){ if(!window._topoFlowReady) fail('js/app.js no termino de cargar. Suele ser cache vieja: recarga forzada (Ctrl+Shift+R).'); }, 3000);
+  window.addEventListener('error', function(e){ if(!window._topoFlowReady) fail(String((e&&e.message)||'load error')+' · '+((e&&e.filename)?String(e.filename).split('/').pop():'js/app.js')); });
+  setTimeout(function(){ if(!window._topoFlowReady) fail('js/app.js did not finish loading. This is usually stale cache; hard-refresh with Ctrl+Shift+R.'); }, 3000);
 })();
 </script>
 

@@ -10,30 +10,35 @@ sostiene `test/profundidad.js` (34 comprobaciones en Chrome real).
 
 ---
 
-## 1 · Las nueve bandas
+## 1 · Nueve zonas predominantes, no nueve franjas
 
-`BANDAS` es la tabla maestra. El tipo de roca de cada fila sale de ahí (`tipoDePiso(piso)`), y también su
-dureza, su veta y su color de paleta. Antes existía una cadena de `if (depth<3) … if (depth<38) …` a mano.
+`BANDAS` sigue siendo la tabla maestra de progresión: dureza, herramientas, paleta y profundidad útil.
+Pero ya **no ordena cada fila**. `core/mundo.js` convierte la semilla persistente en pliegues suaves,
+lentes de la roca vecina y biomas continuos; `_buildGeologyRows()` hace la versión rápida para el mapa y
+guarda por separado la roca anfitriona bajo cada inclusión. El mismo corte generado hoy o dentro de una
+ampliación da exactamente las mismas celdas.
 
-| banda | pisos | roca | dureza | veta (metal/gema) | prob. por casilla | qué hay enterrado |
-|---|---|---|---|---|---|---|
-| 0 RAÍCES | 0–2 | tierra | 0 | — | — | semillas, agua, hongo |
-| 1 BARRO | 3–7 | arcilla | 4 | — | — | ánfora de miel, fibras |
-| 2 ARENA MOVEDIZA | 8–13 | arena | −4 | — | — | fósil de hormiga león |
-| 3 PIEDRA | 14–21 | piedra | 9 | cobre | 5,2 % | geoda de cuarzo |
-| 4 PIZARRA | 22–29 | pizarra | 14 | hierro | 4,0 % | ámbar con hormiga |
-| 5 CUARCITA | 30–37 | cuarzo (11) | 18 | oro | 3,2 % | lente de cristal |
-| 6 MÁRMOL NEGRO | 38–45 | mármol (12) | 23 | gemas (16) | 2,6 % | hongo linterna, sal de roca |
-| 7 OBSIDIANA | 46–54 | obsidiana (13) | 29 | gemas (16) | 2,2 % | lágrima de obsidiana |
-| 8 BASALTO ÍGNEO | 55+ | basalto (14) | 34 | oro | 1,8 % | corazón de colina, meteorito, nido antiguo |
+| zona predominante | profundidad de referencia | roca | dureza | depósitos cuya abundancia crece cerca |
+|---|---:|---|---:|---|
+| RAÍCES | 0–2 | tierra | 0 | inclusiones de cobre excepcionalmente pobres pueden asomar más abajo |
+| BARRO | 3–7 | arcilla | 4 | — |
+| ARENA MOVEDIZA | 8–13 | arena | −4 | cola pobre de cobre |
+| PIEDRA | 14–21 | piedra | 9 | cobre (centro 18, núcleo ±9) |
+| PIZARRA | 22–29 | pizarra | 14 | hierro (centro 27, núcleo ±9) |
+| CUARCITA | 30–37 | cuarcita (11) | 18 | oro (centro 35, núcleo ±7) |
+| MÁRMOL NEGRO | 38–45 | mármol (12) | 23 | cristal y sal |
+| OBSIDIANA | 46–54 | obsidiana (13) | 29 | cristal (centro 44) y sal (centro 50) |
+| BASALTO ÍGNEO | 55+ | basalto (14) | 34 | colas profundas, magma y masa meteórica |
 
-Tres cosas de esa tabla son el corazón del asunto:
+El contrato nuevo es estadístico y explícito:
 
-* **la dureza sube** (0 → 34) y con ella los golpes que cuesta un bloque: `_hard = durezaDe(tipo)`;
-* **la veta escasea** (5,2 % → 1,8 %) y cada metal vive *solo* en su banda: el test cuenta casillas
-  fuera de banda y exige **cero**;
-* **lo bueno no está en el mapa inicial**: en un mundo SMALL (22 pisos) hay cobre y *nada* de hierro, oro,
-  cuarzo ni gemas. Lo raro está detrás de la losa.
+* **la dureza predominante sube** (0 → 34), aunque un pliegue local pueda hacer reaparecer una roca vecina;
+* **las inclusiones ocupan 2–5 %**, forman recorridos conectados y tienen al menos 68 % de su masa en el
+  núcleo útil; una cola pobre puede cruzar una zona, porque la naturaleza no conoce pisos numerados;
+* **el descubrimiento viene de la abundancia**: una muestra rara puede anticipar hierro, pero bajar hace
+  que cobre → hierro → oro → cristal/sal pasen de anécdota a veta explotable;
+* `test/core-mundo.js` mide 25 propiedades puras y `test/geologia-integracion.js` compara 875.520 celdas
+  generadas enteras o por cortes: cero rerroll y cero costura de veta.
 
 Tipos de casilla nuevos: `11` cuarzo, `12` mármol, `13` obsidiana, `14` basalto, `15` **magma**,
 `16` **veta de gemas**, `17` **losa del umbral**, `18` sal de roca. Todos se pintan con `_VOX` +
@@ -69,11 +74,12 @@ dice en vez de dejar a la colonia picando en seco.
    sola obrera libre mantiene el pozo dentro de las tres columnas de la boca hasta la primera losa. Si la
    despensa toca 5, vuelve a mandar la comida. El escombro queda abajo como residuo con coste higiénico,
    para no obligarla a subir cada bloque por separado. Después de la primera losa esta cadena se retira;
-3. **la obra de la losa**: si la losa está a tiro y la colonia puede morderla, hasta la mitad de las
-   excavadoras (rol EXCAVADORA o `construccion > 52`) reciben como objetivo la casilla `17` con hueco
-   libre encima **más cercana a su columna** — y solo si están a una fila de la losa. Darles un objetivo
-   lejano las ponía a rebotar contra la pared (`blocked` subiendo y cero picoteos: medido, 30 rebotes y
-   `hp` intacto).
+3. **la obra de la losa**: si la losa está a tiro y la colonia puede morderla, se forma una cuadrilla de
+   **4 a 8** (24 % de las obreras, topada) con una líder y apoyos lentos. Reciben la casilla `17` con hueco
+   libre encima **más cercana a su columna**, sólo si están a una fila. La losa también pertenece al frente
+   genérico, por lo que ese camino vuelve a comprobar el cupo: sin esa segunda guarda terminaba reclutada
+   casi toda la colonia. Darles un objetivo lejano las ponía a rebotar contra la pared (`blocked` subiendo
+   y cero picoteos).
 
 **Qué pasa al romperse** (`abrirUmbral`): la fila de la losa se convierte en el primer piso de la banda
 que se abre, `expandWorld(add, silencioso=true)` rellena la banda nueva (roca + vetas + una o dos cuevas
@@ -105,7 +111,11 @@ que una colonia novata no se encuentre el meteorito en el primer día. Nueve **r
 | Lágrima de obsidiana | 7 | +2 obsidiana, +180 XP, +4 % |
 | Corazón de colina | 8 | +20 comida, +300 XP, +5 % |
 | Meteorito hundido | 9 | +1 meteorito, +220 XP, +5 % |
-| Nido de la colonia vieja | 9 | +1 obsidiana, +260 XP, +3 % |
+| Fragmento trabajado (`Worked Chamber Fragment`) | 9 | +1 obsidiana, +260 XP, +3 % (sólo compatibilidad; ya no sale en cofres) |
+
+Los textos describen caras, hollín, arañazos, burbujas o temperatura; no dicen quién los hizo ni qué
+significan. El antiguo «nido de la colonia vieja» se conserva sólo para migrar guardados y sale del sorteo:
+la historia de otras colonias vive en la geometría y los murales del mapa, no dentro de un cofre que la explica.
 
 Cada maravilla **una sola vez por partida** (`anotarReliquia`); se queda en la **VITRINA** del panel del
 mundo con su nombre, el piso donde salió y el día, y su bonus de excavación se acumula con tope de
@@ -114,6 +124,20 @@ descubierta es un rombo de cuatro bloques, para que se lea «esto es una maravil
 
 Materiales nuevos en la bolsa de la colonia: `cuarzo`, `gema`, `obsidiana`, `meteorito` (además de los
 `cobre/hierro/oro` que ya saltaban de las vetas).
+
+### 3.1 · La historia enterrada no tiene narrador
+
+`createWorldProfile(seed)` crea de dos a cuatro estilos y ciclos ocultos. Cada ciclo lleva una causa de
+deterioro que **sólo se manifiesta físicamente**: línea pálida y agua finita, hollín, raíces, hundimiento,
+sellado; sitios cercanos repiten paleta y motivo, y algunas reparaciones usan el estilo de un ciclo posterior.
+`worldSitesForRange` deriva IDs por trozos de profundidad, de modo que ampliar y crear todo de una vez deja
+los mismos sitios y exactamente los mismos píxeles de mural.
+
+La interfaz no recibe «templo», «tumba», traducción, cultura ni teoría. El jugador ve cámara rota, juntas,
+canales ciegos, fragmentos reparados y arte en la pared de fondo. Sólo 1,69 % de los sitios contiene uno de
+tres grupos marginales anómalos, mezclado con el mural y sin aviso. `test/vestigios-ambientales.js` exige
+cero eventos/popups y compara la expansión píxel por píxel; `test/core-mundo.js` comprueba que causa, estilo,
+cicatriz y agua estén relacionados y no sean ruido independiente.
 
 ## 4 · El fuego cobra peaje
 
@@ -129,17 +153,22 @@ se cava (`digNeeded 999`, y si una obrera lo intenta: `🔥 QUEMA` y sube). Lo q
 
 ## 5 · Lo que se guardó, y lo que no
 
-Persisten en `antFarm_fullSave_v2`: `bandaMax`, `umbralesRotos`, `bonusCava`, `reliquias[]` y el estado de
-la losa (`umbral {r, hp, hpMax, banda}`). Al cargar, si el mapa no termina en losa (guardado de ayer) se
-le pone una encima con `colocarUmbral()`, y `reindexMagma()` rehace el índice del fuego.
-`ROWS/SURFACE_ROW/soil/soilType` ya se guardaban.
+Persisten en `antFarm_fullSave_v2`: `bandaMax`, `umbralesRotos`, `bonusCava`, `reliquias[]`, la losa,
+`worldSeed`, `ancientSites[]`, `ancientMasonry[]`, barreras y presión de agua. La cuadrícula usa un carácter
+en base 20: así preserva tipos 10–18; los guardados decimales antiguos siguen siendo un subconjunto válido.
+Al cargar se reconstruyen roca anfitriona, índices de murales, IDs materializados, magma y `waterVisual`.
+Si un guardado antiguo no termina en losa, `colocarUmbral()` la repone.
+
+Ya no está fuera el agua: `core/agua.js` conserva masa, llena, eleva presión, rebosa y desplaza al poner un
+dique; el mapa muestra niveles parciales y una bolsa enterrada no se rellena. Las hormigas evitan una ruta
+mojada, buscan costa si quedan sumergidas y pueden sellar la brecha con una cubierta que ellas sí atraviesan.
 
 Fuera, a propósito, por ahora:
 
-* **nivel freático y anegamiento** — hay un `water[][]` en el motor pero no lo he tocado: sin reglas de
-  flujo no aporta y sí riesgo de llenar el nido de charcos falsos;
 * **reliquias construyendo cámaras** — hoy la vitrina es el panel; poner los objetos físicamente en una
   cámara es un trabajo de dibujo aparte y lo dejo apuntado en el roadmap;
+* **las marcas de la colonia actual convertidas en ruinas futuras** — queda como nota causal en
+  `BACKLOG_FUTURO.md`, sin fabricar eventos antes de que el juego jugable esté cerrado;
 * **nada del cerebro**: las 5 salidas de la red siguen siendo `steer/thrust/cava/tinta×2`; la losa y las
   bandas cambian el *mundo*, no la red neuronal. La respuesta honesta sobre la inteligencia está en
   `ROADMAP.md` § P6.

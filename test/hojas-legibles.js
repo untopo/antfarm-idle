@@ -80,7 +80,7 @@ const html = fs.readFileSync(path.join(ROOT, 'ant-farm-rpg/index.html'), 'utf8')
     const card = document.querySelector('.rc-card');
     const esc = card ? (parseFloat((getComputedStyle(card).transform.match(/matrix\(([-\d.]+)/) || [, '1'])[1]) || 1) : 1;
     const tiempo = px('#rcTime');
-    return { vel: px('#velAntBar .pixel-btn.small'), obreras: px('#velAntCount'), etiquetaOBRERAS: (() => { const b = document.getElementById('btnRoster'); const s = b ? [...b.querySelectorAll('span')].find(x => /OBRERAS/.test(x.textContent)) : null; return s ? { f: parseFloat(getComputedStyle(s).fontSize) } : null; })(), almacen: px('#velFoodCount'), hora: tiempo ? { f: +(tiempo.f * esc).toFixed(1) } : null, dia: px('#rcDiaN') ? { f: +(px('#rcDiaN').f * esc).toFixed(1) } : null, mas1: px('#btnDay1') };
+    return { vel: px('#velAntBar .pixel-btn.small'), obreras: px('#velAntCount'), etiquetaOBRERAS: (() => { const b = document.getElementById('btnRoster'); const s = b ? [...b.querySelectorAll('span')].find(x => /OBRERAS|WORKERS/.test(x.textContent)) : null; return s ? { f: parseFloat(getComputedStyle(s).fontSize) } : null; })(), almacen: px('#velFoodCount'), hora: tiempo ? { f: +(tiempo.f * esc).toFixed(1) } : null, dia: px('#rcDiaN') ? { f: +(px('#rcDiaN').f * esc).toFixed(1) } : null, mas1: px('#btnDay1') };
   });
   ok(tipo.vel && tipo.vel.f >= 11, 'los botones de velocidad se leen sin entornar los ojos', `x1..x16 a ${tipo.vel && tipo.vel.f}px`);
   ok(tipo.obreras && tipo.obreras.f >= 14, 'la cifra de obreras es la cosa mas grande de su celda', `${tipo.obreras && tipo.obreras.f}px · «${tipo.obreras && tipo.obreras.txt}»`);
@@ -228,9 +228,9 @@ const html = fs.readFileSync(path.join(ROOT, 'ant-farm-rpg/index.html'), 'utf8')
       estadoVisible: getComputedStyle(e).display !== 'none',
       celdas: celd.map(c => ({ txt: c.textContent.replace(/\s+/g, ' ').trim().slice(0, 26), desb: c.scrollWidth - c.clientWidth })) };
   });
-  ok(/^Lo suyo: [a-záéíóúñ ]+ \(\d+ de 100\)/.test(cabecera.gist), 'los RASGOS vienen con una frase que dice en que es buena (y en que peor)', `"${cabecera.gist}"`);
+  ok(/^Best trait: .+ \(\d+ of 100\)\. Weakest: .+ \(\d+\)\.$/.test(cabecera.gist), 'los RASGOS vienen con una frase que dice en que es buena (y en que peor)', `"${cabecera.gist}"`);
   ok(cabecera.gistCorta <= 1, 'y la frase cabe entera en la hoja', `${cabecera.gistCorta}px de sobrante`);
-  ok(/entregas/.test(cabecera.entregas) && !/excavs|ent •/.test(cabecera.entregas), 'el recuento de servicios ya no va en abreviaturas ininteligibles', `"${cabecera.entregas}"`);
+  ok(/deliveries/.test(cabecera.entregas) && !/excavs|ent •/.test(cabecera.entregas), 'el recuento de servicios ya no va en abreviaturas ininteligibles', `"${cabecera.entregas}"`);
   ok(cabecera.celdas.every(c => c.desb <= 1), 'ninguna caja del estado se sale de su hueco con los titulos nuevos', cabecera.celdas.map(c => c.desb + '·' + c.txt).join(' | '));
 
   const mente = await page.evaluate(async () => {
@@ -270,7 +270,7 @@ const html = fs.readFileSync(path.join(ROOT, 'ant-farm-rpg/index.html'), 'utf8')
     const n = document.getElementById('profileMindNums');
     return { visible: getComputedStyle(n).display !== 'none', txt: n.textContent };
   });
-  ok(nums.visible && /ENTRADA/.test(nums.txt) && /-1 a 1/.test(nums.txt) && /SALIDA/.test(nums.txt), '«ver numeros» destapa los 11 sensores y las 5 salidas, con su escala', `${(nums.txt.match(/\n/g) || []).length + 1} lineas`);
+  ok(nums.visible && /INPUT/.test(nums.txt) && /-1 to 1/.test(nums.txt) && /OUTPUT/.test(nums.txt), '«ver numeros» destapa los 11 sensores y las 5 salidas, con su escala', `${(nums.txt.match(/\n/g) || []).length + 1} lineas`);
   await page.evaluate(() => document.getElementById('btnCerebroNumeros').click()); await sleep(180);
 
   console.log('\n· el inventario: todo lo que hay, scrolleable');

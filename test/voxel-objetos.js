@@ -66,6 +66,21 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ok   ' + m); } else { fai
   const atlas = peticiones.filter(u => /categoria_02_vegetacion|categoria_03_alimentos|honey_tight_transparent/.test(u));
   ok(atlas.length === 0, `ningún atlas de plantas, comida o miel se descarga (${atlas.length} de ${peticiones.length} peticiones)${atlas.length ? ' · ' + atlas.map(u => u.split('/').pop()).join(', ') : ''}`);
 
+  // The procedural meadow may randomly contain only flowers/mushrooms, or put two plants close enough
+  // for one to cover the other's narrow highlight. This test is for the painter, not for that lottery:
+  // freeze simulation and give it four isolated, fully-grown fixtures. The threshold remains strict and
+  // now all four promised paint paths are exercised on every run.
+  await page.evaluate(() => {
+    paused=true;
+    const fixtures=[];
+    for(const [c,type] of [[8,'clover'],[12,'grassTuft'],[16,'berryBush'],[20,'fruitTree']]){
+      if(!soil[SURFACE_ROW]||soil[SURFACE_ROW][c]!==1) continue;
+      fixtures.push({c,x:c*CELL+8,y:SURFACE_Y-6,type,growth:1,maxGrowth:1,age:0,fruitCooldown:DAY_LENGTH,variant:0,_voxelTest:true});
+    }
+    plants.splice(0,plants.length,...fixtures);
+  });
+  await sleep(120);
+
   const pinta = await page.evaluate(async () => {
     const VISTOS = new Set(), R = [], T = [];
     const P = CanvasRenderingContext2D.prototype, _fr = P.fillRect, _ft = P.fillText;
@@ -144,7 +159,11 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ok   ' + m); } else { fai
       // alrededor, que no lleva relieve y no es suya. Su prueba propia esta en test/plantas-piso.js, que
       // mide los rectangulos color paja cuadro a cuadro.
       if (pl.seca) { secas++; continue; }
-      const r1 = familia(pl.x, pl.y - 6, 14, 22, verde);
+      // A full-grown berry bush or fruit tree reaches 40-50 px above its stored root coordinate. The old
+      // 22 px window silently missed its crown and then called the missing measurement a missing highlight.
+      // Fixtures are 64 px apart, so this taller window still belongs to one plant only.
+      const alcanceY = (pl.type === 'berryBush' || pl.type === 'fruitTree') ? 64 : 22;
+      const r1 = familia(pl.x, pl.y - 6, 14, alcanceY, verde);
       // El relieve de la mata, en cambio, se le pide a lo que SOLO ella pinta: drawPlant deriva del verde de
       // la estacion una franja de luz (+36) y una de sombra (-42) - app.js:4751-4757 - y la cesped de la
       // franja no usa esos dos tonos. Asi la comprobacion es por mata y no por «cuantos rectangulos verdes
@@ -153,7 +172,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ok   ' + m); } else { fai
       try {
         const _b = _hierbaHoy(), _l = _tilde16(_b, 36), _s = _tilde16(_b, -42);
         for (const r of R) {
-          if (Math.abs(r[0] + r[2] / 2 - pl.x) > 14 || Math.abs(r[1] + r[3] / 2 - (pl.y - 6)) > 22) continue;
+          if (Math.abs(r[0] + r[2] / 2 - pl.x) > 14 || Math.abs(r[1] + r[3] / 2 - (pl.y - 6)) > alcanceY) continue;
           if (r[4] === _l) _luz = true; else if (r[4] === _s) _sombra = true;
         }
       } catch (e) { }
@@ -201,7 +220,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ok   ' + m); } else { fai
   const DEBE = { clover: g => (g > 0.45 ? ['luz'] : []), grassTuft: () => ['luz', 'sombra'], berryBush: g => (g > 0.32 ? ['luz'] : []).concat(g > 0.72 ? ['sombra'] : []), fruitTree: g => (g > 0.22 ? ['luz'] : []) };
   const exigibles = pinta.plantas.filter(p => DEBE[p.tipo]);
   const fallan = exigibles.filter(p => DEBE[p.tipo](p.growth).some(k => !p[k]));
-  ok(exigibles.length >= 2 && fallan.length === 0, `cada mata pinta la franja que su tipo y su crecimiento prometen: ${exigibles.length - fallan.length}/${exigibles.length} (trebol, brizno, zarza, arbolillo; fuera de la puerta: ${pinta.plantas.length - exigibles.length} setas/flores · ${pinta.plantasSecas || 0} en seco, medidas en plantas-piso.js)`);
+  ok(exigibles.length >= 2 && fallan.length === 0, `cada mata pinta la franja que su tipo y su crecimiento prometen: ${exigibles.length - fallan.length}/${exigibles.length} (trebol, brizno, zarza, arbolillo; fuera de la puerta: ${pinta.plantas.length - exigibles.length} setas/flores · ${pinta.plantasSecas || 0} en seco, medidas en plantas-piso.js)${fallan.length ? ' · faltan ' + fallan.map(p => p.tipo + '@' + p.growth + ':' + DEBE[p.tipo](p.growth).filter(k => !p[k]).join('+')).join(', ') : ''}`);
   // El barrido verde del cuadro, en cambio, SOLO se declara: una mata y una brizna comparten color por
   // construccion (app.js:4752 - `const _verdeVivo=_hierbaHoy()`), asi que contar ahi bloques "sin relieve"
   // era medir el encuadre (8/12 y 0/0 en dos corridas del mismo codigo). Lo duro son las lineas de arriba.

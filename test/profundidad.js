@@ -6,8 +6,8 @@
  * asombrosas». Eso son cuatro afirmaciones, y cada una se mide aqui:
  *
  *   A. el fondo del mapa NO es el borde del mundo: es una LOSA con puntos de vida de la colonia;
- *   B. la escalera es monotona por bandas y cada veta vive en la suya (el cobre no se cuela en la pizarra
- *      y lo raro no esta regalado en el mapa inicial: esta DETRAS de la losa);
+ *   B. la escalera tiene predominio por profundidad, estratos mezclados y vetas con núcleo abundante;
+ *      las colas pobres pueden cruzar una banda, pero lo raro no aparece regalado al fundar;
  *   C. las hormigas, solas, sin tocar nada desde fuera, le arrancan mordiscos a la losa;
  *   D. romperla abre una banda de verdad: filas nuevas, vetas nuevas, cueva, botin, y la regla de
  *      profundidad se estira con el mapa;
@@ -51,21 +51,21 @@ const ESCANER = `(()=>{
   }
   let saltoAtras=0, det='';
   for(let i=1;i<dom.length;i++){ if(dom[i]<0||dom[i-1]<0) continue; if(dom[i]<dom[i-1]){ saltoAtras++; det=det||('piso '+(i-1)+'->'+i+': '+dom[i-1]+'->'+dom[i]); } }
-  const mal={cobre:0,hierro:0,oro:0,gema:0,det:''}, hay={cobre:0,hierro:0,oro:0,gema:0,magma:0,losa:0,cuarzo:0,marmol:0,basalto:0};
-  for(let r=SURFACE_ROW;r<ROWS;r++){ const b=bandaDe(r-SURFACE_ROW);
+  const mal={cobre:0,hierro:0,oro:0,gema:0,det:''}, nucleo={cobre:0,hierro:0,oro:0,gema:0}, hay={cobre:0,hierro:0,oro:0,gema:0,magma:0,losa:0,cuarzo:0,marmol:0,basalto:0};
+  for(let r=SURFACE_ROW;r<ROWS;r++){ const d=r-SURFACE_ROW,b=bandaDe(d);
     for(let c=0;c<COLS;c++){ const t=soilType[r]?soilType[r][c]:0; if(!t) continue;
-      const fuera=(x)=>{ if(!mal.det) mal.det='t'+t+' en piso '+(r-SURFACE_ROW)+' (banda '+b+') ['+c+','+r+']'; };
-      if(t===8){ hay.cobre++; if(b!==3){ mal.cobre++; fuera(); } }
-      else if(t===9){ hay.hierro++; if(b!==4){ mal.hierro++; fuera(); } }
-      else if(t===10){ hay.oro++; if(b!==5 && b!==8){ mal.oro++; fuera(); } }
-      else if(t===16){ hay.gema++; if(b!==6 && b!==7){ mal.gema++; fuera(); } }
+      const fuera=()=>{ if(!mal.det) mal.det='t'+t+' en piso '+d+' (banda '+b+') ['+c+','+r+']'; };
+      if(t===8){ hay.cobre++; if(Math.abs(d-18)<=9)nucleo.cobre++; if(b!==3){ mal.cobre++; fuera(); } }
+      else if(t===9){ hay.hierro++; if(Math.abs(d-27)<=9)nucleo.hierro++; if(b!==4){ mal.hierro++; fuera(); } }
+      else if(t===10){ hay.oro++; if(Math.abs(d-35)<=7)nucleo.oro++; if(b!==5 && b!==8){ mal.oro++; fuera(); } }
+      else if(t===16){ hay.gema++; if(Math.abs(d-44)<=10)nucleo.gema++; if(b!==6 && b!==7){ mal.gema++; fuera(); } }
       else if(t===15) hay.magma++;
       else if(t===11) hay.cuarzo++;
       else if(t===12) hay.marmol++;
       else if(t===14) hay.basalto++;
       else if(t===17) hay.losa++;
     } }
-  return {filas:ROWS, pisos:ROWS-SURFACE_ROW, bandas:dom.filter(x=>x>=0), saltoAtras, det, mal, hay,
+  return {filas:ROWS, pisos:ROWS-SURFACE_ROW, bandas:dom.filter(x=>x>=0), saltoAtras, det, mal, nucleo, hay,
           losa: soilType[ROWS-1]? soilType[ROWS-1][3] : -1, losaSuelo: soil[ROWS-1]? soil[ROWS-1][3] : -1};
 })()`;
 
@@ -85,6 +85,9 @@ async function leePanel(page, id) {
   await new Promise(r => server.listen(PORT, '0.0.0.0', r));
   const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--disable-dev-shm-usage'] });
   const page = await browser.newPage();
+  // Procedural geology is statistical; pin the browser RNG before any game script runs so this test
+  // measures one reproducible world while core-mundo/geologia-integracion sample hundreds of seeds.
+  await page.evaluateOnNewDocument(() => { let a=424242>>>0; Math.random=()=>{ a=(a+0x6D2B79F5)|0; let t=Math.imul(a^(a>>>15),1|a); t=(t+Math.imul(t^(t>>>7),61|t))^t; return ((t^(t>>>14))>>>0)/4294967296; }; });
   await page.setViewport({ width: 1280, height: 800 });
   const errs = [];
   page.on('pageerror', e => errs.push('pageerror: ' + e.message));
@@ -107,7 +110,13 @@ async function leePanel(page, id) {
     await sleep(250);
   }
   await page.waitForFunction("document.body.classList.contains('game-started')", { timeout: 15000 }).catch(() => { });
-  await page.evaluate(() => { try { window.pushImportant = () => null; ['onboardingModal', 'onboardingLegacy'].forEach(i => { const e = document.getElementById(i); if (e) e.style.display = 'none'; }); } catch (e) { } });
+  await page.evaluate(() => { try {
+    // Pin the actual world seed after creation as well: animation timing can consume a different number
+    // of Math.random calls before the click, but geology itself must be identical on every run.
+    worldSeed=worldSeed32(424242); initSoil(); detectarEntrada();
+    window.pushImportant = () => null;
+    ['onboardingModal', 'onboardingLegacy'].forEach(i => { const e = document.getElementById(i); if (e) e.style.display = 'none'; });
+  } catch (e) { } });
   await sleep(1200);
 
   console.log('\n· A: el fondo es una losa, no el borde del mapa');
@@ -115,12 +124,14 @@ async function leePanel(page, id) {
   ok(e0.losa === 17 && e0.losaSuelo === 1, 'hay LOSA de umbral en la ultima fila, con su piedra intacta', `fila ${e0.umbral.r} · hp ${e0.umbral.hp}/${e0.umbral.hpMax} · guarda ${e0.umbral.guarda}`);
   ok(e0.pisos >= 18 && e0.bandaFondo >= 3, 'el mundo pequeno ya tiene escalera donde empezar', `${e0.pisos} pisos, fondo en ${await page.evaluate(`NOMBRE_BANDA(bandaMax)`)} (banda ${e0.bandaFondo})`);
 
-  console.log('\n· B: la escalera es monotona y cada veta en su banda');
+  console.log('\n· B: predominio por profundidad, sin franjas ni exclusiones mágicas');
   const esc0 = await page.evaluate(ESCANER);
-  ok(esc0.saltoAtras === 0, 'ninguna fila es de una banda mas blanda que la de arriba', `${esc0.saltoAtras} saltos hacia arriba ${esc0.det || ''}`.trim());
-  ok(esc0.mal.cobre === 0 && esc0.mal.hierro === 0 && esc0.mal.oro === 0 && esc0.mal.gema === 0, 'no hay una sola casilla de metal fuera de su banda', JSON.stringify(esc0.mal));
-  ok(esc0.hay.cobre >= 4, 'el cobre esta a mano, en la banda de PIEDRA', `${esc0.hay.cobre} casillas`);
-  ok(esc0.hay.hierro === 0 && esc0.hay.oro === 0, 'y lo que vale de verdad aun NO esta en el mapa: esta detras de la losa', `hierro ${esc0.hay.hierro} · oro ${esc0.hay.oro} · cuarzo ${esc0.hay.cuarzo}`);
+  ok(esc0.saltoAtras<=Math.max(2,Math.floor(esc0.pisos*0.08)), 'los pliegues locales no borran la tendencia profunda', `${esc0.saltoAtras} pliegues hacia arriba ${esc0.det || ''}`.trim());
+  ok(esc0.hay.cobre >= 4 && esc0.nucleo.cobre >= esc0.hay.cobre*0.68, 'el cobre esta a mano y predomina cerca de su núcleo', `${esc0.nucleo.cobre}/${esc0.hay.cobre} en núcleo`);
+  const _raros0=esc0.hay.hierro+esc0.hay.oro+esc0.hay.gema;
+  ok(_raros0<=Math.max(4,Math.floor(esc0.hay.cobre*0.60)), 'las trazas vecinas siguen claramente por debajo del cobre al fundar', `cobre ${esc0.hay.cobre} · raros ${_raros0}`);
+  const _tot0=esc0.hay.cobre+_raros0,_nuc0=esc0.nucleo.cobre+esc0.nucleo.hierro+esc0.nucleo.oro+esc0.nucleo.gema;
+  ok(_tot0-_nuc0<=Math.max(2,Math.floor(_tot0*0.32)), 'las colas pobres siguen siendo minoría frente al núcleo de cada veta', `${_tot0-_nuc0} trazas de ${_tot0}`);
 
   console.log('\n· C: mordisquear la losa (y que no se borre con un capricho)');
   const h0 = await page.evaluate(`umbral.hp`);
@@ -159,7 +170,7 @@ async function leePanel(page, id) {
     if (cede2.rotos > 0 || cede2.hp < cede - 1) break;
   }
   ok(cede2.rotos > 0 || (cede2.hp >= 0 && cede2.hp < cede - 1), 'cavando por su cuenta la colonia le come la losa (no hay que empujarla desde fuera)', `hp ${cede} -> ${cede2.hp} · ${cede2.rotos} losas rotas · ${cede2.cavando} cavando · ${cede2.enLosa} a la losa · ${cede2.fondo} filas de profundidad abiertas`);
-  ok(cede2.cavando > 3, 'y hay frente de obra abierto: la losa no es un adorno vacio', `${cede2.cavando} obreras cavando`);
+  ok(cede2.cavando>3&&cede2.enLosa>=4&&cede2.enLosa<=8, 'hay cuadrilla visible sin reclutar a toda la colonia', `${cede2.cavando} cavando · ${cede2.enLosa} en la losa`);
 
   console.log('\n· D: reventarla abre la banda siguiente');
   const marcasAntes = await page.evaluate(`document.querySelectorAll('.depth-mark').length`);
@@ -175,8 +186,12 @@ async function leePanel(page, id) {
   await sleep(700);
   const esc6 = await page.evaluate(ESCANER);
   ok(esc6.hay.marmol > 40 && esc6.hay.cuarzo > 40, 'la CUARCITA y el MÁRMOL NEGRO llegan al mapa al abrir sus losas', `cuarza ${esc6.hay.cuarzo} · marmol ${esc6.hay.marmol}`);
-  ok(esc6.hay.oro >= 1, 'el ORO aparece en su banda (Cuarcita), no antes', `${esc6.hay.oro} casillas`);
-  ok(esc6.saltoAtras === 0 && esc6.mal.oro === 0 && esc6.mal.gema === 0, 'y la escalera sigue recta con las bandas nuevas dentro', JSON.stringify(esc6.mal) + (esc6.mal.det ? ' · ' + esc6.mal.det : ''));
+  ok(esc6.hay.oro >= 1, 'el ORO se vuelve abundante al alcanzar la cuarcita', `${esc6.hay.oro} casillas`);
+  const _totMin=esc6.hay.cobre+esc6.hay.hierro+esc6.hay.oro+esc6.hay.gema;
+  const _nucMin=esc6.nucleo.cobre+esc6.nucleo.hierro+esc6.nucleo.oro+esc6.nucleo.gema;
+  const _colas=_totMin-_nucMin;
+  ok(esc6.saltoAtras<=Math.max(3,Math.floor(esc6.pisos*0.08))&&_nucMin>=_totMin*0.68&&_colas>0&&_colas<_totMin*0.34,
+    'las vetas nuevas tienen núcleo dominante y unas pocas colas naturales', `${_nucMin}/${_totMin} en núcleo · ${_colas} trazas`);
   const oquedad = await page.evaluate(`(()=>{ let aire=0, minr=ROWS; for(let r=SURFACE_ROW+14;r<ROWS-1;r++) for(let c=1;c<COLS-1;c++) if(soil[r][c]===0){ aire++; minr=Math.min(minr,r); } return {aire, minr}; })()`);
   ok(oquedad.aire > 0, 'las bandas nuevas salen con su cueva (hay hueco abierto sin que lo cave nadie)', `${oquedad.aire} casillas de vacio bajo el techo de la ultima losa`);
   await page.evaluate(`view.zoom=1.7; view.y=Math.max(0,(ROWS-6)*CELL-300); clampView();`);
@@ -200,7 +215,7 @@ async function leePanel(page, id) {
   const vit = await leePanel(page, 'ecoRelics');
   ok(/quartz|geode|cuarzo/i.test(vit), 'la VITRINA del panel del mundo la enseña', JSON.stringify(vit.replace(/\\s+/g, ' ').slice(0, 64)));
   const umTxt = await leePanel(page, 'ecoUmbral');
-  ok(/LOSA|losas rotas/i.test(umTxt), 'y el panel dice como va la losa, sin haberla roto a ciegas', JSON.stringify(umTxt.replace(/\\s+/g, ' ').slice(0, 72)));
+  ok(/SLAB|LOSA|broken slabs|losas rotas/i.test(umTxt), 'y el panel dice como va la losa, sin haberla roto a ciegas', JSON.stringify(umTxt.replace(/\\s+/g, ' ').slice(0, 72)));
   // y el cuadro de tesoros entero: cada banda tiene su surtido de cosas asombrosas
   const cuadro = await page.evaluate(`(()=>{ const por={}; for(const k in TREASURE_DEFS){ const d=TREASURE_DEFS[k]; por[d.tier]=(por[d.tier]||0)+1; }
     const rel=Object.keys(TREASURE_DEFS).filter(k=>TREASURE_DEFS[k].reliquia); return {por, rel, sinMsg:rel.filter(k=>!TREASURE_DEFS[k].msg).length}; })()`);
