@@ -1,6 +1,6 @@
 # Roadmap de trabajo
 
-Registro público de todo lo que está pendiente en **Ant Farm RPG — Granja de Topo**. Cada línea es
+Registro público de todo lo que está pendiente en **ANT FARM — Granja de Topo**. Cada línea es
 un paso pequeño y verificable: se documenta, se arregla, se comprueba y se sube. Nada se queda en
 el tintero y nada se da por hecho sin su prueba.
 

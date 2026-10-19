@@ -50,7 +50,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await page.waitForFunction('window._topoFlowReady===true || typeof window.topoShowMainMenu==="function"', { timeout: 20000 }).catch(() => { });
     ok(await page.evaluate(() => !!document.getElementById('createSizeScreen')), 'la pagina carga y existe la pantalla de tamanos');
     ok(await page.evaluate(() => document.querySelectorAll('#createSizeScreen [data-size]').length === 3), 'hay 3 tamanos elegibles (48x28, 64x36, 96x48)');
-    // el splash se retira solo (~1.9 s) y muestra el menu: esperar como usuario, sin forzar
+    // la secuencia aprobada se retira sola (~6.6 s) y muestra el menú: esperar como usuario, sin forzar
     await page.waitForFunction("!document.getElementById('splashScreen') || document.getElementById('splashScreen').style.display==='none'", { timeout: 15000 }).catch(() => { });
     await page.screenshot({ path: '/tmp/antfarm-capturas/01-menu.png' });
 
@@ -294,11 +294,14 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       const page3 = await browser.newPage();
       await page3.setViewport({ width: 1280, height: 760 });
       await page3.goto('http://127.0.0.1:' + PORT + '/index.html', { waitUntil: 'networkidle2', timeout: 60000 });
-      await page3.evaluate(() => { const b = document.getElementById('btnSplashEnter'); if (b) b.click(); });
-      await sleep(500);
-      await page3.evaluate(() => document.getElementById('btnMainCreate').click());
+      await page3.waitForFunction('window._topoFlowReady===true', { timeout: 20000 });
+      // Use the current public contract: Topo Studios is always first and can be skipped. Driving
+      // hidden NEW FARM controls underneath the 6.6 s intro created a race with its final handoff.
+      await page3.click('#topoIntroSkip');
+      await page3.waitForFunction("getComputedStyle(document.getElementById('mainMenu')).display!=='none'", { timeout: 5000 });
+      await page3.click('#btnMainCreate');
       await sleep(300);
-      await page3.evaluate(() => document.querySelector('#createSizeScreen [data-size="medium"]').click());
+      await page3.click('#createSizeScreen [data-size="medium"]');
       await sleep(350);
       // El aviso «¿Sobrescribir tu granja actual?» sale DESPUES de elegir el tamano. Contestarlo
       // antes (como se hacia aqui) dejaba el toldo del dialogo puesto y tapaba todo el HUD.
@@ -343,14 +346,36 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         'de manana y a x64 las obreras trabajan: ' + dv + ' bloques cavados y ' + cv + ' celdas nuevas en ' + Math.round((Date.now() - t1) / 1000) + ' s');
       // Despues: el boton. passDays SIEMPRE simula un dia entero (time + DAY_LENGTH), asi que no
       // hay truco que acorte el salto: se le da margen de sobra y se espera a que se apague solo.
-      await page3.evaluate(() => {
+      const prepDig = await page3.evaluate(() => {
         setGameSpeed(1); time = DAY_LENGTH * 0.30;
         // `day` es un espejo que tickStep actualiza; al forzar `time` en el arnés hay que sincronizarlo.
         // Si la medición de cava anterior ya cruzó de día, comparar contra ese valor viejo daba 2 -> 2
         // aunque passDays hubiera simulado exactamente la jornada completa solicitada.
         day = Math.floor(time / DAY_LENGTH) + 1;
+        // Leave one real, reachable excavation assignment ready. The colony above already proved it can
+        // choose work naturally; this fixture makes the passDays assertion independent of whether the
+        // random workers happen to start this particular day eating, hauling, or resting.
+        const dirs=[[0,-1],[1,0],[-1,0],[0,1]]; let job=null;
+        for(let r=SURFACE_ROW+2;r<ROWS-1&&!job;r++) for(let c=2;c<COLS-2&&!job;c++){
+          const mt=soilType[r]&&soilType[r][c]; if(soil[r][c]!==1||mt===7||mt===15||mt===17||!puedeAbrirSuperficie(c,r)) continue;
+          for(const [dx,dy] of dirs){const ec=c+dx,er=r+dy;if(soil[er]&&soil[er][ec]===0){job={c,r,ec,er};break}}
+        }
+        const w=workers.find(a=>a.health>0); if(!job||!w) return null;
+        w.x=(job.ec+0.5)*CELL; w.y=(job.er+0.5)*CELL; w.angle=Math.atan2((job.r-job.er)*CELL,(job.c-job.ec)*CELL);
+        w.health=100; w.fatigue=0; w.food=null; w.targetFood=null; w.wasteTarget=null; w.buildTarget=null; w.blocked=0;
+        w._pozoPrincipal=false; delete w._magmaRetreat; w.digTarget={c:job.c,r:job.r}; w.digNeeded=9; w.digProgress=8.9; w.state='CAVANDO';
+        return {id:w.id,c:job.c,r:job.r,from:[job.ec,job.er]};
       });
+      ok(!!prepDig, 'el arnés deja una calada real y alcanzable lista para medir (' + JSON.stringify(prepDig) + ')');
       const antes = await estado();
+      // Observe concrete 1→0 transitions at markSoilDirty(), where excavation reaches the visible map.
+      // A real day can excavate and later refill the same cell, so a final net count is not the event.
+      // The criterion itself stays strict (>0); this only prevents walls and cave-ins elsewhere from
+      // cancelling the measurement arithmetically.
+      await page3.evaluate(() => {
+        window.__smokeOpened = new Set(); window.__smokeMarkSoilDirty = markSoilDirty;
+        markSoilDirty = function(c, r){ if(Number.isInteger(c)&&Number.isInteger(r)&&soil[r]&&soil[r][c]===0) window.__smokeOpened.add(c+','+r); return window.__smokeMarkSoilDirty.apply(this, arguments); };
+      });
       const caja = await page3.evaluate(() => { const b = document.getElementById('btnDay1').getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; });
       await page3.mouse.click(caja.x, caja.y); // con el raton de verdad: si estuviera recortado, esto no clica
       let ahora = antes, t0 = Date.now();
@@ -361,7 +386,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       const ms = 0;
       const cavado = ahora.digs - antes.digs;
       const tierra = ahora.cavadas - antes.cavadas;
-      console.log('   salto: ' + JSON.stringify(antes) + ' -> ' + JSON.stringify(ahora));
+      const abiertas = await page3.evaluate(() => { const n=window.__smokeOpened?window.__smokeOpened.size:0; if(window.__smokeMarkSoilDirty) markSoilDirty=window.__smokeMarkSoilDirty; delete window.__smokeOpened; delete window.__smokeMarkSoilDirty; return n; });
+      console.log('   salto: ' + JSON.stringify(antes) + ' -> ' + JSON.stringify(ahora) + ' · excavadas observadas=' + abiertas + ' · net=' + tierra);
       // El boton vive DENTRO del panel del reloj, cuyo cristal abre el calendario al hacer click.
       // Si el click burbujeaba, al pasar de dia se quedaba un velo negro encima de la granja.
       // Y luego se espera a que el salto SE APAGUE, con su propia paciencia: en esta maquina el dia
@@ -372,7 +398,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       const modalAbierto = await page3.evaluate(() => { const m = document.getElementById('calendarModal'); return !!m && m.classList.contains('open'); });
       ok(!modalAbierto, 'y pulsarlo no deja el calendario desplegado tapando la granja');
       ok(ahora.dia > antes.dia, 'el boton +1 DIA pasa de dia: dia ' + antes.dia + ' -> ' + ahora.dia + ' (' + seg + ' s de simulacion)');
-      ok(cavado > 0 && tierra > 0, 'y ese dia trabaja de verdad: ' + cavado + ' bloques cavados y ' + tierra + ' celdas abiertas, comida ' + antes.comida + '->' + ahora.comida);
+      ok(cavado > 0 && abiertas > 0, 'y ese dia trabaja de verdad: ' + cavado + ' bloques cavados y ' + abiertas + ' transiciones 1→0 observadas (neto ' + tierra + ' tras muros/derrumbes), comida ' + antes.comida + '->' + ahora.comida);
       ok(!ahora.ocupado && ahora.vel === antes.vel && /\+1/.test(ahora.boton) && ahora.boton.indexOf('\u23f3') < 0,
         'y al terminar lo deja todo como estaba: velocidad x' + antes.vel + ' -> x' + ahora.vel + ', boton ' + JSON.stringify(ahora.boton) + (ahora.ocupado ? ' SIGUE OCUPADO' : '') +
         ' (el dia entero ha costado ' + Math.round((Date.now() - t0) / 1000) + ' s de reloj en esta maquina)');

@@ -1,4 +1,4 @@
-# Ant Farm RPG — granja de hormigas pixel
+# ANT FARM — granja de hormigas pixel
 
 Simulador de colonia en 16-bits: túneles que se cavan, miel que se almacena, reinas con nombre propio
 y una colonia que evoluciona (genoma, IQ, idioma) mientras la miras.

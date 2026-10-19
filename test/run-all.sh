@@ -2,7 +2,7 @@
 # en este taller Chrome trae sus .so fuera del sistema (el paquete base no las tiene): si existen, se las
 # presenta antes de arrancar, que si no cada prueba de navegador muere con «Code: 127» y parece que falla el juego.
 if [ -d /tmp/libs ]; then export LD_LIBRARY_PATH="/tmp/libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; fi
-# Test suite de Ant Farm RPG - node puro, sin dependencias instaladas.
+# Test suite de ANT FARM - node puro, sin dependencias instaladas.
 # Uso: bash test/run-all.sh
 cd "$(dirname "$0")/.." || exit 1
 fail=0
@@ -24,7 +24,7 @@ fi
 
 # Los tres de pintura se corren DE UNO EN UNO: abren Chrome y si comparten la maquina los
 # Runtime.evaluate revientan por CPU, no por culpa del juego (medido).
-for t in core-bandas core-tesoros core-economia hormiga-voxel profundidad intro-topo fondo-pinta voxel-graficos voxel-objetos voxel-cielo plantas-piso paneles-scroll vel-barra-unica hojas-legibles live-hud; do
+for t in core-bandas core-tesoros core-economia hormiga-voxel profundidad intro-topo startup-menu fondo-pinta voxel-graficos voxel-objetos voxel-cielo plantas-piso paneles-scroll vel-barra-unica hojas-legibles live-hud; do
   printf '\n=== test/%s.js (pintura en navegador) ===\n' "$t"
   if node "test/$t.js" > /tmp/_vp.out 2>&1; then
     tail -n 2 /tmp/_vp.out

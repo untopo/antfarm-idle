@@ -1,4 +1,4 @@
-# Reporte de jugabilidad — Ant Farm RPG
+# Reporte de jugabilidad — ANT FARM
 Fecha: 2026-10-14 · revisado sobre el código en `js/app.js` (7 638 líneas) e `index.html` (758 líneas)
 Verificación: suite node (`bash test/run-all.sh`) + Chrome real con puppeteer (`node test/browser-smoke.js`).
 Todo lo de abajo está medido en el estado actual del repositorio, no en una versión anterior.

@@ -99,7 +99,7 @@ const document = new Proxy({
   getElementsByClassName: () => [],
   addEventListener() {}, removeEventListener() {},
   body: makeEl('body', false), documentElement: makeEl('html', false), head: makeEl('head', false),
-  hidden: false, visibilityState: 'visible', title: 'Ant Farm RPG',
+  hidden: false, visibilityState: 'visible', title: 'ANT FARM',
   fonts: { ready: Promise.resolve(), load: () => Promise.resolve(), check: () => true },
 }, { get: (t, p) => (p in t ? t[p] : (typeof p === 'symbol' ? undefined : () => undefined)) });
 

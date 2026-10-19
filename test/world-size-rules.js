@@ -1,5 +1,5 @@
 /**
- * Reglas y rendimiento por TAMANO de mundo (Ant Farm RPG).
+ * Reglas y rendimiento por TAMANO de mundo (ANT FARM).
  * Corre el app.js real en un DOM falso; no reimplementa logica: llama las funciones del juego.
  *
  * 1) crear un mundo cuesta proporcional a su area (y no casi igual para el pequeno)

@@ -1,4 +1,4 @@
-# Arquitectura — Ant Farm RPG
+# Arquitectura — ANT FARM
 Actualizado: 2026-10-14 (mide sobre el `js/app.js` del repo, no sobre una versión anterior).
 
 ## Mapa del fichero único

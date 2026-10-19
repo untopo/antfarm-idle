@@ -1,4 +1,4 @@
-# INVENTARIO GRÁFICO — ANT FARM RPG
+# INVENTARIO GRÁFICO — ANT FARM
 **Todo objeto, superficie tangible, recurso y personaje que necesita representación gráfica**
 *Generado 2026-10-12 — auditoría completa del código (`index.html` + `js/app.js` + `css/style.css` + sprites)*
 

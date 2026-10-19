@@ -9587,7 +9587,7 @@ function deserializeSave(){
   }catch(e){ console.warn('load fail',e); return false; }
 }
 
-// entrada al juego desde una partida guardada (menu -> continuar o auto-resume)
+// Entry from a saved farm is explicit: title menu -> CONTINUE or LOAD. Reload never auto-resumes.
 function topoResumeGame(opts){
   const silent = opts && opts.silent;
   if(!deserializeSave()) return false;
@@ -9712,74 +9712,102 @@ setTimeout(_updateBothAntCounts, 1800);
   // Topo 2026-10-14: el menu tenia que salir de en medio. hideAll() no ocultaba #mainMenu, asi que
   // la pantalla de tamanos quedaba DETRAS del menu (misma capa fija, z 9997 vs 9998) y el click en
   // un tamano caia sobre el boton CREAR de encima: parecia que "no pasaba nada".
-  function hideAll(){ [splash,main,createSc,loadSc,settingsSc,creditsSc,onboarding].forEach(el=>{ if(el) el.style.display='none'; }); const leg=document.getElementById('onboardingLegacy'); if(leg) leg.style.display='none'; }
+  function hideAll(){ [splash,main,createSc,loadSc,settingsSc,creditsSc,onboarding].forEach(el=>{ if(el) el.style.display='none'; }); if(main) main.setAttribute('aria-hidden','true'); if(splash) splash.setAttribute('aria-hidden','true'); const leg=document.getElementById('onboardingLegacy'); if(leg) leg.style.display='none'; }
   function show(el){ if(!el) return; hideAll(); el.style.display='flex'; }
-  // Splash 1.1s -> si hay granja guardada y estabas dentro, se reanuda sola; si no, MainMenu
-  function topoShowMainMenu(){
-    if(main){ main.style.display='flex'; try{ topoRefreshContinueBtn(); }catch(e){} }
+  // splash-topo.js owns the visible intro and calls topoShowMainMenu() after the tunnel transition.
+  function topoMainItems(){
+    if(!main) return [];
+    return [...main.querySelectorAll('.topo-menu-option')].filter(b=>!b.hidden && getComputedStyle(b).display!=='none' && !b.disabled);
   }
+  function topoSelectMainItem(wanted, focus){
+    const items=topoMainItems(); if(!items.length) return null;
+    let idx=typeof wanted==='number'?wanted:items.indexOf(wanted);
+    if(idx<0) idx=0; idx=(idx+items.length)%items.length;
+    items.forEach((b,i)=>b.classList.toggle('is-selected',i===idx));
+    if(focus) try{ items[idx].focus({preventScroll:true}); }catch(e){ try{ items[idx].focus(); }catch(_){} }
+    return items[idx];
+  }
+  function topoShowMainMenu(opts){
+    [createSc,loadSc,settingsSc,creditsSc,onboarding].forEach(el=>{ if(el) el.style.display='none'; });
+    const leg=document.getElementById('onboardingLegacy'); if(leg) leg.style.display='none';
+    if(main){
+      main.style.display='flex'; main.setAttribute('aria-hidden','false');
+      try{ topoRefreshContinueBtn(); }catch(e){}
+      try{ if(typeof window.topoStartMenuVisual==='function') window.topoStartMenuVisual(); }catch(e){}
+      topoSelectMainItem(0,!(opts&&opts.noFocus));
+    }
+  }
+  window.topoShowMainMenu=topoShowMainMenu;
   window.topoRefreshContinueBtn = function(){
     if(!main) return;
     const meta = (typeof topoHasSave==='function')? topoHasSave() : null;
-    let btn=document.getElementById('btnMainContinue');
+    const btn=document.getElementById('btnMainContinue');
+    if(!btn) return;
     if(meta){
-      if(!btn){
-        btn=document.createElement('button');
-        btn.id='btnMainContinue';
-        btn.className='pixel-btn primary';
-        btn.style.cssText='width:100%;justify-content:center;padding:16px;font-size:10px;background:#2de67a;color:#0a0a0a;border-color:#000;margin-bottom:2px';
-        const ref=document.getElementById('btnMainCreate');
-        main.querySelector('div').insertBefore(btn, ref);
-        btn.onclick=(ev)=>{
-          ev&&ev.preventDefault(); tlog('[TOPO] continuar click');
-          if(_topoHasWorld){ topoCloseMenuToGame(); try{ clampView(); updateColonyUI(); }catch(e){} return; }
-          if(!topoResumeGame()){ if(main) main.style.display='none'; show(createSc); }
-        };
-      }
       const ago = meta.savedAt? Math.max(0, Date.now()-meta.savedAt) : 0;
       const mins=Math.floor(ago/60000);
       const when = mins<1? 'seconds ago' : mins<60? mins+' min ago' : mins<1440? Math.floor(mins/60)+'h ago' : Math.floor(mins/1440)+'d ago';
-      btn.innerHTML='▶ CONTINUE · DAY '+meta.day+' · '+meta.cols+'×'+meta.rows+' · '+meta.pop+' 🐜 <span style=\"font-size:7px;color:#1a140f\">('+when+')</span>';
-    } else if(btn){ btn.remove(); }
+      const detail='Day '+meta.day+' · '+meta.cols+'×'+meta.rows+' · '+meta.pop+' ants · saved '+when;
+      btn.hidden=false; btn.style.display='flex'; btn.title=detail; btn.setAttribute('aria-label','Continue — '+detail);
+      const label=btn.querySelector('.topo-menu-label'); if(label) label.textContent='CONTINUE';
+      const sr=document.getElementById('mainContinueMeta'); if(sr) sr.textContent=' · '+detail;
+    } else {
+      btn.hidden=true; btn.style.display='none'; btn.removeAttribute('aria-label'); btn.title='';
+      btn.classList.remove('is-selected');
+    }
+    if(getComputedStyle(main).display!=='none') requestAnimationFrame(()=>topoSelectMainItem(0,false));
   };
-  if(splash && main){
-    setTimeout(()=>{
-      splash.style.opacity='0';
-      let inGame=false; try{ inGame = localStorage.getItem('antfarm_inGame')==='1' && !!topoHasSave(); }catch(e){}
-      setTimeout(()=>{
-        splash.style.display='none';
-        if(inGame){
-          const ok = topoResumeGame({silent:false});
-          if(ok){ tlog('[TOPO] auto-resume OK'); return; }
-          try{ localStorage.setItem('antfarm_inGame','0'); }catch(e){}
-        }
-        topoShowMainMenu();
-      }, 820);
-    }, 1500);   // 1,5 + 0,82 = 2,3 s de logo: lo que dura la animacion de la pantalla de inicio
-  }
-  // Main buttons
+  // Main buttons. CONTINUE is present in the DOM for stable keyboard order, but only becomes visible
+  // when topoHasSave() validates a real farm.
+  const btnContinue=document.getElementById('btnMainContinue');
   const btnCreate=document.getElementById('btnMainCreate');
   const btnLoad=document.getElementById('btnMainLoad');
   const btnSettings=document.getElementById('btnMainSettings');
   const btnCredits=document.getElementById('btnMainCredits');
+  if(btnContinue) btnContinue.onclick=(e)=>{
+    e&&e.preventDefault(); tlog('[TOPO] continue click');
+    if(_topoHasWorld){ topoCloseMenuToGame(); try{ clampView(); updateColonyUI(); }catch(err){} return; }
+    if(!topoResumeGame()){ show(createSc); }
+  };
   if(btnCreate){ btnCreate.onclick=(e)=>{ e&&e.preventDefault(); tlog('[TOPO] btnMainCreate click'); show(createSc); }; }
-  // Topo: ESC / botón ➜ guarda y abre el menú (la colonia sigue viviendo detrás)
+  if(main){
+    main.querySelectorAll('.topo-menu-option').forEach(b=>{
+      b.addEventListener('mouseenter',()=>topoSelectMainItem(b,false));
+      b.addEventListener('focus',()=>topoSelectMainItem(b,false));
+    });
+    main.addEventListener('keydown',e=>{
+      const items=topoMainItems(); if(!items.length) return;
+      const cur=items.indexOf(document.activeElement);
+      if(e.key==='ArrowDown'||e.key==='ArrowRight'){ e.preventDefault(); topoSelectMainItem(cur+1,true); }
+      else if(e.key==='ArrowUp'||e.key==='ArrowLeft'){ e.preventDefault(); topoSelectMainItem(cur-1,true); }
+      else if(e.key==='Home'){ e.preventDefault(); topoSelectMainItem(0,true); }
+      else if(e.key==='End'){ e.preventDefault(); topoSelectMainItem(items.length-1,true); }
+    });
+  }
+  // ESC from the running farm opens this menu. A visit/reload never bypasses it automatically.
   window.topoOpenMenu = function(){
     if(!_topoHasWorld) return;
     try{ serializeSave(); localStorage.setItem('antfarm_inGame','0'); }catch(e){}
-    if(main){ main.style.display='flex'; try{ topoRefreshContinueBtn(); }catch(e){} }
+    topoShowMainMenu();
   };
   window.topoCloseMenuToGame = function(){
-    if(main) main.style.display='none';
+    if(!_topoHasWorld) return false;
     hideAll();
+    if(main) main.setAttribute('aria-hidden','true');
     try{ document.body.classList.add('game-started'); localStorage.setItem('antfarm_inGame','1'); }catch(e){}
+    return true;
   };
   document.addEventListener('keydown', (e)=>{
     if(e.key!=='Escape' && e.key!=='Esc') return;
-    const menuVisible = main && getComputedStyle(main).display!=='none';
-    if(menuVisible){ e.preventDefault(); topoCloseMenuToGame(); return; }
-    if(!_topoHasWorld) return;
     const inp=e.target && e.target.tagName; if(inp==='INPUT'||inp==='TEXTAREA'||inp==='SELECT') return;
+    const menuVisible = main && getComputedStyle(main).display!=='none';
+    if(menuVisible){
+      if(_topoHasWorld && document.body.classList.contains('game-started')){ e.preventDefault(); topoCloseMenuToGame(); }
+      return;
+    }
+    const subVisible=[createSc,loadSc,settingsSc,creditsSc].some(el=>el&&getComputedStyle(el).display!=='none');
+    if(subVisible){ e.preventDefault(); topoShowMainMenu(); return; }
+    if(!_topoHasWorld) return;
     e.preventDefault(); topoOpenMenu();
   });
   if(btnLoad) btnLoad.onclick=()=>{
@@ -9893,13 +9921,9 @@ setTimeout(_updateBothAntCounts, 1800);
   }
   if(btnSettings) btnSettings.onclick=()=>{ show(settingsSc); try{ renderSettingsFarms(); }catch(e){} };
   if(btnCredits) btnCredits.onclick=()=> show(creditsSc);
-  // closes
+  // Every sub-screen returns to the title menu. CONTINUE is the explicit way back to the farm.
   document.querySelectorAll('[data-close]').forEach(b=>{
-    b.onclick=()=>{
-      // si el menú se abrió desde dentro de la partida (ESC), VOLVER regresa al juego
-      if(_topoHasWorld && document.body.classList.contains('game-started')){ topoCloseMenuToGame(); return; }
-      hideAll(); if(main){ main.style.display='flex'; try{ topoRefreshContinueBtn(); }catch(e){} }
-    };
+    b.onclick=()=>topoShowMainMenu();
   });
   // create size -> onboarding (no solape)
   const sizes={small:{cols:48,rows:28}, medium:{cols:64,rows:36}, big:{cols:96,rows:48}};
@@ -9922,7 +9946,7 @@ setTimeout(_updateBothAntCounts, 1800);
     _topoCreating=false;
     try{ const g=topoGenScreenEls(); if(g.sc) g.sc.style.display='none'; }catch(e){}
     gameAlert('⚠ LA SIEMBRA SE ATASCÓ', (msg||'motivo desconocido')+'\n\nReintenta desde CREAR NUEVA GRANJA. Si se repite, recarga (Ctrl+Shift+R): la colonia se guarda sola cada pocos segundos.',
-      ()=>{ try{ if(main) main.style.display='flex'; }catch(e){} });
+      ()=>{ try{ topoShowMainMenu(); }catch(e){} });
   }
   function topoBeginCreate(sizeKey, s){
     if(_topoCreating){ tlog('[TOPO] siembra en curso - click ignorado'); return; }
@@ -10008,7 +10032,7 @@ setTimeout(_updateBothAntCounts, 1800);
           _topoHasWorld=false;
           topoBeginCreate(sizeKey, s);
         },
-        ()=>{ try{ if(main) main.style.display='flex'; }catch(e){} });
+        ()=>{ try{ topoShowMainMenu(); }catch(e){} });
       return;
     }
     topoBeginCreate(sizeKey, s);

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* Servidor de desarrollo de Ant Farm RPG.
+/* Servidor de desarrollo de ANT FARM.
    Sirve ./ant-farm-rpg sin cache: con HTML nuevo y app.js viejo el juego se comporta raro y no
    se puede depurar. Uso:  node dev-server.js [puerto]   (por defecto 8017)  */
 const http = require('http');
@@ -37,7 +37,7 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log('Ant Farm RPG en http://0.0.0.0:' + PORT + '/  (raiz ' + ROOT + ', sin cache)');
+  console.log('ANT FARM en http://0.0.0.0:' + PORT + '/  (raiz ' + ROOT + ', sin cache)');
   console.log('Pruebas de navegador: node test/browser-smoke.js (usa su propio puerto 8123)');
 });
 server.on('error', e => { console.error('no se pudo escuchar el puerto ' + PORT + ': ' + e.code + ' - prueba con otro puerto'); process.exit(1); });

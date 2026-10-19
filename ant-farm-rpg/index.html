@@ -5,9 +5,10 @@
 
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ANT FARM — Pixel Real v4 · 16-BIT</title>
+<title>ANT FARM</title>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache">
-<link rel="stylesheet" href="css/style.css?v=20261018d">
+<link rel="stylesheet" href="css/style.css?v=20261019a">
+<link rel="stylesheet" href="css/startup.css?v=20261019a">
 
 <style id="topoHideUntilStart">
   #appRoot{display:none !important}
@@ -20,94 +21,94 @@
 <body>
 
 
-<!-- FLOW TOPO: Splash -> MainMenu -> CreateSize / Load / Settings / Credits -->
-<div id="splashScreen" style="position:fixed;inset:0;z-index:10000;background:#0a0a0a;display:flex;align-items:center;justify-content:center;transition:opacity 0.82s">
-  <div style="text-align:center">
-    <!-- el topo sale de su madriguera aqui arriba: cuadro de bloques de 8 px, 176x88 duplicado a 352
-         con image-rendering:pixelated (vease js/splash-topo.js). Es decoracion: si el navegador no pinta
-         canvas, se ve igualmente el logo y la barra, que es lo que hace falta para entrar. -->
-    <canvas id="splashTopo" width="176" height="88" style="width:min(352px,86vw);height:auto;display:block;margin:0 auto 16px auto;image-rendering:pixelated;border:0"></canvas>
-    <div style="font-family:'Press Start 2P',monospace;font-size:22px;color:#ffcc00;text-shadow:4px 4px 0 #000;letter-spacing:2px">TOPO STUDIOS</div>
-    <div style="font-family:'VT323',monospace;font-size:22px;color:#8a7a5a;margin-top:10px;letter-spacing:1px">🐜 ANT FARM RPG</div>
-    <div style="margin-top:18px;width:120px;height:4px;background:#1a140f;border:2px solid #000;margin-left:auto;margin-right:auto;box-shadow:2px 2px 0 #000"><div style="height:100%;width:0%;background:#ffcc00;animation: splashLoad 2.3s linear forwards"></div></div>
+<!-- STARTUP FLOW: TOPO STUDIOS -> ANT FARM main menu -->
+<div id="splashScreen" class="topo-startup-screen" role="dialog" aria-label="Topo Studios intro">
+  <div class="topo-startup-stage">
+    <canvas id="splashTopo" width="640" height="360" aria-label="Animated Topo Studios voxel intro"></canvas>
   </div>
-  <style>@keyframes splashLoad{from{width:0%}to{width:100%}}</style>
-    <!-- la barra y el topo miden lo mismo: 2,3 s (app.js entra al menu a los 2,32 s) -->
+  <button type="button" id="topoIntroSkip" class="topo-intro-skip" aria-label="Skip the Topo Studios intro">SKIP <span>ENTER</span></button>
 </div>
 
-
-
-<div id="mainMenu" style="position:fixed;inset:0;z-index:9999;background: linear-gradient(rgba(0,0,0,0.22), rgba(0,0,0,0.32)), url('assets/menu-bg.png') center/cover no-repeat;display:none;align-items:center;justify-content:center;padding:20px;box-sizing:border-box">
-  <div style="width:520px;max-width:100%;background:#1a140f;border:4px solid #000;box-shadow:8px 8px 0 #000;padding:22px;display:flex;flex-direction:column;gap:16px;image-rendering:pixelated;text-align:center">
-    <div style="font-family:'Press Start 2P',monospace;font-size:16px;color:#ffcc00;text-shadow:2px 2px 0 #000">ANT FARM RPG</div>
-    <div style="font-family:'VT323',monospace;font-size:16px;color:#c9b896">Elige qué hacer • Forja tu colonia</div>
-    <button class="pixel-btn primary" id="btnMainCreate" style="width:100%;justify-content:center;padding:16px;font-size:10px">➕ CREAR NUEVA GRANJA</button>
-    <button class="pixel-btn" id="btnMainLoad" style="width:100%;justify-content:center;padding:14px;font-size:9px;background:#000;color:#fff8dc">📂 CARGAR GRANJA</button>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <button class="pixel-btn small" id="btnMainSettings" style="justify-content:center;background:#1a140f;color:#8a7a5a">⚙ SETTINGS</button>
-      <button class="pixel-btn small" id="btnMainCredits" style="justify-content:center;background:#1a140f;color:#8a7a5a">© CRÉDITOS</button>
-    </div>
-    <div style="font-family:'VT323',monospace;font-size:11px;color:#5a4a3a">v20261015f • Topo Studios • Tamaños asesorados para tu equipo</div>
-  </div>
+<div id="mainMenu" class="topo-main-menu" style="display:none" aria-hidden="true">
+  <canvas id="mainMenuCanvas" aria-hidden="true"></canvas>
+  <h1 class="topo-sr-only">ANT FARM</h1>
+  <nav id="mainMenuOptions" class="topo-main-options" aria-label="Main menu">
+    <button type="button" class="topo-menu-option" id="btnMainContinue" hidden>
+      <span class="topo-menu-ant" aria-hidden="true"></span><span class="topo-menu-label">CONTINUE</span><span id="mainContinueMeta" class="topo-sr-only"></span>
+    </button>
+    <button type="button" class="topo-menu-option" id="btnMainCreate">
+      <span class="topo-menu-ant" aria-hidden="true"></span><span class="topo-menu-label">NEW FARM</span>
+    </button>
+    <button type="button" class="topo-menu-option" id="btnMainLoad">
+      <span class="topo-menu-ant" aria-hidden="true"></span><span class="topo-menu-label">LOAD FARM</span>
+    </button>
+    <button type="button" class="topo-menu-option" id="btnMainSettings">
+      <span class="topo-menu-ant" aria-hidden="true"></span><span class="topo-menu-label">SETTINGS</span>
+    </button>
+    <button type="button" class="topo-menu-option" id="btnMainCredits">
+      <span class="topo-menu-ant" aria-hidden="true"></span><span class="topo-menu-label">CREDITS</span>
+    </button>
+  </nav>
+  <button type="button" id="btnMainReplayIntro" class="topo-replay-intro">REPLAY INTRO <span>R</span></button>
 </div>
 
 <div id="createSizeScreen" style="position:fixed;inset:0;z-index:9998;background: linear-gradient(rgba(0,0,0,0.58), rgba(0,0,0,0.66)), url('assets/menu-bg.png') center/cover no-repeat;backdrop-filter:blur(2px);display:none;align-items:center;justify-content:center;padding:20px;box-sizing:border-box">
   <div style="width:560px;max-width:100%;background:#1a140f;border:4px solid #000;box-shadow:8px 8px 0 #000;padding:20px;display:flex;flex-direction:column;gap:14px">
     <div style="display:flex;justify-content:space-between;align-items:center">
-      <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00">ELIGE TAMAÑO DEL MUNDO</div>
-      <button class="pixel-btn small" data-close style="background:#1a0f00;color:#8a7a5a">← VOLVER</button>
+      <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00">CHOOSE WORLD SIZE</div>
+      <button class="pixel-btn small" data-close style="background:#1a0f00;color:#8a7a5a">← BACK</button>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
-      <button class="pixel-btn" data-size="small" style="padding:14px 8px;flex-direction:column;gap:6px;align-items:center;justify-content:center;background:#2a2012;color:#fff8dc"><span style="font-size:10px">🟩 SMALL</span><span style="font-size:7px;color:#8a7a5a">48×28 • 1344 celdas</span><span style="font-size:6px;color:#2de67a">Móvil o PC modesta · colonia corta</span></button>
-      <button class="pixel-btn" data-size="medium" style="padding:14px 8px;flex-direction:column;gap:6px;align-items:center;justify-content:center;background:var(--amber);color:#000;border-color:#000"><span style="font-size:10px">🟨 MEDIUM</span><span style="font-size:7px;color:#000">64×36 • Recomendado</span><span style="font-size:6px;color:#1a140f">Equilibrado</span></button>
-      <button class="pixel-btn" data-size="big" style="padding:14px 8px;flex-direction:column;gap:6px;align-items:center;justify-content:center;background:#2a2012;color:#fff8dc"><span style="font-size:10px">🟥 BIG</span><span style="font-size:7px;color:#8a7a5a">96×48 • 4608 celdas</span><span style="font-size:6px;color:#ff8c00">PC buena · colonia larga</span></button>
+      <button class="pixel-btn" data-size="small" style="padding:14px 8px;flex-direction:column;gap:6px;align-items:center;justify-content:center;background:#2a2012;color:#fff8dc"><span style="font-size:10px;color:#2de67a">SMALL</span><span style="font-size:7px;color:#8a7a5a">48×28 • 1,344 cells</span><span style="font-size:6px;color:#2de67a">Mobile or modest PC · short colony</span></button>
+      <button class="pixel-btn" data-size="medium" style="padding:14px 8px;flex-direction:column;gap:6px;align-items:center;justify-content:center;background:var(--amber);color:#000;border-color:#000"><span style="font-size:10px">MEDIUM</span><span style="font-size:7px;color:#000">64×36 • Recommended</span><span style="font-size:6px;color:#1a140f">Balanced</span></button>
+      <button class="pixel-btn" data-size="big" style="padding:14px 8px;flex-direction:column;gap:6px;align-items:center;justify-content:center;background:#2a2012;color:#fff8dc"><span style="font-size:10px;color:#ff8c00">BIG</span><span style="font-size:7px;color:#8a7a5a">96×48 • 4,608 cells</span><span style="font-size:6px;color:#ff8c00">Fast PC · long colony</span></button>
     </div>
-    <div style="background:#000;border:2px solid #000;padding:8px;font-family:'VT323',monospace;font-size:13px;color:#8a7a5a;line-height:1.3">Cada tamaño trae sus propias cuentas: más terreno, más cofres enterrados, más tarros en la despensa y más bocas que alimentar. Y el trabajo va con el terreno, no por decreto: un <b style="color:#c9b896">SMALL</b> siembra y se mueve más suelto que un <b style="color:#ff8c00">BIG</b>. <b style="color:#ffcc00">MEDIUM</b> es el parejo. Puedes crear varias granjas y cargar después.</div>
-    <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#5a4a3a;text-align:center">Click en un tamaño para crear → verás guía rápida</div>
+    <div style="background:#000;border:2px solid #000;padding:8px;font-family:'VT323',monospace;font-size:13px;color:#8a7a5a;line-height:1.3">Each size has its own balance: more land, buried chests, pantry jars, and mouths to feed. Work scales with the terrain: <b style="color:#c9b896">SMALL</b> runs lightly, <b style="color:#ff8c00">BIG</b> supports a longer colony, and <b style="color:#ffcc00">MEDIUM</b> is balanced. You can create several farms and load them later.</div>
+    <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#5a4a3a;text-align:center">Choose a size to create → a quick guide follows</div>
   </div>
 </div>
 
 <div id="loadScreen" style="position:fixed;inset:0;z-index:9998;background: linear-gradient(rgba(0,0,0,0.58), rgba(0,0,0,0.66)), url('assets/menu-bg.png') center/cover no-repeat;backdrop-filter:blur(2px);display:none;align-items:center;justify-content:center;padding:20px;box-sizing:border-box">
   <div style="width:560px;max-width:100%;max-height:86vh;background:#1a140f;border:4px solid #000;box-shadow:8px 8px 0 #000;display:flex;flex-direction:column;overflow:hidden">
     <div style="background:#000;border-bottom:4px solid #000;padding:12px;display:flex;justify-content:space-between;align-items:center">
-      <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00">📂 CARGAR GRANJA</div>
-      <button class="pixel-btn small" data-close style="background:#1a0f00;color:#8a7a5a">← VOLVER</button>
+      <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00">LOAD FARM</div>
+      <button class="pixel-btn small" data-close style="background:#1a0f00;color:#8a7a5a">← BACK</button>
     </div>
     <div id="loadList" style="flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:10px;background:#0f0a05"></div>
-    <div style="background:#000;border-top:3px solid #000;padding:8px;font-family:'VT323',monospace;font-size:12px;color:#8a7a5a;text-align:center">Si cierras la pestaña, tu granja sigue viviendo en tiempo normal (no acelerado) y la recuperas aquí.</div>
+    <div style="background:#000;border-top:3px solid #000;padding:8px;font-family:'VT323',monospace;font-size:12px;color:#8a7a5a;text-align:center">If you close the tab, your farm keeps living at normal speed and will be waiting here.</div>
   </div>
 </div>
 
 <div id="settingsScreen" style="position:fixed;inset:0;z-index:9998;background: linear-gradient(rgba(0,0,0,0.58), rgba(0,0,0,0.66)), url('assets/menu-bg.png') center/cover no-repeat;backdrop-filter:blur(2px);display:none;align-items:center;justify-content:center;padding:20px;box-sizing:border-box">
   <div style="width:420px;max-width:100%;background:#1a140f;border:4px solid #000;box-shadow:8px 8px 0 #000;padding:20px;display:flex;flex-direction:column;gap:12px;text-align:center">
-    <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00">⚙ SETTINGS</div>
-    <div style="font-family:'VT323',monospace;font-size:14px;color:#8a7a5a">Tu granja se guarda sola cada 4 segundos.<br><span style="color:#5a4a3a">ESC abre este menú desde el juego.</span></div>
+    <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00">SETTINGS</div>
+    <div style="font-family:'VT323',monospace;font-size:14px;color:#8a7a5a">Your farm saves itself every 4 seconds.<br><span style="color:#5a4a3a">ESC opens this menu during play.</span></div>
     <div id="settingsFarms" style="display:flex;flex-direction:column;gap:6px;max-height:180px;overflow:auto;background:#0f0a05;border:2px solid #000;padding:8px"></div>
-    <div style="display:flex;gap:8px"><button class="pixel-btn small" id="btnWipeSave" style="flex:1;justify-content:center;background:#1a0f00;color:#ff6b6b">🗑 BORRAR GRANJA</button><button class="pixel-btn" data-close style="flex:1;justify-content:center">← VOLVER</button></div>
+    <div style="display:flex;gap:8px"><button class="pixel-btn small" id="btnWipeSave" style="flex:1;justify-content:center;background:#1a0f00;color:#ff6b6b">DELETE FARM</button><button class="pixel-btn" data-close style="flex:1;justify-content:center">← BACK</button></div>
   </div>
 </div>
 
 <div id="creditsScreen" style="position:fixed;inset:0;z-index:9998;background: linear-gradient(rgba(0,0,0,0.58), rgba(0,0,0,0.66)), url('assets/menu-bg.png') center/cover no-repeat;backdrop-filter:blur(2px);display:none;align-items:center;justify-content:center;padding:20px;box-sizing:border-box">
   <div style="width:420px;max-width:100%;background:#1a140f;border:4px solid #000;box-shadow:8px 8px 0 #000;padding:20px;display:flex;flex-direction:column;gap:12px;text-align:center">
-    <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00">© CRÉDITOS</div>
-    <div style="font-family:'VT323',monospace;font-size:16px;color:#c9b896;line-height:1.4">ANT FARM RPG • Hecho con Topo<br><span style="color:#8a7a5a">Arte pixel 16-BIT • Motor propio</span></div>
-    <button class="pixel-btn" data-close style="justify-content:center">← VOLVER</button>
+    <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00">CREDITS</div>
+    <div style="font-family:'VT323',monospace;font-size:16px;color:#c9b896;line-height:1.4">ANT FARM · TOPO STUDIOS<br><span style="color:#8a7a5a">Voxel art · Custom engine</span></div>
+    <button class="pixel-btn" data-close style="justify-content:center">← BACK</button>
   </div>
 </div>
 
 <div id="onboardingModal" style="position:fixed;inset:0;z-index:9997;background:rgba(0,0,0,0.58);backdrop-filter:blur(2px);display:none;align-items:center;justify-content:center;padding:20px;box-sizing:border-box">
   <div style="width:min(640px,92vw);background:#1a140f;border:4px solid #000;box-shadow:8px 8px 0 #000;overflow:hidden">
     <div style="background:#000;border-bottom:4px solid #000;padding:12px 14px;display:flex;justify-content:space-between;align-items:center">
-      <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00">DÍA 0 — MUNDO NUEVO</div>
+      <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00">DAY 0 — NEW WORLD</div>
       <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#8a7a5a">ANT FARM</div>
     </div>
     <div style="padding:18px 16px;display:flex;flex-direction:column;gap:14px">
-      <div style="display:flex;gap:12px;align-items:center"><div style="width:52px;height:52px;background:#ffcc00;border:3px solid #000;display:grid;place-items:center;font-size:24px;box-shadow:3px 3px 0 #000">🍯</div><div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#ffcc00">1 — PON MIEL</div><div style="font-family:'VT323',monospace;font-size:16px;color:#fff8dc;margin-top:4px">Toca el pasto verde de arriba para soltar miel.</div></div></div>
-      <div style="display:flex;gap:12px;align-items:center"><div style="width:52px;height:52px;background:#ff3b30;border:3px solid #000;display:grid;place-items:center;font-size:20px;box-shadow:3px 3px 0 #000">⛏</div><div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#ff3b30">2 — CAVA</div><div style="font-family:'VT323',monospace;font-size:16px;color:#fff8dc;margin-top:4px">Mantén <b style="color:#ffcc00">SHIFT + click</b> en la tierra para cavar túneles.</div></div></div>
-      <div style="display:flex;gap:12px;align-items:center"><div style="width:52px;height:52px;background:#000;border:3px solid #000;display:grid;place-items:center;font-size:20px;box-shadow:3px 3px 0 #000">👁</div><div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#2de67a">3 — MÍRALAS</div><div style="font-family:'VT323',monospace;font-size:16px;color:#fff8dc;margin-top:4px">Toca una hormiga para ver su ficha. Arriba verás tu <b style="color:#ffcc00">economía</b> en vivo.</div></div></div>
+      <div style="display:flex;gap:12px;align-items:center"><div style="width:52px;height:52px;background:#ffcc00;border:3px solid #000;display:grid;place-items:center;font-size:24px;box-shadow:3px 3px 0 #000">🍯</div><div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#ffcc00">1 — DROP HONEY</div><div style="font-family:'VT323',monospace;font-size:16px;color:#fff8dc;margin-top:4px">Tap the green meadow above to drop honey.</div></div></div>
+      <div style="display:flex;gap:12px;align-items:center"><div style="width:52px;height:52px;background:#ff3b30;border:3px solid #000;display:grid;place-items:center;font-size:20px;box-shadow:3px 3px 0 #000">⛏</div><div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#ff3b30">2 — DIG</div><div style="font-family:'VT323',monospace;font-size:16px;color:#fff8dc;margin-top:4px">Hold <b style="color:#ffcc00">SHIFT + click</b> underground to dig tunnels.</div></div></div>
+      <div style="display:flex;gap:12px;align-items:center"><div style="width:52px;height:52px;background:#000;border:3px solid #000;display:grid;place-items:center;font-size:20px;box-shadow:3px 3px 0 #000">👁</div><div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#2de67a">3 — WATCH THEM</div><div style="font-family:'VT323',monospace;font-size:16px;color:#fff8dc;margin-top:4px">Tap an ant to open her profile. Your live <b style="color:#ffcc00">economy</b> is shown above.</div></div></div>
     </div>
     <div style="background:#000;border-top:4px solid #000;padding:10px 12px;display:flex;justify-content:flex-end">
-      <button id="btnOnboardingStart" style="font-family:'Press Start 2P',monospace;font-size:9px;padding:12px 18px;background:#2de67a;border:3px solid #000;color:#000;box-shadow:4px 4px 0 #000;cursor:pointer">¡A JUGAR! →</button>
+      <button id="btnOnboardingStart" style="font-family:'Press Start 2P',monospace;font-size:9px;padding:12px 18px;background:#2de67a;border:3px solid #000;color:#000;box-shadow:4px 4px 0 #000;cursor:pointer">PLAY! →</button>
     </div>
   </div>
 </div>
@@ -116,17 +117,17 @@
 <!-- PANTALLA CARGA MUNDO - generacion propia -->
 <div id="worldGenScreen" style="position:fixed;inset:0;z-index:9996;background: linear-gradient(rgba(26,20,15,0.72), rgba(0,0,0,0.78)), url('assets/menu-bg.png') center/cover no-repeat;display:none;align-items:center;justify-content:center;padding:20px;box-sizing:border-box">
   <div style="width:520px;max-width:100%;background:#000;border:4px solid #000;box-shadow:8px 8px 0 #000;padding:20px;display:flex;flex-direction:column;gap:14px;image-rendering:pixelated">
-    <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00;text-align:center;letter-spacing:1px">⛏ GENERANDO MUNDO...</div>
+    <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00;text-align:center;letter-spacing:1px">⛏ GENERATING WORLD...</div>
     <div id="genSizeLabel" style="font-family:'Press Start 2P',monospace;font-size:8px;color:#8a7a5a;text-align:center">MEDIUM 64×36</div>
     <div id="genSeedLabel" style="font-family:'VT323',monospace;font-size:13px;color:#5a4a3a;text-align:center">Seed: -</div>
     <div style="height:18px;background:#1a140f;border:3px solid #000;position:relative;overflow:hidden;box-shadow:inset 0 0 0 2px #000">
       <div id="genBar" style="position:absolute;left:0;top:0;bottom:0;width:0%;background:linear-gradient(90deg,#2de67a 0%, #ffcc00 100%);transition:width 0.15s linear;box-shadow:2px 0 0 #000"></div>
       <div id="genBarText" style="position:absolute;inset:0;display:grid;place-items:center;font-family:'Press Start 2P',monospace;font-size:7px;color:#fff;text-shadow:1px 1px 0 #000">0%</div>
     </div>
-    <div id="genStatus" style="font-family:'VT323',monospace;font-size:16px;color:#c9b896;text-align:center;min-height:20px">Tallando terreno...</div>
-    <div id="genSub" style="font-family:'VT323',monospace;font-size:12px;color:#8a7a5a;text-align:center">Cada bloque da forma a tu hogar</div>
+    <div id="genStatus" style="font-family:'VT323',monospace;font-size:16px;color:#c9b896;text-align:center;min-height:20px">Carving terrain...</div>
+    <div id="genSub" style="font-family:'VT323',monospace;font-size:12px;color:#8a7a5a;text-align:center">Every block shapes your home</div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;font-family:'Press Start 2P',monospace;font-size:6px;color:#5a4a3a">
-      <span>⬛ Suelo</span><span>🌿 Plantas</span><span>💎 Tesoros</span>
+      <span>⬛ Soil</span><span>🌿 Plants</span><span>💎 Treasures</span>
     </div>
   </div>
 </div>
@@ -441,7 +442,7 @@
 <div id="onboardingLegacy" style="position:fixed;inset:0;z-index:9997;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);backdrop-filter:blur(2px);">
   <div style="width:min(640px,92vw);background:#1a140f;border:4px solid #000;box-shadow:8px 8px 0 #000;padding:0;overflow:hidden;image-rendering:pixelated">
     <div style="background:#000;border-bottom:4px solid #000;padding:12px 14px;display:flex;align-items:center;justify-content:space-between">
-      <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00">DÍA 0 — MUNDO NUEVO</div>
+      <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00">DAY 0 — NEW WORLD</div>
       <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#8a7a5a">ANT FARM</div>
     </div>
     <div id="onStep" style="padding:18px 16px">
@@ -808,14 +809,14 @@
   <!-- Motor del juego — núcleo profesional modular -->
   
 
-<script src="core/bandas.js?v=20261018d"></script>
-<script src="core/mundo.js?v=20261018d"></script>
-<script src="core/tesoros.js?v=20261018d"></script>
-<script src="core/economia.js?v=20261018d"></script>
-<script src="core/agua.js?v=20261018d"></script>
-<script src="js/i18n-en.js?v=20261018d"></script>
-<script src="js/app.js?v=20261018d"></script>
-<script src="js/splash-topo.js?v=20261018d"></script>
+<script src="core/bandas.js?v=20261019a"></script>
+<script src="core/mundo.js?v=20261019a"></script>
+<script src="core/tesoros.js?v=20261019a"></script>
+<script src="core/economia.js?v=20261019a"></script>
+<script src="core/agua.js?v=20261019a"></script>
+<script src="js/i18n-en.js?v=20261019a"></script>
+<script src="js/app.js?v=20261019a"></script>
+<script src="js/splash-topo.js?v=20261019a"></script>
 <script>
 // Vigia del arranque: si js/app.js no termino de cargar, decirlo en pantalla en vez de dejar
 // botones sordos. Es lo unico que vive en el HTML; el juego entero esta en js/app.js.
@@ -824,7 +825,7 @@
     if(document.getElementById('topoBootFail')) return;
     const d=document.createElement('div');
     d.id='topoBootFail';
-    d.style.cssText='position:fixed;inset:0;z-index:10099;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box';
+    d.style.cssText='position:fixed;inset:0;z-index:12099;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box';
     d.innerHTML='<div style="max-width:440px;background:#1a140f;border:4px solid #000;box-shadow:8px 8px 0 #000;padding:18px;text-align:center"><div style="font-family:\'Press Start 2P\',monospace;font-size:11px;color:#ff8c00;line-height:1.6">THE ENGINE DID NOT START</div><div style="font-family:\'VT323\',monospace;font-size:15px;color:#c9b896;margin-top:10px;line-height:1.4">'+msg+'</div><button id="topoBootReload" class="pixel-btn primary" style="margin-top:14px;justify-content:center">RELOAD</button></div>';
     document.body.appendChild(d);
     const b=document.getElementById('topoBootReload'); if(b) b.onclick=function(){ location.reload(); };

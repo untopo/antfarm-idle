@@ -1,8 +1,9 @@
 /**
  * Simulación de recarga real:
  *  A) se ejecuta app.js, se crea una granja y se guarda
- *  B) con el MISMO localStorage se vuelve a ejecutar app.js desde cero (como F5)
- *     y se comprueba que el mundo revive solo, con sus túneles, hormigas y día.
+ *  B) con el MISMO localStorage se vuelve a ejecutar app.js desde cero (como F5),
+ *     se comprueba que no salta el nuevo título y que CONTINUE revive explícitamente el mundo
+ *     con sus túneles, hormigas y día.
  * Reutiliza el mismo DOM falso del otro test; no reimplementa la lógica del juego.
  */
 const fs = require('fs');
@@ -95,6 +96,7 @@ function boot(store, eager) {
     setTimeout: (f, ms) => { if (eager && budget-- > 0) { try { f(); } catch (e) { } return 0; } return 0; },
     setInterval: () => 0, clearInterval: () => {}, clearTimeout: () => {}, queueMicrotask: f => { if (eager && budget-- > 0) { try { f(); } catch (e) { } } },
     requestAnimationFrame: () => 0, cancelAnimationFrame: () => {},
+    getComputedStyle: el => ({ display: (el && el.style && el.style.display) || 'block', overflow: '', overflowX: '' }),
     fetch: () => Promise.reject(new Error('nf')), XMLHttpRequest: class { open() {} send() {} },
     URL: { createObjectURL: () => '', revokeObjectURL() {} }, Blob: class { },
     navigator: { userAgent: 'node', hardwareConcurrency: 4, maxTouchPoints: 0 },
@@ -141,21 +143,37 @@ try {
   if (B.err) bad('B: app.js reventó al recargar -> ' + B.err.message);
   else ok('B: recarga limpia, app.js completo sin errores');
 
-  const after = vm.runInContext('({hasWorld:typeof _topoHasWorld!=="undefined"?_topoHasWorld:null, c:COLS,r:ROWS,ants:(typeof workers!=="undefined"?workers.length:-1),carved:(typeof soil!=="undefined"?soil.flat().filter(x=>x===0).length:-1),day:(typeof day!=="undefined"?day:-1),food:colonyFood,digs,gen,queen:queen?queen.name:null,splash:(function(){try{return document.getElementById("splashScreen").style.display}catch(e){return "?"}})(),menu:(function(){try{return document.getElementById("mainMenu").style.display}catch(e){return "?"}})()})', B.ctx);
+  // app.js no owns the visible splash anymore: splash-topo.js performs this handoff in the
+  // browser. Call the same public handoff and verify that a stored `antfarm_inGame=1` still stops
+  // at the title instead of silently deserializing the farm.
+  B.sandbox.topoShowMainMenu({ initial: true });
+  const gate = vm.runInContext('({hasWorld:typeof _topoHasWorld!=="undefined"?_topoHasWorld:null, menu:document.getElementById("mainMenu").style.display, splash:document.getElementById("splashScreen").style.display, started:document.body.classList.contains("game-started")})', B.ctx);
+  const continueEl = B.getEl('btnMainContinue');
+  if (gate.hasWorld !== false || gate.menu !== 'flex' || gate.started) bad('B: la recarga se saltó el título ' + JSON.stringify(gate));
+  else ok('B: F5 termina en el título aunque antfarm_inGame=1');
+  if (continueEl.hidden === true) bad('B: CONTINUE quedó oculto pese al guardado válido');
+  else ok('B: CONTINUE aparece primero para la granja guardada');
+  const saveAtGate = store.get('antFarm_fullSave_v2');
+  if (typeof continueEl.onclick !== 'function') bad('B: CONTINUE no tiene acción');
+  else continueEl.onclick({ preventDefault() {}, stopPropagation() {} });
 
-  if (after.hasWorld !== true) bad('B: _topoHasWorld=' + after.hasWorld + ' (el auto-resume no disparó)');
-  else ok('B: auto-resume detectó la partida y activó el mundo');
+  const after = vm.runInContext('({hasWorld:typeof _topoHasWorld!=="undefined"?_topoHasWorld:null, c:COLS,r:ROWS,ants:(typeof workers!=="undefined"?workers.length:-1),carved:(typeof soil!=="undefined"?soil.flat().filter(x=>x===0).length:-1),day:(typeof day!=="undefined"?day:-1),food:colonyFood,digs,gen,queen:queen?queen.name:null,splash:document.getElementById("splashScreen").style.display,menu:document.getElementById("mainMenu").style.display,started:document.body.classList.contains("game-started")})', B.ctx);
+
+  if (after.hasWorld !== true) bad('B: CONTINUE no activó el mundo (_topoHasWorld=' + after.hasWorld + ')');
+  else ok('B: CONTINUE detectó la partida y activó el mundo');
   if (after.c !== 64 || after.r !== 36) bad('B: tamaño restaurado ' + after.c + 'x' + after.r);
   else ok('B: tamaño del mundo 64x36 recuperado');
   if (after.carved !== sizeBefore.carved) bad('B: túneles ' + after.carved + ' vs ' + sizeBefore.carved + ' (se perdieron excavaciones)');
   else ok('B: los ' + after.carved + ' túneles excavados siguen ahí');
   if (after.ants < 5) bad('B: solo ' + after.ants + ' hormigas'); else ok('B: ' + after.ants + ' hormigas vivas');
   if (!after.queen) bad('B: reina null -> renderLoop crashearía'); else ok('B: reina ' + after.queen + ' recuperada');
-  if (after.day !== 7) bad('B: día ' + after.day + ' en vez de 7'); else ok('B: día 7 (el tiempo avanza offline sin resetear)');
+  if (after.day !== 7) bad('B: día ' + after.day + ' en vez de 7'); else ok('B: día 7 recuperado sin resetear el tiempo');
   if (after.digs !== 88 || after.gen !== 1 || after.food !== 31) bad('B: progreso perdido (food=' + after.food + ' digs=' + after.digs + ' gen=' + after.gen + ')');
   else ok('B: recursos/progreso intactos · 🍯' + after.food + ' · ' + after.digs + ' digs · GEN' + after.gen);
-  if (after.menu !== 'none') bad('B: el menú sigue visible (' + after.menu + ') - te pediría crear otra granja');
-  else ok('B: menú oculto, entras directo a tu granja');
+  if (after.menu !== 'none' || !after.started) bad('B: CONTINUE no retiró el título ' + JSON.stringify({ menu: after.menu, started: after.started }));
+  else ok('B: CONTINUE retira el título y entra a la granja');
+  if (!saveAtGate) bad('B: el guardado desapareció mientras esperaba en el título');
+  else ok('B: esperar en el título no destruye el guardado');
   const same = JSON.stringify({ c: sizeBefore.c, r: sizeBefore.r, ants: sizeBefore.ants }) === JSON.stringify({ c: after.c, r: after.r, ants: after.ants });
   if (!same) bad('B: estado divergente vs sesión A'); else ok('B: estado idéntico al de la sesión A');
 
