@@ -7,8 +7,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ANT FARM</title>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache">
-<link rel="stylesheet" href="css/style.css?v=20261019b">
-<link rel="stylesheet" href="css/startup.css?v=20261019b">
+<link rel="stylesheet" href="css/style.css?v=20261019c">
+<link rel="stylesheet" href="css/startup.css?v=20261019c">
 
 <style id="topoHideUntilStart">
   #appRoot{display:none !important}
@@ -188,7 +188,7 @@
         <div><span>TYPE</span><b>Press Start 2P · VT323</b></div>
       </div>
       <p class="topo-credit-thanks">Thank you for looking after the colony. Every tunnel remembers.</p>
-      <div class="topo-build-stamp">ANT FARM · BUILD 20261019B</div>
+      <div class="topo-build-stamp">ANT FARM · BUILD 20261019C</div>
     </div>
     <footer class="topo-panel-footer"><button type="button" id="btnCreditsReplay" class="topo-footer-button">REPLAY INTRO</button><span>MADE BELOW THE SURFACE</span></footer>
   </div>
@@ -559,19 +559,23 @@
 
 </div>
 
-<!-- INVENTARIO DEL NIDO — mismo hueco que el perfil: uno u otro, nunca los dos -->
-<div id="invSheet" style="display:none;flex-direction:column;position:fixed;top:76px;right:14px;width:330px;max-width:330px;max-height:calc(100vh - 92px);background:#fff8dc;border:4px solid #000;border-top:none;box-shadow:6px 6px 0 #000;z-index:91;overflow:hidden;transform:translateY(-12px) scaleY(0);opacity:0;transition:transform 0.22s cubic-bezier(.2,.8,.2,1), opacity 0.22s;transform-origin:top">
-  <div style="background:#1a140f;flex:1 1 auto;min-height:0;display:flex;flex-direction:column">
-    <div style="background:#000;padding:8px 10px;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #000">
-      <span style="font-family:'Press Start 2P',monospace;font-size:12px;color:#ffcc00;letter-spacing:0.3px">☰ ALMACÉN</span>
-      <button id="btnCloseInv" style="background:#ff3b30;color:#fff;border:2px solid #000;padding:4px 8px;font-family:'Press Start 2P',monospace;font-size:10px;cursor:pointer;box-shadow:2px 2px 0 #000">✕</button>
+<!-- NEST INVENTORY — one responsive voxel drawer; simulation data stays untouched. -->
+<section id="invSheet" class="inv-sheet" role="dialog" aria-modal="false" aria-labelledby="invTitle" aria-describedby="invSubtitle" aria-hidden="true" tabindex="-1">
+  <header class="inv-header">
+    <div class="inv-header-mark" aria-hidden="true"><span></span></div>
+    <div class="inv-heading">
+      <span class="inv-kicker">COLONY LOGISTICS</span>
+      <h2 id="invTitle">NEST STORES</h2>
+      <p id="invSubtitle">Rations, raw materials, and chamber stock.</p>
     </div>
-    <div id="invBody" class="hoja-cuerpo" style="padding:8px 10px;display:flex;flex-direction:column;gap:7px;overflow-y:auto;flex:1 1 auto;min-height:0"></div>
-    <div style="padding:8px 10px;border-top:3px solid #000;background:#000">
-      <button id="btnInvGo" class="pixel-btn small" style="width:100%;padding:6px 4px;font-size:10px;background:#2a0f00;color:#ffcc00;border:2px solid #000;cursor:pointer">▶ IR AL ALMACÉN</button>
-    </div>
-  </div>
-</div>
+    <button id="btnCloseInv" class="inv-close" type="button" aria-label="Close inventory"><span aria-hidden="true">×</span></button>
+  </header>
+  <div id="invBody" class="inv-body hoja-cuerpo" tabindex="0" aria-label="Stored supplies"></div>
+  <footer class="inv-footer">
+    <span class="inv-shortcuts"><kbd>I</kbd> TOGGLE <i aria-hidden="true">·</i> <kbd>ESC</kbd> CLOSE</span>
+    <button id="btnInvGo" class="inv-locate" type="button"><span class="inv-locate-pip" aria-hidden="true"></span>CENTER ON CACHE</button>
+  </footer>
+</section>
 
 <!-- LISTA DE HORMIGAS ACTIVAS — la puerta es el numero de la barra de arriba (Topo: «que al pinchar
      cuantas hormigas hay aparezca la lista»). Misma piel que las demas hojas: caja crema, marco negro,
@@ -800,7 +804,7 @@
           <span style="font-size:20px;line-height:1;filter:drop-shadow(1px 1px 0 #000)">🍯</span>
           <span id="velFoodCount" style="font-family:'Press Start 2P',monospace;font-size:19px;color:#ffcc00;line-height:1;text-shadow:1px 1px 0 #000, 0 0 6px rgba(255,204,0,0.35);min-width:28px">0</span>
         </div>
-        <span style="font-family:'Press Start 2P',monospace;font-size:9px;color:#fff8dc;letter-spacing:0.5px;text-shadow:1px 1px 0 #000;line-height:1">ALMACÉN</span>
+        <span style="font-family:'Press Start 2P',monospace;font-size:9px;color:#fff8dc;letter-spacing:0.5px;text-shadow:1px 1px 0 #000;line-height:1">STORES</span>
       </div>
       <div id="velMatChips" style="display:flex;flex-direction:column;justify-content:center;gap:2px;flex-shrink:0;font-family:'Press Start 2P',monospace;font-size:9px;color:#8a7a5a;line-height:1.15;text-shadow:1px 1px 0 #000">
         <span style="white-space:nowrap">🌿<b id="velMatFiber" style="color:#2de67a">0</b> 🪨<b id="velMatStone" style="color:#c9c9c9">0</b> 🧱<b id="velMatClay" style="color:#e08a5a">0</b></span>
@@ -904,14 +908,14 @@
   <!-- Motor del juego — núcleo profesional modular -->
   
 
-<script src="core/bandas.js?v=20261019b"></script>
-<script src="core/mundo.js?v=20261019b"></script>
-<script src="core/tesoros.js?v=20261019b"></script>
-<script src="core/economia.js?v=20261019b"></script>
-<script src="core/agua.js?v=20261019b"></script>
-<script src="js/i18n-en.js?v=20261019b"></script>
-<script src="js/app.js?v=20261019b"></script>
-<script src="js/splash-topo.js?v=20261019b"></script>
+<script src="core/bandas.js?v=20261019c"></script>
+<script src="core/mundo.js?v=20261019c"></script>
+<script src="core/tesoros.js?v=20261019c"></script>
+<script src="core/economia.js?v=20261019c"></script>
+<script src="core/agua.js?v=20261019c"></script>
+<script src="js/i18n-en.js?v=20261019c"></script>
+<script src="js/app.js?v=20261019c"></script>
+<script src="js/splash-topo.js?v=20261019c"></script>
 <script>
 // Vigia del arranque: si js/app.js no termino de cargar, decirlo en pantalla en vez de dejar
 // botones sordos. Es lo unico que vive en el HTML; el juego entero esta en js/app.js.

@@ -10168,7 +10168,7 @@ setTimeout(_updateBothAntCounts, 1800);
 // se cuentan las obreras activas. Los numeros viven aqui; la barra de arriba se retiro para no decir
 // lo mismo dos veces, y el detalle no se apila encima del perfil de una hormiga (uno u otro).
 function _ecoTxt(id, v){ const e=document.getElementById(id); if(e && e.textContent!==String(v)) e.textContent=String(v); }
-let _invAbierto=false;
+let _invAbierto=false, _invResizeCableado=false, _invKeysCableado=false;
 function updateEcoHud(){
   try{
     _ecoTxt('velFoodCount', Math.max(0, Math.floor(economyLedger.food)));
@@ -10181,40 +10181,52 @@ function updateEcoHud(){
     if(_invAbierto) pintarInventario();
   }catch(e){ /* un nodo que falte no puede parar el bucle */ }
 }
-function _filaInv(icono, nombre, valor, nota, color){
-  return '<div style="display:flex;align-items:center;gap:7px;background:#000;border:2px solid #000;padding:5px 6px">'
-    + '<span style="font-size:13px;line-height:1;filter:drop-shadow(1px 1px 0 #000)">'+icono+'</span>'
-    + '<span style="flex:1;min-width:0;font-family:\'VT323\',monospace;font-size:14px;color:#c9b896;letter-spacing:0.3px">'+nombre
-    + (nota? '<br><span style="font-size:11px;color:#7a6a4e">'+nota+'</span>' : '')+'</span>'
-    + '<b style="font-family:\'Press Start 2P\',monospace;font-size:11px;color:'+(color||'#ffcc00')+';text-shadow:1px 1px 0 #000">'+valor+'</b></div>';
+function _filaInv(def, valor){
+  return '<article class="inv-resource-card" data-material="'+def.k+'">'
+    + '<span class="inv-resource-icon" style="--mat-main:'+def.col+';--mat-dark:'+def.col2+'" aria-hidden="true"><i></i></span>'
+    + '<span class="inv-resource-copy"><b class="inv-resource-name">'+def.n+'</b>'
+    + '<span class="inv-resource-note">'+def.sirve+'</span></span>'
+    + '<b class="inv-resource-count" aria-label="'+valor+' '+def.n.toLowerCase()+'">'+valor+'</b></article>';
 }
 function pintarInventario(){
   const body=document.getElementById('invBody'); if(!body) return;
   const celdas=storageCells(), p=storagePos(), cap=capacidadAlmacen();
   const miel=Math.max(0, Math.floor(economyLedger.food));
   const lleno=Math.max(0, Math.min(100, Math.round(miel/Math.max(1,cap)*100)));
-  let html='';
-  html += '<div style="background:#2a0f00;border:3px solid #000;padding:7px 8px">'
-    + '<div style="display:flex;align-items:baseline;gap:6px"><span style="font-size:16px">🍯</span>'
-    + '<b style="font-family:\'Press Start 2P\',monospace;font-size:16px;color:#ffcc00;text-shadow:1px 1px 0 #000">'+miel+'</b>'
-    + '<span style="font-family:\'VT323\',monospace;font-size:13px;color:#c9b896">rations · capacity '+cap+'</span></div>'
-    + '<div style="height:7px;background:#000;border:2px solid #000;margin-top:6px"><div style="height:100%;width:'+lleno+'%;background:linear-gradient(90deg,#ffcc00,#ff8c00)"></div></div>'
-    + '</div>';
-  html += '<div style="font-family:\'VT323\',monospace;font-size:12px;color:#7a6a4e;line-height:1.25">Saved in '
-    + (celdas.length? '<b style="color:#c9b896">'+celdas.length+' '+(celdas.length===1?'cell':'cells')+'</b> of chamber <b style="color:#c9b896">['+Math.floor(p.x/CELL)+','+Math.floor(p.y/CELL)+']</b>' : '<b style="color:#ff8c00">no excavated chamber</b>')
-    + (granerosConstruidos()? ' · granaries: '+granerosConstruidos() : '') + '</div>';
+  const graneros=granerosConstruidos();
+  const cx=Math.floor(p.x/CELL), cy=Math.floor(p.y/CELL);
+  let html='<section class="inv-overview-grid" aria-label="Storage overview">';
+  html += '<article class="inv-card inv-ration-card">'
+    + '<span class="inv-ration-label">RATION RESERVE</span>'
+    + '<div class="inv-ration-main"><span class="inv-honey-jar" aria-hidden="true"></span>'
+    + '<span class="inv-ration-copy"><b class="inv-ration-value">'+miel+'</b><span class="inv-ration-unit">rations stored</span></span>'
+    + '<span class="inv-capacity-readout"><b>'+cap+'</b>MAX</span></div>'
+    + '<div class="inv-meter" role="progressbar" aria-label="Ration capacity" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+lleno+'">'
+    + '<span class="inv-meter-fill" style="--inv-fill:'+lleno+'%"></span><span class="inv-meter-ticks" aria-hidden="true"></span></div></article>';
+  html += '<article class="inv-card inv-cache-card">'
+    + '<span class="inv-cell-map" aria-hidden="true"><i></i></span><span class="inv-cache-copy">'
+    + '<span class="inv-card-eyebrow">CACHE SITE</span>'
+    + '<b class="inv-cache-coord">'+(celdas.length?'['+cx+','+cy+']':'UNASSIGNED')+'</b>'
+    + '<span class="inv-cache-detail">'+(celdas.length?'<b>'+celdas.length+'</b> chamber '+(celdas.length===1?'cell':'cells'):'<span class="is-empty">no excavated chamber</span>')
+    + (graneros?' · <b>'+graneros+'</b> '+(graneros===1?'granary':'granaries'):'')+'</span></span></article></section>';
+  html += '<section class="inv-section" aria-labelledby="invMaterialsTitle"><h3 class="inv-section-head" id="invMaterialsTitle">RAW MATERIALS</h3><div class="inv-resource-grid">';
   for(const d of _MAT_DEFS){
-    html += _filaInv(d.icon, d.n, Math.max(0, Math.floor(economyLedger.materials[d.k]||0)), d.sirve, '#fff8dc');
+    html += _filaInv(d, Math.max(0, Math.floor(economyLedger.materials[d.k]||0)));
   }
+  html += '</div></section>';
   try{
-    const herramientas={pick:['⛏','PICK'],basket:['🧺','BASKET'],trowel:['🪝','TROWEL']};
+    const herramientas={pick:['PK','PICK'],basket:['BK','BASKET'],trowel:['TR','TROWEL']};
     const partes=[];
-    for(const k in herramientas){ const n=workers.filter(w=>w.tool===k).length; if(n) partes.push(herramientas[k][0]+' '+herramientas[k][1]+' ×'+n); }
+    for(const k in herramientas){
+      const n=workers.filter(w=>w.tool===k).length;
+      if(n) partes.push('<div class="inv-tool-chip"><span class="inv-tool-mark" aria-hidden="true">'+herramientas[k][0]+'</span><span>'+herramientas[k][1]+'</span><b>×'+n+'</b></div>');
+    }
     const estructur=structures.filter(st=>st&&st.built!==false).length;
-    if(partes.length||estructur) html += '<div style="font-family:\'VT323\',monospace;font-size:12px;color:#7a6a4e;line-height:1.3">'
-      + (partes.length? partes.join(' · ')+'<br>':'') + (estructur? 'standing structures: <b style="color:#c9b896">'+estructur+'</b>' : '') + '</div>';
     const crias=brood.length;
-    html += '<div style="font-family:\'VT323\',monospace;font-size:12px;color:#7a6a4e">brood in chamber: <b style="color:#c9b896">'+crias+'</b> · accumulated waste: <b style="color:#c9b896">'+wastePiles.length+'</b></div>';
+    html += '<section class="inv-section" aria-labelledby="invColonyTitle"><h3 class="inv-section-head" id="invColonyTitle">EQUIPMENT &amp; COLONY</h3>'
+      + '<div class="inv-tool-grid">'+(partes.length?partes.join(''):'<div class="inv-empty-tools">No tools currently in use.</div>')+'</div>'
+      + '<div class="inv-colony-facts"><div class="inv-fact"><b>'+estructur+'</b><span>STRUCTURES</span></div>'
+      + '<div class="inv-fact"><b>'+crias+'</b><span>BROOD</span></div><div class="inv-fact"><b>'+wastePiles.length+'</b><span>WASTE</span></div></div></section>';
   }catch(e){}
   if(body.dataset.stamp!==html){ body.innerHTML=html; body.dataset.stamp=html; }
 }
@@ -10241,46 +10253,80 @@ function _asentarBajoCalendario(el){
     return bajo;
   }catch(e){ return 0; }
 }
+function _asentarInventario(el){
+  if(!el) return 0;
+  try{
+    // On narrow or short screens the drawer becomes a self-contained overlay. Keeping it below the
+    // calendar there would leave less than one touch target of usable height in landscape.
+    const compacto=(window.innerWidth||1280)<=700 || (window.innerHeight||800)<=650;
+    if(compacto){
+      el.setAttribute('data-compact-layout','1');
+      el.style.top='8px';
+      return 8;
+    }
+    el.removeAttribute('data-compact-layout');
+    return _asentarBajoCalendario(el);
+  }catch(e){ return _asentarBajoCalendario(el); }
+}
 function asentarHoja(el){
   if(!el) return 0;
   try{
-    // Ojo: durante la apertura la hoja viene con `translateY(-12px)` y la animacion la deja 12 px mas
-    // abajo. Medir el borde con getBoundingClientRect ahi da un topo cortito y la hoja se sale por abajo
-    // de la pantalla (medido: de 228 a 628 en una ventana de 620). Se lee el `top` de layout, que no
-    // conoce de transformaciones.
+    // Ojo: durante la apertura la hoja viene transformada. Medir el borde con
+    // getBoundingClientRect ahi da un topo falso y la hoja se sale por abajo. Se lee el `top` de
+    // layout, que no conoce de transformaciones.
     const st=parseFloat(getComputedStyle(el).top);
     const top=isFinite(st)&&st>0? st : Math.round(el.getBoundingClientRect().top);
     if(!(top>0)) return 0;
     const alto=Math.max(180, (window.innerHeight||800) - top - 10);
-    // ...y con `!important`, porque el CSS de la hoja de perfil declara su max-height asi (una regla
-    // importante del estilo gana a un style inline normal: medido, la hoja seguia midiendo 400 px con
-    // 382 pedidos). Con important declarada en la hoja misma, la cuenta de arriba es la que manda.
+    // ...y con `!important`, porque algunas hojas declaran su max-height asi.
     el.style.setProperty('max-height', alto+'px', 'important');
-    const oy=getComputedStyle(el).overflowY;
-    if(oy!=='auto' && oy!=='scroll') el.style.overflowY='auto';
-    el.style.overscrollBehavior='contain';   // y la rueda no se escapa al mundo
+    if(el.id==='invSheet'){
+      // The redesigned drawer owns a fixed header and footer; only its body scrolls.
+      el.style.setProperty('overflow','hidden');
+      const cuerpo=document.getElementById('invBody');
+      if(cuerpo){ cuerpo.style.overflowY='auto'; cuerpo.style.overscrollBehavior='contain'; }
+    }else{
+      const oy=getComputedStyle(el).overflowY;
+      if(oy!=='auto' && oy!=='scroll') el.style.overflowY='auto';
+      el.style.overscrollBehavior='contain';
+    }
     return alto;
   }catch(e){ return 0; }
 }
+let _invUltimoFoco=null;
 function abrirInventario(){
   const sh=document.getElementById('invSheet'); if(!sh) return;
   try{ closeAntProfile(); }catch(e){}
   try{ closeQueenProfile(); }catch(e){}
-  _invAbierto=true; sh.setAttribute('data-open','1'); sh.style.display='flex';
-  _asentarBajoCalendario(sh);
+  _invUltimoFoco=document.activeElement;
+  _invAbierto=true; sh.setAttribute('data-open','1'); sh.setAttribute('aria-hidden','false'); sh.style.display='flex';
+  const puerta=document.getElementById('btnInventory');
+  if(puerta){ puerta.setAttribute('aria-expanded','true'); puerta.setAttribute('aria-label','Close nest inventory'); }
+  _asentarInventario(sh);
   pintarInventario();
-  requestAnimationFrame(()=>{ sh.style.transform='translateY(0) scaleY(1)'; sh.style.opacity='1'; asentarHoja(sh); });
+  requestAnimationFrame(()=>{
+    sh.style.transform='translate3d(0,0,0) scale(1)'; sh.style.opacity='1'; asentarHoja(sh);
+    const cerrar=document.getElementById('btnCloseInv'); if(cerrar) cerrar.focus({preventScroll:true});
+  });
 }
 function cerrarInventario(){
   const sh=document.getElementById('invSheet'); if(!sh) return;
-  _invAbierto=false; sh.removeAttribute('data-open');
-  sh.style.transform='translateY(-12px) scaleY(0)'; sh.style.opacity='0';
-  setTimeout(()=>{ if(!_invAbierto) sh.style.display='none'; }, 240);
+  const devolver=sh.contains(document.activeElement);
+  _invAbierto=false; sh.removeAttribute('data-open'); sh.setAttribute('aria-hidden','true');
+  const puerta=document.getElementById('btnInventory');
+  if(puerta){ puerta.setAttribute('aria-expanded','false'); puerta.setAttribute('aria-label','Open nest inventory'); }
+  sh.style.transform='translate3d(18px,0,0) scale(.985)'; sh.style.opacity='0';
+  setTimeout(()=>{
+    if(!_invAbierto){
+      sh.style.display='none';
+      if(devolver){ const f=(_invUltimoFoco&&document.contains(_invUltimoFoco))?_invUltimoFoco:puerta; if(f&&f.focus) f.focus({preventScroll:true}); }
+    }
+  }, 220);
 }
 window.abrirInventario=abrirInventario; window.cerrarInventario=cerrarInventario;
 // el calendario se pliega con — (y cambia de alto): las hojas abiertas se vuelven a sentar debajo
 try{ document.getElementById('calCollapseBtn') && document.getElementById('calCollapseBtn').addEventListener('click', ()=>{
-  requestAnimationFrame(()=>{ for(const id of ['invSheet','rosterSheet','antProfile','queenProfile']){ const e=document.getElementById(id); if(e && (e.getAttribute('data-open')||e.classList.contains('open'))){ _asentarBajoCalendario(e); asentarHoja(e); } } });
+    requestAnimationFrame(()=>{ for(const id of ['invSheet','rosterSheet','antProfile','queenProfile']){ const e=document.getElementById(id); if(e && (e.getAttribute('data-open')||e.classList.contains('open'))){ if(id==='invSheet') _asentarInventario(e); else _asentarBajoCalendario(e); asentarHoja(e); } } });
 }); }catch(e){}
 function initInventarioHud(){
   const b=document.getElementById('btnInventory');
@@ -10293,13 +10339,27 @@ function initInventarioHud(){
   if(go && !go.dataset.wired){ go.dataset.wired='1'; go.onclick=()=>{
     try{ const p=storagePos(); const b2=getPanBounds(); view.x=clamp(p.x - W/view.zoom/2, b2.minX, b2.maxX); view.y=clamp(p.y - H/view.zoom/2, b2.minY, b2.maxY); clampView(); pushToast(p.x, p.y-18, '🍯', '#ffcc00', 1.4); }catch(e){}
   }; }
-  window.addEventListener('keydown', e=>{
-    if(e.key==='Escape' && _invAbierto){ cerrarInventario(); return; }
-    if((e.key==='i'||e.key==='I') && _topoHasWorld && !e.ctrlKey && !e.metaKey && !e.altKey){
-      const t=e.target; if(t && (t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable)) return;
-      e.preventDefault(); if(_invAbierto) cerrarInventario(); else abrirInventario();
-    }
-  });
+  if(!_invResizeCableado){
+    _invResizeCableado=true;
+    let pendiente=0;
+    const recolocar=()=>{
+      if(!_invAbierto) return;
+      cancelAnimationFrame(pendiente);
+      pendiente=requestAnimationFrame(()=>{ const e=document.getElementById('invSheet'); _asentarInventario(e); asentarHoja(e); });
+    };
+    window.addEventListener('resize', recolocar, {passive:true});
+    try{ window.visualViewport && window.visualViewport.addEventListener('resize', recolocar, {passive:true}); }catch(e){}
+  }
+  if(!_invKeysCableado){
+    _invKeysCableado=true;
+    window.addEventListener('keydown', e=>{
+      if(e.key==='Escape' && _invAbierto){ e.preventDefault(); e.stopImmediatePropagation(); cerrarInventario(); return; }
+      if((e.key==='i'||e.key==='I') && _topoHasWorld && !e.ctrlKey && !e.metaKey && !e.altKey){
+        const t=e.target; if(t && (t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable)) return;
+        e.preventDefault(); if(_invAbierto) cerrarInventario(); else abrirInventario();
+      }
+    }, {capture:true});
+  }
   try{ const w=document.getElementById('velAntBar'); if(w && !w.dataset.wired){ w.dataset.wired='1'; w.onclick=(e)=>{ if(e.target && e.target.closest && e.target.closest('button')) return; }; } }catch(e){}
 }
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', initInventarioHud);
