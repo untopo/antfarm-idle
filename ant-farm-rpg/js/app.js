@@ -2219,8 +2219,16 @@ function _nearestKnownOpen(c0,r0,maxRadius=7){
   return null;
 }
 function _nestKnowledgeSeed(){
-  // Resolve lazily. In normal play the queen succeeds, so do not sort/copy the whole workforce merely
-  // to prepare a fallback that will never be read (this helper is hot while a blueprint is active).
+  // La boca es el ancla física del nido. Una reina puede internarse por una cavidad procedural que no
+  // comunica con la colonia (o quedar allí un cuadro al cargar); su posición instantánea no puede
+  // redefinir qué túneles conoce el enjambre ni declarar perdido un almacén intacto. Si una pared corta
+  // de verdad el camino desde la entrada, en cambio, el componente cambia y el almacén sí queda aislado.
+  try{
+    const ec=entradaCol>=0?entradaCol:detectarEntrada();
+    const entrance=_nearestKnownOpen(ec,SURFACE_ROW,2);
+    if(entrance) return entrance;
+  }catch(e){}
+  // Compatibilidad defensiva para guardados muy antiguos sin una boca detectable.
   try{ if(queens&&queens[0]){const q=_nearestKnownOpen(Math.floor(queens[0].x/CELL),Math.floor(queens[0].y/CELL));if(q)return q;} }catch(e){}
   try{ if(workers&&workers.length){let deep=workers[0];for(let i=1;i<workers.length;i++)if(workers[i].y>deep.y)deep=workers[i];const w=_nearestKnownOpen(Math.floor(deep.x/CELL),Math.floor(deep.y/CELL));if(w)return w;} }catch(e){}
   try{ const p=_nearestKnownOpen(Math.floor(pantryPos.x/CELL),Math.floor(pantryPos.y/CELL));if(p)return p; }catch(e){}

@@ -63,6 +63,16 @@ ok(isolated.capAfter===isolated.capBefore,'sus 36 celdas abiertas no regalan cap
 ok(isolated.largestSize<isolated.voidSize,'findLargestChamber ya no elige el vacío global desconectado',isolated.largestSize+' conocidas frente a '+isolated.voidSize);
 ok(isolated.same,'la inspección periódica no mueve la estructura estable');
 
+const strayQueen=run(`(()=>{const s=storageStructure(true),before={...storagePos()},q=queens[0],q0={x:q.x,y:q.y},dc=3,dr=ROWS-7;
+  // Una coordenada móvil no redefine el nido: reproduce la carrera natural que antes mudaba el almacén
+  // dos veces entre los días 4 y 5 aunque sus seis celdas siguieran intactas.
+  q.x=(dc+.5)*CELL;q.y=(dr+.5)*CELL;markSoilDirty();
+  const caveKnown=isNestCellConnected(dc,dr),kept=maintainPhysicalStorage(),after={...storagePos()};
+  q.x=q0.x;q.y=q0.y;
+  return{caveKnown,kept:kept===s,active:!s.abandoned,same:before.x===after.x&&before.y===after.y,open:_storeFootprint(s).every(p=>soil[p.r][p.c]===0)};})()`);
+ok(!strayQueen.caveKnown,'una reina con coordenadas en el vacío aislado no convierte ese vacío en nido conocido');
+ok(strayQueen.kept&&strayQueen.active&&strayQueen.same&&strayQueen.open,'la posición móvil de una hormiga no abandona ni muda un almacén físicamente intacto');
+
 console.log('\n· ni siquiera una cámara conectada mayor provoca una mudanza');
 const stable=run(`(()=>{const s=storageStructure(true),before={...storagePos()},r=SURFACE_ROW+4;
   // ampliar físicamente el componente conocido a un salón mucho mayor, conectado por el borde del pozo
