@@ -55,7 +55,7 @@ const GANCHO = `(()=>{
   g.stroke=function(){ if(window.__cielo.on) window.__cielo.trazos.push([scol(),Number(g.lineWidth)]); return _st(); };
   g.strokeRect=function(x,y,w,h){ if(window.__cielo.on) window.__cielo.trazos.push([scol(),Number(g.lineWidth)]); return _sr(x,y,w,h); };
   // un pixel del MUNDO (no de la pantalla) leido con la camara actual
-  window.__pixel=(wx,wy)=>{ const d=g.getImageData(Math.round((wx-(view.x||0))*(view.zoom||1)), Math.round((wy-(view.y||0))*(view.zoom||1)),1,1).data; return [d[0],d[1],d[2]]; };
+  window.__pixel=(wx,wy)=>{ const d=g.getImageData(Math.round((wx-(view.x||0))*(view.zoom||1)*(cv.width/VIEW_W)),Math.round((wy-(view.y||0))*(view.zoom||1)*(cv.height/VIEW_H)),1,1).data;return[d[0],d[1],d[2]];};
   // el pixel MAS OSCURO de una hilera: asi ni el sol ni las nubes (ambos mas claros que el cielo)
   // pueden colarse en la medida del color del cielo, caigan donde caigan con la hora y con el viento
   // medido EN PANTALLA, sobre una hilera entera, y devolviendo el color DOMINANTE de la franja (el cielo
@@ -67,7 +67,7 @@ const GANCHO = `(()=>{
       e[0]+=d[i]; e[1]+=d[i+1]; e[2]+=d[i+2]; e[3]++; hist.set(k,e); }
     let best=null, bn=0; for(const e of hist.values()){ if(e[3]>bn){ bn=e[3]; best=e; } }
     return best? [Math.round(best[0]/best[3]), Math.round(best[1]/best[3]), Math.round(best[2]/best[3])] : [0,0,0]; };
-  window.__raya=()=>Math.round((SURFACE_Y-(view.y||0))*(view.zoom||1));
+  window.__raya=()=>Math.round((SURFACE_Y-(view.y||0))*(view.zoom||1)*(cv.height/VIEW_H));
   window.__frame=(n)=>new Promise(r=>{ let k=0; const f=()=>{ if(++k<(n||2)) requestAnimationFrame(f); else r(1); }; requestAnimationFrame(f); });
   window.__lum=a=>Math.round(0.299*a[0]+0.587*a[1]+0.114*a[2]);
   window.__tilde=(c,k)=>_tilde16(c,k);

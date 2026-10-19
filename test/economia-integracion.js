@@ -15,6 +15,9 @@ const directMats=[...app.matchAll(/economyLedger\.materials(?:\.[A-Za-z_$][\w$]*
 check('app.js no escribe saldos por fuera de los métodos del libro',directFood.length===0&&directMats.length===0,
   'comida '+directFood.length+' · materiales '+directMats.length);
 check('compras complejas ya no llaman al pagador suelto',!app.includes('pagar(economyLedger.materials'));
+const foodCredits=[...app.matchAll(/economyLedger\.creditFood\s*\(/g)];
+check('la reserva sólo aumenta mediante una entrega física etiquetada',foodCredits.length===1&&app.includes("creditFood(amt,`worker delivery: ${kind}`)"),foodCredits.length);
+check('tesoros y mejoras sueltan comida física en vez de acreditarla',app.includes('releaseTreasureFood(rew,10')&&app.includes('construction never conjures four food rations'));
 
 vm.runInContext(`
   topoCreateFreshWorld(48,28);
@@ -23,10 +26,13 @@ vm.runInContext(`
   worldMaterials={stone:4,fiber:2};
   economyLedger.creditFood(3,'integration delivery');
   economyLedger.payMaterials({stone:1,fiber:2},'integration tool');
+  const _cell=nestReachableData().cells.find(p=>p[1]>SURFACE_ROW+1),_beforeReserve=economyLedger.food,_beforePhysical=foods.reduce((n,f)=>n+(f.amount||0),0);
+  const _released=_cell&&releaseTreasureFood({c:_cell[0],r:_cell[1]},4,'seed');
   window.__ledgerIntegration={
     food:colonyFood,ledgerFood:economyLedger.food,
     stone:worldMaterials.stone,fiber:worldMaterials.fiber,wood:worldMaterials.wood,
     same:worldMaterials===economyLedger.materials,
+    released:_released,reserveDelta:economyLedger.food-_beforeReserve,physicalDelta:foods.reduce((n,f)=>n+(f.amount||0),0)-_beforePhysical,
     reasons:economyLedger.history().map(x=>x.reason)
   };
 `,ctx);
@@ -34,6 +40,7 @@ const state=sb.__ledgerIntegration;
 check('los nombres antiguos leen y escriben el mismo saldo',state.food===12&&state.ledgerFood===12&&state.same,state);
 check('el pago material pasa por el libro y es exacto',state.stone===3&&state.fiber===0&&state.wood===0,state);
 check('el diario explica ingresos y pagos',state.reasons.includes('integration delivery')&&state.reasons.includes('integration tool'),state.reasons.join(', '));
+check('un tesoro añade 4 raciones físicas y 0 al contador',state.released&&state.physicalDelta===4&&state.reserveDelta===0,state);
 
 vm.runInContext(`worldMaterials.stone=77; topoCreateFreshWorld(64,36); window.__freshStone=worldMaterials.stone;`,ctx);
 check('crear otra granja no hereda materiales',sb.__freshStone===0,sb.__freshStone);

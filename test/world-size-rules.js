@@ -225,10 +225,12 @@ check(rename.uniq >= rename.total - 1, `los nombres siguen sin repetirse tras el
 console.log('\n== 7) el cache del suelo no se queda obsoleto ==');
 run('topoCreateFreshWorld(48,28)');
 const before = run('worldStats().open');
-run('carveRect(6,14,3,3)');
+// La sala toca el costado del pozo inicial. Un hueco en (6,14) era deliberadamente aislado y, con
+// conectividad física, ya no debe contar hasta que exista este paso real desde el nido.
+run('carveRect(CENTER_COL+2,SURFACE_ROW+6,3,3)');
 const t0 = Date.now(); while (Date.now() - t0 < 40) { } // la ventana anti-thrash es de ~24ms
 const after = run('worldStats().open');
-check(after - before === 9, `cavar 3x3 suma 9 celdas al conteo cacheado (${before} -> ${after})`);
+check(after - before === 9, `cavar una sala conectada 3x3 suma 9 celdas al conteo cacheado (${before} -> ${after})`);
 check(run('findFrontier().length') > 0 && run('countChambers()') >= 2, `frontier y camaras siguen disponibles desde el cache (${run('countChambers()')} camaras)`);
 
 console.log('\n' + (fails ? `❌ ${fails} fallos / ${oks} ok` : `✅ ${oks} ok · reglas y rendimiento por tamano correctos`));

@@ -114,46 +114,35 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
      'el cielo cubre de borde a borde', `${C.alba.izq} ${C.alba.centro} ${C.alba.der}`);
 
   const regla=await page.evaluate(`(()=>{
-    const ruler=document.querySelector('.depth-ruler');
-    const els=[...ruler.querySelectorAll('[class*="depth-mark-"]')];
-    const Hpx=(typeof H!=='undefined'?H:576)/(view.zoom||1);
-    const maxC=Math.floor((ROWS*CELL - Hpx/2 - SURFACE_Y)/CELL);
-    const minC=Math.ceil((Hpx/2 - SURFACE_Y)/CELL);
+    updateDepthRuler();
+    const ruler=document.querySelector('.depth-ruler'),els=[...ruler.querySelectorAll('[class*="depth-mark-"]')];
     const out=[];
     for(const el of els){
-      const n=Number(el.querySelector('i') ? el.querySelector('i').textContent : '');
-      const antes=view.y; el.click();
-      const centro=Math.round(view.y + Hpx/2), piso=Math.round(SURFACE_Y + n*CELL);
-      out.push({ n, centro, piso, title: el.title||'', visible: piso >= Math.round(view.y) && piso <= Math.round(view.y + Hpx),
-        alto: Math.round(Hpx), y: Math.round(view.y) });
+      const n=Number(el.dataset.depth),locked=el.dataset.locked==='1',badge=el.querySelector('i')?.textContent||'';
+      el.click();const bounds=getPanBounds(),alto=VIEW_H/(view.zoom||1),centro=view.y+alto/2,piso=SURFACE_Y+n*CELL;
+      const target=piso-alto/2,centrable=target>=bounds.minY-1&&target<=bounds.maxY+1;
+      out.push({n,locked,badge,title:el.title||'',centro,piso,centrable,
+        centered:Math.abs(centro-piso)<=28,visible:piso>=view.y-1&&piso<=view.y+alto+1,
+        atLimit:Math.abs(view.y-bounds.maxY)<=1,y:view.y,alto,maxY:bounds.maxY});
     }
-    const rect=ruler.getBoundingClientRect();
-    const marca=els[2]||els[1];
-    const raya=marca.getBoundingClientRect().top + marca.getBoundingClientRect().height/2;
+    const rect=ruler.getBoundingClientRect(),marca=els[2]||els[1],n=Number(marca.dataset.depth);
+    const raya=marca.getBoundingClientRect().top+marca.getBoundingClientRect().height/2;
     const pct=Math.max(0,Math.min(1,(raya-rect.top)/Math.max(1,rect.height)));
-    const worldY=SURFACE_Y + pct*Math.max(2,ROWS-SURFACE_ROW)*CELL;
-    out.forEach(o=>{ o.centrable = (SURFACE_Y + o.n*CELL - Hpx/2 >= 0) && (SURFACE_Y + o.n*CELL - Hpx/2 <= ROWS*CELL - Hpx); });
-    return JSON.stringify({ centrables: out.filter(o=>o.centrable), noCentrables: out.filter(o=>o.n>maxC), todosVisibles: out,
-      hondoInalcanzables: out.filter(o=>o.n>0 && o.n>maxC),
-      diferenciaRaya: Math.round(Math.abs(worldY - (SURFACE_Y + Number(marca.querySelector('i').textContent)*CELL))),
-      ceroCentrado: Math.abs(out[0].centro - out[0].piso) <= 28 || out[0].clampado, ceroCentro: out[0].centro,
-      surfaceY: Math.round(SURFACE_Y), alto: Math.round(rect.height), marcas: out.map(o=>({n:o.n,title:o.title})) });
+    const worldY=SURFACE_Y+pct*Math.max(2,ROWS-SURFACE_ROW)*CELL;
+    return JSON.stringify({out,alto:Math.round(rect.height),diferenciaRaya:Math.round(Math.abs(worldY-(SURFACE_Y+n*CELL)))});
   })()`);
-  const R=JSON.parse(regla);
-  console.log('  marcas:', R.marcas.map(m=>m.n).join(' '), '·', R.marcas[0].title);
-  const nums=R.marcas.map(m=>Number(m.n));
-  ok(nums.length>=3, 'la barra tiene marcas', nums.length + ' en ' + R.alto + 'px');
-  ok(nums.every(n=>isFinite(n)&&n>=0) && nums[0]===0 && nums[1]-nums[0]>=3, 'cuentan desde el cesped hacia abajo, sin negativos', nums.join(' '));
-  ok(R.marcas.slice(1).every(m=>/PIEDRA|ARCILLA|ARENA|ROCAMA|PIZARRA|COBRE|HIERRO|ORO/.test(m.title)),
-     'cada marca dice de que esta hecha ahi', R.marcas[Math.min(2,R.marcas.length-1)].title);
-  ok(R.centrables.every(m=>Math.abs(m.centro - m.piso) <= 28),
-     'pinchar un numero lleva la camara a ESE piso', R.centrables.map(m=>`${m.n}:${m.centro}/${m.piso}`).join(' ')||'ninguno centrable');
-  ok(R.todosVisibles.every(m=>m.visible), 'y el piso senalado queda dentro de la pantalla',
-     R.todosVisibles.filter(m=>!m.visible).map(m=>`${m.n} (piso ${m.piso} fuera de ${m.y}..${m.y+m.alto})`).join(' ')||'todos a la vista');
-  ok(R.hondoInalcanzables.every(m=>/no da para centrarlo/.test(m.title)),
-     'y el cartel avisa cuando la pantalla no llega', R.noCentrables.length? R.noCentrables.map(m=>m.n+' '+m.title.slice(-32)).join(' | ') : 'todos centramientos');
-
-  ok(R.diferenciaRaya <= 8, 'la rayita y el numero usan la misma escala', R.diferenciaRaya + 'px de diferencia (barra de ' + R.alto + 'px)');
+  const R=JSON.parse(regla),nums=R.out.map(m=>m.n),known=R.out.filter(m=>!m.locked),hidden=R.out.filter(m=>m.locked);
+  console.log('  marcas:',R.out.map(m=>m.locked?'?':m.n).join(' '),'·',R.out[0].title);
+  ok(nums.length>=3,'la barra tiene marcas',nums.length+' en '+R.alto+'px');
+  ok(nums.every(n=>isFinite(n)&&n>=0)&&nums[0]===0&&nums[1]-nums[0]>=3,'cuentan desde el cesped hacia abajo, sin negativos',nums.join(' '));
+  ok(hidden.length>0&&hidden.every(m=>m.badge==='?'&&/unexplored/i.test(m.title)&&!/STONE|CLAY|SAND|BEDROCK|SLATE|COPPER|IRON|GOLD/.test(m.title)),
+     'las marcas bajo la niebla no filtran material ni número',hidden.map(m=>m.title).join(' | '));
+  ok(known.filter(m=>m.n>0).every(m=>/STONE|CLAY|SAND|BEDROCK|SLATE|COPPER|IRON|GOLD|EARTH|MARBLE|QUARTZITE/.test(m.title)),
+     'las marcas ya exploradas sí describen el suelo conocido',known.map(m=>m.title).join(' | '));
+  ok(known.filter(m=>m.centrable).every(m=>m.centered),'pinchar un nivel conocido centra ese piso',known.map(m=>`${m.n}:${Math.round(m.centro)}/${m.piso}`).join(' '));
+  ok(known.every(m=>m.visible),'cada nivel conocido pulsado queda dentro de la pantalla',known.filter(m=>!m.visible).map(m=>m.n).join(' ')||'todos');
+  ok(hidden.every(m=>m.y<=m.maxY+1),'un nivel oculto nunca salta más allá del frente explorado',hidden.map(m=>`${m.n}:${Math.round(m.y)}/${Math.round(m.maxY)}`).join(' | '));
+  ok(R.diferenciaRaya<=8,'la rayita y la profundidad real usan la misma escala',R.diferenciaRaya+'px de diferencia (barra de '+R.alto+'px)');
   ok(errores.length===0, 'cero errores de JavaScript', errores.slice(0,3).join(' | '));
   await page.screenshot({path:'/tmp/antfarm-capturas/visual-cielo-almacen.png'});
   await browser.close(); server.close();

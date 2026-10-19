@@ -62,9 +62,13 @@ const flood=run(`(()=>{
   soil=Array.from({length:ROWS},()=>Array(COLS).fill(1));
   water=Array.from({length:ROWS},()=>Array(COLS).fill(0));
   soilType=Array.from({length:ROWS},()=>Array(COLS).fill(1));
-  for(let c=8;c<=12;c++){ soil[12][c]=0; soilType[12][c]=0; }
-  soil[11][11]=0; soilType[11][11]=0;
-  water[12][12]=1.3;
+  for(let c=8;c<=12;c++){soil[12][c]=0;soilType[12][c]=0;}
+  soil[11][11]=0;soilType[11][11]=0;
+  // La emergencia pertenece al nido vivo: galería seca hasta la boca, no una cámara artificial aislada.
+  const ec=entradaCol>=0?entradaCol:CENTER_COL;
+  for(let r=SURFACE_ROW;r<=12;r++){soil[r][ec]=0;soilType[r][ec]=0;}
+  for(let c=Math.min(11,ec);c<=Math.max(11,ec);c++){soil[12][c]=0;soilType[12][c]=0;}
+  markSoilDirty();water[12][12]=1.3;
   queen.x=9.5*CELL; queen.y=12.5*CELL; pantryPos={x:9.5*CELL,y:12.5*CELL};
   workers=[workers[0]]; const a=workers[0]; a.x=11.5*CELL; a.y=12.5*CELL; a.food=null; a.state='EXPLORAR';
   floodControl.target=null; floodControl.workerId=null; floodControl.scan=0; floodControl.worldKey=COLS+'x'+ROWS;

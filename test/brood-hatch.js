@@ -159,16 +159,20 @@ caso('una obrera cualquiera con el buche lleno alimenta la larva', () => {
 // 9 · El coste de criar NO puede ser por intento aleatorio: el bucle llama a esto decenas de
 // veces por frame y vaciaba la despensa en un dia (la colonia se mataba por alimentarse).
 caso(' alimentar a una larva entera desde la despensa cuesta piezas, no el granero', () => {
+  // La despensa ya no es un radio mágico: primero se termina su estructura física con trabajo real.
+  const s=storageStructure(false),a=_storeAnchor(s),builder=workers[0];
+  if(s&&!s.built&&builder){builder.x=a.x;builder.y=a.y;for(let i=0;i<180&&!s.built;i++)workOnStore(builder,1,1);}
+  const p=storagePos();
   const reinas = queens.splice(0, queens.length);
   const obreras = workers.splice(0, workers.length);
   colonyFood = 50;
   brood.length = 0;
-  const b = { type: 'larva', progress: 0, time: 0, genome: makeGenome(), isQueen: false, faction: 0, hunger: 0, parents: ['-','-'], parentGenomes: ['-','-'] };
+  const b = { type: 'larva', progress: 0, time: 0, x:p.x, y:p.y, genome: makeGenome(), isQueen: false, faction: 0, hunger: 0, parents: ['-','-'], parentGenomes: ['-','-'] };
   brood.push(b);
   let llamadas = 0;
   while (b.type === 'larva' && b.progress < 100 && llamadas < 40000) { updateBrood(2); llamadas++; }
   const gastado = Math.round((50 - colonyFood) * 100) / 100;
-  const out = { pasa: b.progress >= 100 || b.type !== 'larva', detalle: 'larva criada y pasada a ' + b.type + ' gastando ' + gastado + ' de despensa en ' + llamadas + ' pasos' };
+  const out={pasa:(b.progress>=100||b.type!=='larva')&&gastado>0.5&&gastado<4,detalle:'larva criada y pasada a '+b.type+' gastando '+gastado+' de despensa en '+llamadas+' pasos'};
   Array.prototype.push.apply(queens, reinas); Array.prototype.push.apply(workers, obreras);
   return out;
 });

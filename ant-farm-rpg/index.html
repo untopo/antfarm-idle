@@ -7,8 +7,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ANT FARM</title>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache">
-<link rel="stylesheet" href="css/style.css?v=20261019e">
-<link rel="stylesheet" href="css/startup.css?v=20261019e">
+<link rel="stylesheet" href="css/style.css?v=20261019f">
+<link rel="stylesheet" href="css/startup.css?v=20261019f">
 
 <style id="topoHideUntilStart">
   #appRoot{display:none !important}
@@ -188,7 +188,7 @@
         <div><span>TYPE</span><b>Press Start 2P · VT323</b></div>
       </div>
       <p class="topo-credit-thanks">Thank you for looking after the colony. Every tunnel remembers.</p>
-      <div class="topo-build-stamp">ANT FARM · BUILD 20261019E</div>
+      <div class="topo-build-stamp">ANT FARM · BUILD 20261019F</div>
     </div>
     <footer class="topo-panel-footer"><button type="button" id="btnCreditsReplay" class="topo-footer-button">REPLAY INTRO</button><span>MADE BELOW THE SURFACE</span></footer>
   </div>
@@ -201,7 +201,7 @@
       <span class="topo-ready-light">WORLD ALIVE</span>
     </header>
     <div class="topo-panel-body topo-first-steps">
-      <article><span class="topo-step-number">01</span><div class="topo-step-icon topo-honey-icon" aria-hidden="true"></div><div><strong>DROP HONEY</strong><p>Tap the green meadow above to feed the first workers.</p></div></article>
+      <article><span class="topo-step-number">01</span><div class="topo-step-icon topo-honey-icon" aria-hidden="true"></div><div><strong>DROP HONEY</strong><p>Arm the honey tool, then choose one open spot for the first workers.</p></div></article>
       <article><span class="topo-step-number">02</span><div class="topo-step-icon topo-dig-icon" aria-hidden="true"></div><div><strong>DIG</strong><p>Hold <b>SHIFT</b> and click underground to order a tunnel.</p></div></article>
       <article><span class="topo-step-number">03</span><div class="topo-step-icon topo-watch-icon" aria-hidden="true"></div><div><strong>WATCH THEM</strong><p>Tap an ant to open her profile and follow her decisions.</p></div></article>
     </div>
@@ -237,7 +237,7 @@
       </div>
       <div class="head-stats">
         <div class="h-stat">POP <b id="hPop">3</b>/12</div>
-        <div class="h-stat">COMIDA <b id="hFood">0</b></div>
+        <div class="h-stat">FOOD <b id="hFood">0</b></div>
         <div class="h-stat">GEN <b id="hGen">0</b></div>
         <div class="h-stat">FIT <b id="hFit">0.00</b></div>
         <div class="h-stat live">IQ <b id="hIQ">100</b></div>
@@ -247,7 +247,6 @@
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <div class="h-stat" style="font-family:'Press Start 2P',monospace;font-size:8px">LVL <b id="hLvl">1</b> <span id="hXpText" style="color:#8a7a5a;font-size:9px">0/100</span> <span style="display:inline-block;width:52px;height:10px;background:#000;border:2px solid #000;position:relative;overflow:hidden;margin-left:4px"><i id="hXpFill" style="position:absolute;left:0;top:0;bottom:0;width:0%;background:var(--amber);display:block"></i></span></div>
-      <button class="pixel-btn" id="btnFood">🍯 MIEL</button>
       <button class="pixel-btn" id="btnBreed">♛ CRIAR</button>
       <button class="pixel-btn" id="btnMut">🧬 MUTAR</button>
       <button class="pixel-btn" id="btnPause">⏸</button>
@@ -268,8 +267,8 @@
   </header>
 
   <div id="economyBar" style="display:none;height:28px;background:#1a140f;border-bottom:3px solid #000;align-items:center;gap:6px;padding:0 10px;flex-shrink:0;font-family:'Press Start 2P',monospace;font-size:7px;color:#c9b896">
-    <span style="color:#8a7a5a">ECONOMÍA</span>
-    <span class="eco-item" style="background:#000;border:2px solid #000;padding:3px 6px;display:flex;gap:4px;align-items:center"><span>🍯</span><b id="ecoFood" style="color:#ffcc00">0</b></span>
+    <span style="color:#8a7a5a">ECONOMY</span>
+    <span class="eco-item" title="Total food reserve from every source" style="background:#000;border:2px solid #000;padding:3px 6px;display:flex;gap:4px;align-items:center"><span>🍽</span><b id="ecoFood" style="color:#ffcc00">0</b></span>
     <span class="eco-item" style="background:#000;border:2px solid #000;padding:3px 6px;display:flex;gap:4px;align-items:center"><span>🌿</span><b id="ecoFiber" style="color:#2de67a">0</b></span>
     <span class="eco-item" style="background:#000;border:2px solid #000;padding:3px 6px;display:flex;gap:4px;align-items:center"><span>🪨</span><b id="ecoStone" style="color:#8a8a8a">0</b></span>
     <span class="eco-item" style="background:#000;border:2px solid #000;padding:3px 6px;display:flex;gap:4px;align-items:center"><span>🧱</span><b id="ecoClay" style="color:#c08060">0</b></span>
@@ -282,7 +281,7 @@
   <main>
     <div class="farm-pane">
       <div class="farm-top">
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="expand-btn" id="btnExpand">⛶ GRANDE</button><span>CLICK = MIEL · SHIFT+CLICK = CAVAR · CLICK HORMIGA = SEGUIR</span></div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="expand-btn" id="btnExpand">⛶ LARGE</button><span id="mapHint">NAVIGATE · CLICK AN ANT TO FOLLOW · SHIFT+CLICK TO DIG</span></div>
         <div style="display:flex;gap:8px;align-items:center">
           <div class="layer-toggles">
             <button class="tog on amber" id="togEyes">◉ OJOS</button>
@@ -350,7 +349,7 @@
           <div class="ai-head"><span>🏘 COLONIA</span><span id="colonyAge">0 min</span></div>
           <div class="colony-grid">
             <div class="colony-card"><div class="k">POBLACIÓN</div><div class="v good" id="cPop">3</div><div class="k" id="cPopDetail">3 obreras + 1 reina</div></div>
-            <div class="colony-card"><div class="k">DESPENSA</div><div class="v amber" id="cFood">0</div><div class="k">raciones 🍯</div></div>
+            <div class="colony-card"><div class="k">FOOD RESERVE</div><div class="v amber" id="cFood">0</div><div class="k">mixed rations 🍽</div></div>
             <div class="colony-card"><div class="k">FITNESS</div><div class="v" id="cFit">0.00</div><div class="k">colonia</div></div>
             <div class="colony-card"><div class="k">IQ COLONIA</div><div class="v purple" id="cIQ">100</div><div class="k" id="cIQLabel">100=real</div></div>
           </div>
@@ -366,7 +365,7 @@
             <span style="flex:1;background:#000;border:3px solid #000;padding:8px;text-align:center;font-family:'Press Start 2P',monospace;font-size:7px">RECOMP <b id="cRew" style="color:var(--amber)">0/3</b></span>
           </div>
           <div class="explain">
-            <b>Read at a glance:</b> Every ant carries a large <b style="background:var(--amber);color:#000;padding:2px 4px">STATUS BUBBLE</b>. <span style="background:var(--green);color:#000;padding:2px 4px">🍯→HOME</span> means she carries honey. <span style="background:var(--red);color:#fff;padding:2px 4px">⛏ DIG 60%</span> means she is excavating. <span style="background:var(--cyan);color:#000;padding:2px 4px">⬢ CYAN</span> calls out food. Pure readable pixel art.
+            <b>Read at a glance:</b> Every ant carries a large <b style="background:var(--amber);color:#000;padding:2px 4px">STATUS BUBBLE</b>. <span style="background:var(--green);color:#000;padding:2px 4px">FOOD→HOME</span> uses the icon of what she really carries. <span style="background:var(--red);color:#fff;padding:2px 4px">⛏ DIG 60%</span> means she is excavating. <span style="background:var(--cyan);color:#000;padding:2px 4px">⬢ CYAN</span> calls out food. Pure readable pixel art.
           </div>
         </div>
         <div class="ai-section">
@@ -531,7 +530,7 @@
   </main>
 </div>
 
-<div class="taskbar" id="taskbar"><canvas id="taskbarCanvas" width="200" height="56"></canvas><div style="flex:1;min-width:0"><div style="font-family:'Press Start 2P',monospace;font-size:8px">◉ <span id="tbName">Colonia</span> • POP <span id="tbPop">3</span> • IQ <span id="tbIQ">100</span> <span style="color:var(--green)">●LIVE</span></div><div style="font-family:'VT323',monospace;font-size:16px;color:#8a7a5a;margin-top:4px" id="tbDesc">> pixel art · GEN0</div><div style="height:8px;background:#000;border:2px solid #000;margin-top:6px"><div id="tbXp" style="height:100%;width:0%;background:var(--amber)"></div></div></div><div style="display:flex;flex-direction:column;gap:8px"><button class="pixel-btn primary" id="btnRestore" style="font-size:8px">▲</button><button class="pixel-btn" id="btnTbFood" style="font-size:8px">[+]</button></div></div>
+<div class="taskbar" id="taskbar"><canvas id="taskbarCanvas" width="200" height="56"></canvas><div style="flex:1;min-width:0"><div style="font-family:'Press Start 2P',monospace;font-size:8px">◉ <span id="tbName">Colonia</span> • POP <span id="tbPop">3</span> • IQ <span id="tbIQ">100</span> <span style="color:var(--green)">●LIVE</span></div><div style="font-family:'VT323',monospace;font-size:16px;color:#8a7a5a;margin-top:4px" id="tbDesc">> pixel art · GEN0</div><div style="height:8px;background:#000;border:2px solid #000;margin-top:6px"><div id="tbXp" style="height:100%;width:0%;background:var(--amber)"></div></div></div><div style="display:flex;flex-direction:column;gap:8px"><button class="pixel-btn primary" id="btnRestore" style="font-size:8px">▲</button></div></div>
 
 <!-- ONBOARDING - Mundo recién creado -->
 <div id="onboardingLegacy" style="position:fixed;inset:0;z-index:9997;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);backdrop-filter:blur(2px);">
@@ -762,7 +761,7 @@
       </div>
       <div style="display:flex;gap:6px;margin-top:2px">
         <button id="btnFollowQueen" class="pixel-btn small" style="flex:1;padding:6px 4px;font-size:10px">👁 SEGUIR</button>
-        <button id="btnFeedQueen" class="pixel-btn small" style="flex:1;background:#2de67a;color:#000;padding:6px 4px;font-size:10px">🍯 ALIMENTAR (2)</button>
+        <button id="btnFeedQueen" class="pixel-btn small" style="flex:1;background:#2de67a;color:#000;padding:6px 4px;font-size:10px">🍽 FEED (2)</button>
         <button id="btnMoveQueen" class="pixel-btn small" style="flex:1;background:#b47aff;color:#fff;padding:6px 4px;font-size:10px">🚚 MIGRAR</button>
       </div>
     </div>
@@ -787,6 +786,12 @@
       <button class="pixel-btn small" id="btnVel16" title="x16" style="min-width:42px;width:42px;height:38px;padding:0;background:#3e2a14;border:2px solid #000;color:#fff8dc;font-family:'Press Start 2P';font-size:10px;display:grid;place-items:center;box-shadow:1px 1px 0 #000">x16</button>
     </div>
     <div style="position:relative;width:3px;background:#000;flex-shrink:0;z-index:1;margin:3px 0;box-shadow:inset 1px 0 0 rgba(255,255,255,0.08)"></div>
+    <!-- MAP TOOLS — explicit, mutually exclusive and always visible -->
+    <div id="mapToolControls" aria-label="Map tools" style="position:relative;z-index:1;display:flex;align-items:center;gap:3px;padding:3px 5px;flex-shrink:0">
+      <button class="pixel-btn small" id="btnFood" title="Drop honey once (H)" aria-label="Drop honey once" aria-pressed="false" style="min-width:52px;width:52px;height:38px;padding:2px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;border:2px solid #000;box-shadow:1px 1px 0 #000"><span style="font-size:14px;line-height:1">🍯</span><span style="font-size:6px;line-height:1">HONEY</span></button>
+      <button class="pixel-btn small" id="btnPhero" title="Draw one follow trail (P)" aria-label="Draw one follow trail" aria-pressed="false" style="min-width:52px;width:52px;height:38px;padding:2px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;border:2px solid #000;box-shadow:1px 1px 0 #000"><span style="font-size:16px;line-height:.8;color:#b47aff">···</span><span style="font-size:6px;line-height:1">TRAIL</span></button>
+    </div>
+    <div style="position:relative;width:3px;background:#000;flex-shrink:0;z-index:1;margin:3px 0;box-shadow:inset 1px 0 0 rgba(255,255,255,0.08)"></div>
     <!-- OBRERAS -->
     <button id="btnRoster" title="Ver la lista de todas las hormigas activas (tecla L)" aria-label="Lista de hormigas activas" style="position:relative;width:104px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:2px 4px;flex-shrink:0;z-index:1;background:transparent;border:none;color:inherit;font:inherit;cursor:pointer">
 
@@ -801,7 +806,7 @@
     <div style="position:relative;display:flex;align-items:center;gap:5px;padding:2px 6px 2px 7px;flex-shrink:0;z-index:1">
       <div style="display:flex;flex-direction:column;align-items:center;gap:1px">
         <div style="display:flex;align-items:center;gap:4px">
-          <span style="font-size:20px;line-height:1;filter:drop-shadow(1px 1px 0 #000)">🍯</span>
+          <span title="Mixed food reserve" style="font-size:20px;line-height:1;filter:drop-shadow(1px 1px 0 #000)">🍽</span>
           <span id="velFoodCount" style="font-family:'Press Start 2P',monospace;font-size:19px;color:#ffcc00;line-height:1;text-shadow:1px 1px 0 #000, 0 0 6px rgba(255,204,0,0.35);min-width:28px">0</span>
         </div>
         <span style="font-family:'Press Start 2P',monospace;font-size:9px;color:#fff8dc;letter-spacing:0.5px;text-shadow:1px 1px 0 #000;line-height:1">STORES</span>
@@ -908,14 +913,14 @@
   <!-- Motor del juego — núcleo profesional modular -->
   
 
-<script src="core/bandas.js?v=20261019e"></script>
-<script src="core/mundo.js?v=20261019e"></script>
-<script src="core/tesoros.js?v=20261019e"></script>
-<script src="core/economia.js?v=20261019e"></script>
-<script src="core/agua.js?v=20261019e"></script>
-<script src="js/i18n-en.js?v=20261019e"></script>
-<script src="js/app.js?v=20261019e"></script>
-<script src="js/splash-topo.js?v=20261019e"></script>
+<script src="core/bandas.js?v=20261019f"></script>
+<script src="core/mundo.js?v=20261019f"></script>
+<script src="core/tesoros.js?v=20261019f"></script>
+<script src="core/economia.js?v=20261019f"></script>
+<script src="core/agua.js?v=20261019f"></script>
+<script src="js/i18n-en.js?v=20261019f"></script>
+<script src="js/app.js?v=20261019f"></script>
+<script src="js/splash-topo.js?v=20261019f"></script>
 <script>
 // Vigia del arranque: si js/app.js no termino de cargar, decirlo en pantalla en vez de dejar
 // botones sordos. Es lo unico que vive en el HTML; el juego entero esta en js/app.js.

@@ -6,7 +6,7 @@ if [ -d /tmp/libs ]; then export LD_LIBRARY_PATH="/tmp/libs${LD_LIBRARY_PATH:+:$
 # Uso: bash test/run-all.sh
 cd "$(dirname "$0")/.." || exit 1
 fail=0
-for t in no-orphans pages-root create-farm-flow economia-integracion core-agua core-agua-flujo core-mundo geologia-integracion agua-sucesion-integracion agua-visual vestigios-ambientales world-size-rules almacen-fisico oficios-emergentes brood-hatch foundacion-dias paron-fundacion salida-superficie tandem-objetivo expansion-agua primera-losa save-roundtrip reload-simulation; do
+for t in no-orphans pages-root create-farm-flow economia-integracion core-agua core-agua-flujo core-mundo geologia-integracion agua-sucesion-integracion agua-visual vestigios-ambientales world-size-rules almacen-fisico conectividad-recursos niebla-profundidad oficios-emergentes brood-hatch foundacion-dias paron-fundacion salida-superficie tandem-objetivo expansion-agua primera-losa save-roundtrip reload-simulation; do
   printf '\n=== test/%s.js ===\n' "$t"
   if node "test/$t.js" > /tmp/_t.out 2>&1; then
     tail -n 3 /tmp/_t.out
@@ -24,7 +24,7 @@ fi
 
 # Los tres de pintura se corren DE UNO EN UNO: abren Chrome y si comparten la maquina los
 # Runtime.evaluate revientan por CPU, no por culpa del juego (medido).
-for t in core-bandas core-tesoros core-economia hormiga-voxel profundidad intro-topo startup-menu front-menu-settings fondo-pinta voxel-graficos voxel-objetos voxel-cielo plantas-piso paneles-scroll vel-barra-unica hojas-legibles live-hud inventario-voxel; do
+for t in core-bandas core-tesoros core-economia hormiga-voxel profundidad intro-topo startup-menu front-menu-settings fondo-pinta fondo-cueva voxel-graficos voxel-objetos voxel-cielo niebla-profundidad-browser controles-comida-feromonas pantalla-cielo-y-regla plantas-piso paneles-scroll vel-barra-unica hojas-legibles live-hud inventario-voxel; do
   printf '\n=== test/%s.js (pintura en navegador) ===\n' "$t"
   if node "test/$t.js" > /tmp/_vp.out 2>&1; then
     tail -n 2 /tmp/_vp.out
