@@ -1,0 +1,22 @@
+/** GitHub Pages serves the game at /antfarm-idle/, while the old nested URL only redirects. */
+const fs=require('fs');
+const path=require('path');
+const cp=require('child_process');
+const ROOT=path.resolve(__dirname,'..');
+const OUT='/tmp/antfarm-pages-root-test';
+let pass=0,fail=0;
+const ok=(c,m)=>{if(c){pass++;console.log('ok   '+m);}else{fail++;console.log('FAIL '+m);}};
+fs.rmSync(OUT,{recursive:true,force:true});
+cp.execFileSync('bash',[path.join(ROOT,'scripts/build-pages-root.sh'),OUT],{cwd:ROOT,stdio:'pipe'});
+const root=fs.readFileSync(path.join(OUT,'index.html'),'utf8');
+const legacy=fs.readFileSync(path.join(OUT,'ant-farm-rpg/index.html'),'utf8');
+ok(/id="mainMenu"/.test(root)&&/ANT FARM · BUILD \d{8}[A-Z]/.test(root),'la raíz pública contiene el juego real y su build, no una pantalla puente');
+ok(fs.existsSync(path.join(OUT,'js/app.js'))&&fs.existsSync(path.join(OUT,'css/style.css'))&&fs.existsSync(path.join(OUT,'core/economia.js')),'JS, CSS y core quedan al mismo nivel relativo que index.html');
+ok(!fs.existsSync(path.join(OUT,'ant-farm-rpg/js/app.js')),'el artefacto no duplica todo el juego bajo la ruta antigua');
+ok(/location\.replace\('\.\.\/'/.test(legacy)&&/canonical" href="\.\.\//.test(legacy),'el enlace antiguo redirige limpiamente a ../');
+ok(!fs.existsSync(path.join(OUT,'assets/_archivo')),'Pages no publica el archivo de arte muerto');
+const workflow=fs.readFileSync(path.join(ROOT,'.github/workflows/publicar-demo.yml'),'utf8');
+ok(/bash scripts\/build-pages-root\.sh _sitio/.test(workflow),'el workflow usa el constructor probado del sitio raíz');
+fs.rmSync(OUT,{recursive:true,force:true});
+console.log(`\nPAGES ROOT: ${pass} ok · ${fail} fallos`);
+if(fail)process.exit(1);

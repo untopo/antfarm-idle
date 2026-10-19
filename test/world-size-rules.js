@@ -4,7 +4,7 @@
  *
  * 1) crear un mundo cuesta proporcional a su area (y no casi igual para el pequeno)
  * 2) jugar cuesta proporcional (los costes fijos por frame van cacheados/throttled)
- * 3) la miel dentro de tierra SIN CAVAR no cuenta como almacenada (y los tarros solo viven en tuneles)
+ * 3) almacenar exige una estructura construida, abierta y conectada; un hueco aislado no da capacidad
  * 4) la reserva inicial y la cantidad de miel del suelo escalan con el area
  * 5) los nombres son random por colonia y salen del patron fonetico de ESA colonia
  * 6) al avanzar la lengua, la colonia entera se rebautiza (bautizo), no "nunca"
@@ -119,32 +119,33 @@ const mini = run(`(function(){
 check(mini.n > 0 && mini.despues === mini.n,
   `la pasada mini no se come el lote pendiente del principal (siguen ${mini.despues} de ${mini.n} celdas en cola)`);
 
-console.log('\n== 3) miel en tierra sin cavar NO esta almacenada ==');
+console.log('\n== 3) almacenar exige una estructura construida y conectada ==');
 run('topoCreateFreshWorld(48,28)');
 const honey = run(`(function(){
-  const pc=Math.floor(pantryPos.x/CELL), pr=Math.floor(pantryPos.y/CELL);
-  // celda SOLIDA cerca de la despensa (tierra intacta que aun no esta cavada)
-  let solid=null;
-  for(let rr=pr;rr<ROWS&&!solid;rr++) for(let cc=pc-2;cc<=pc+2;cc++){ if(soil[rr]&&soil[rr][cc]===1){ solid={c:cc,r:rr}; break; } }
-  if(!solid) return {err:'sin celda solida'};
-  const f={x:solid.c*CELL+8,y:solid.r*CELL+8,amount:1,max:1,ftype:'honey',rot:0,fresh:1};
-  foods.push(f);
-  const enterrada=isFoodInStockpile(f);
-  const nAntes=colonyFood;
-  // la misma celda, ya cavada
-  soil[solid.r][solid.c]=0; if(soilType[solid.r]) soilType[solid.r][solid.c]=0; markSoilDirty();
-  const cavada=isFoodInStockpile(f);
-  foods.pop();
-  // y una miel dentro del tunel de la despensa si debe contar
-  const g={x:pantryPos.x,y:pantryPos.y,amount:1,max:1,ftype:'honey',rot:0,fresh:1};
-  const enTunelAbierto = (soil[Math.floor(g.y/CELL)][Math.floor(g.x/CELL)]===0) && isFoodInStockpile(g);
-  return {enterrada, cavada, enTunelAbierto, solid, dist:Math.hypot(f.x-pantryPos.x,f.y-pantryPos.y), nAntes};
+  const site=storageStructure(false), anchor=_storeAnchor(site);
+  const loose={x:anchor.x,y:anchor.y,amount:1,max:1,ftype:'honey',rot:0,fresh:1};
+  const huecoSinObra=isFoodInStockpile(loose), capSinObra=capacidadAlmacen();
+  // Trabajo real: la obrera asignada llega al sitio y completa el marco, no se cambia un flag a mano.
+  for(const id of site.builders){ const w=workers.find(a=>a.id===id); w.x=anchor.x; w.y=anchor.y; }
+  for(let i=0;i<120&&!site.built;i++) for(const id of site.builders){ const w=workers.find(a=>a.id===id); workOnStore(w,1,1); }
+  const celdas=storageCells(), cd=celdas[0];
+  const dentro={x:(cd.c+.5)*CELL,y:(cd.r+.5)*CELL,amount:1,max:1,ftype:'honey',rot:0,fresh:1};
+  const enEstructura=isFoodInStockpile(dentro),capConstruida=capacidadAlmacen();
+  // Un hueco grande, incluso abierto, no obtiene capacidad ni conservación si no tiene estructura.
+  const dc=3,dr=ROWS-6;
+  for(let r=dr;r<dr+3;r++) for(let c=dc;c<dc+8;c++){ soil[r][c]=0; soilType[r][c]=0; }
+  markSoilDirty();
+  const aislada={x:(dc+.5)*CELL,y:(dr+.5)*CELL,amount:1,max:1,ftype:'berry',rot:0,fresh:1};
+  const conocida=isNestCellConnected(dc,dr), conservaAislada=isFoodInStockpile(aislada), capTrasHueco=capacidadAlmacen();
+  return {site:{c:site.c,r:site.r,built:site.built,work:site.work,builtBy:site.builtBy},huecoSinObra,capSinObra,enEstructura,capConstruida,conocida,conservaAislada,capTrasHueco,celdas:celdas.length};
 })()`);
-check(honey.enterrada === false, `miel dentro de tierra intacta [${honey.solid.c},${honey.solid.r}] no cuenta como almacenada (era el bug: aparecía guardada sin cavar)`);
-check(honey.cavada === true, `la MISMA celda, ya cavada, sí cuenta como almacenada`);
-check(honey.enTunelAbierto === true, `miel en una celda de tunel de la despensa SÍ cuenta como almacenada`);
+check(honey.huecoSinObra === false && honey.capSinObra === 0, `el hueco fundador sin obra no conserva ni da capacidad (${honey.capSinObra})`);
+check(honey.site.built === true && honey.site.work >= run('STORE_WORK_REQUIRED') && honey.site.builtBy.length>0, `una obrera construye físicamente el almacén [${honey.site.c},${honey.site.r}] antes de usarlo`);
+check(honey.enEstructura === true && honey.celdas>0 && honey.capConstruida>0, `la miel dentro de sus ${honey.celdas} celdas construidas sí se conserva (capacidad ${honey.capConstruida})`);
+check(honey.conocida === false && honey.conservaAislada === false, `una cavidad abierta pero desconectada sigue desconocida y no conserva comida`);
+check(honey.capTrasHueco === honey.capConstruida, `abrir 24 celdas aisladas no regala capacidad (${honey.capConstruida} → ${honey.capTrasHueco})`);
 check(/function dibujarAlmacen\(\)\{[\s\S]{0,260}const celdas=storageCells\(\);/.test(src) && /_boteAlmacen\(bx, by, _CUADRO, _CUADRO/.test(src),
-  `los tarros solo salen de celdas abiertas de la camara de reserva (guarda en el codigo: fuera de una celda no se dibuja bote)`);
+  `los tarros solo salen de las celdas de la estructura física`);
 check(!src.includes("ctx.fillRect(x-6,y-10,28,8); ctx.fillStyle='#ffcc00'"), `no queda el letrero "?" flotante sobre las cajas de tesoro`);
 check(!/fillText\(['"]\?['"]/.test(src), `la caja de tesoro ya no lleva su "?" fija (letrero prefijado, prohibido: solo brilla cuando una obrera pisa cerca)`);
 

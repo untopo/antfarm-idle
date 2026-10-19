@@ -12,6 +12,10 @@ let t=1;
 sb.performance.now=()=>t;
 vm.runInContext(`topoCreateFreshWorld(48,28); paused=false; gameSpeed=64;
   last=performance.now(); lastRealWall=Date.now();
+  // El contrato actual exige almacén físico antes de descargar: se completa con acciones reales de su
+  // constructora para que esta prueba siga midiendo exclusivamente el trayecto boca-prado.
+  { const s=storageStructure(false),a=_storeAnchor(s); for(const id of s.builders){const w=workers.find(x=>x.id===id);w.x=a.x;w.y=a.y;}
+    for(let i=0;i<140&&!s.built;i++)for(const id of s.builders)workOnStore(workers.find(x=>x.id===id),1,1); }
   workers=workers.slice(0,1);
   const _prueba=workers[0];
   _prueba.x=CENTER_COL*CELL+8; _prueba.y=(SURFACE_ROW+8)*CELL+8;

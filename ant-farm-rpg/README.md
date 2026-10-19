@@ -12,7 +12,7 @@ node dev-server.js 8017      # raiz: ant-farm-rpg/, sin cache (Cache-Control: no
 
 Servir con `no-store` importa: con HTML nuevo y `app.js` de la cache vieja el juego se comporta de
 forma distinta a como está escrito y no se puede depurar. `index.html`, `css/style.css` y los assets
-llevan **un solo** `?v=` (`20261019c`); al tocar CSS o JS se sube en todos los sitios a la vez.
+llevan **un solo** `?v=` (`20261019d`); al tocar CSS o JS se sube en todos los sitios a la vez.
 
 Depuración: `?debug=1` en la URL (o `localStorage.antfarm_debug='1'`) enciende el registro del juego
 (`tlog`) que está callado por defecto. En la consola: `_topoDbg()` devuelve día, obreras, comida,
@@ -52,7 +52,10 @@ node test/browser-smoke.js    # solo el navegador real (creación, iframe sandbo
 | Test | Qué garantiza |
 |------|---------------|
 | `test/create-farm-flow.js` | Flujo CREAR NUEVA GRANJA end-to-end con eventos reales y reloj falso: siembra, anti-reentrancia, diálogo propio, archivado, fallo a mitad → aviso y sin barra colgada. `confirm/alert/prompt` nativos lanzan si alguien los llama |
-| `test/world-size-rules.js` | Reglas por tamaño (cofres, despensa, miel en tierra sin cavar no cuenta) + proporción de coste de creación y frame |
+| `test/world-size-rules.js` | Reglas por tamaño + proporción de coste; un hueco no da capacidad ni conservación sin estructura conectada y terminada |
+| `test/almacen-fisico.js` | Plano conectado, trabajo real, footprint transitable/protegido, posición estable, mejora in situ y reconstrucción sólo tras daño físico |
+| `test/oficios-emergentes.js` | Constructoras, mineras profundas, exploradoras, recolectoras exteriores y nodrizas surgen por experiencia, edad, rasgos y necesidad; sin asignación manual |
+| `test/pages-root.js` | El artefacto contiene el juego en `/` y la ruta histórica sólo redirige, sin duplicar el código |
 | `test/save-roundtrip.js` | Guardar → recargar → mismo mundo, obreras y tesoros |
 | `test/reload-simulation.js` | La granja activa sobrevive a llenar el archivo de 5 granjas |
 | `test/browser-smoke.js` | Chrome real: menú → tamaños → siembra → mundo 96×48 pintado, colonia viva, recarga, y el mismo flujo dentro de un `iframe sandbox` sin `allow-modals` |
@@ -66,6 +69,10 @@ y `world-frame-driver.js` son para mirar de dónde viene el coste (la fila "crea
 negativos por cómo mide: ignórala, usa "crear mundo (base)").
 
 ## Ver el juego publicado en vivo
+
+GitHub Pages publica <https://untopo.github.io/antfarm-idle/>. El fuente sigue aquí, en
+`ant-farm-rpg/`; `scripts/build-pages-root.sh` aplana sólo el artefacto de publicación y conserva un
+redirect mínimo desde la ruta antigua.
 
 `bash scripts/deploy-live.sh vercel` sube una copia idéntica al repo y devuelve un enlace público en 5 segundos;
 `bash scripts/deploy-live.sh tunnel` abre un enlace sin ninguna cuenta. Las comparativas, los límites de 2026

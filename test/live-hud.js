@@ -68,6 +68,13 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ok   ' + m); } else { fai
     else { if (onbVisto) { onbCerrado = true; break; } await sleep(320); }
   }
   console.log(`  (onboarding: ${onbVisto ? 'salió' : 'no salió'} · ${onbCerrado || !onbVisto ? 'cerrado con su botón' : 'SE QUEDÓ ABIERTO'})`);
+  // El HUD de reservas se mide después de que las constructoras terminen el marco físico. Se usa el
+  // mismo workOnStore del juego (esfuerzo acumulado), no se fuerza s.built desde la prueba.
+  await page.evaluate(() => {
+    const s=storageStructure(false),a=_storeAnchor(s); if(!s||s.built)return;
+    for(const id of s.builders){const w=workers.find(x=>x.id===id);if(w){w.x=a.x;w.y=a.y;}}
+    for(let i=0;i<140&&!s.built;i++)for(const id of s.builders){const w=workers.find(x=>x.id===id);if(w)workOnStore(w,1,1);}
+  });
   await sleep(600);
 
   // 1) el numero de raciones del HUD coincide con el estado real

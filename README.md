@@ -18,7 +18,9 @@ node dev-server.js        # http://127.0.0.1:8017 — sirve ant-farm-rpg/ sin ca
 ```
 
 Sin Node vale cualquier servidor estático apuntando a `ant-farm-rpg/`. El juego no tiene build:
-`js/app.js`, `css/style.css` y `assets/` se sirven tal cual.
+`js/app.js`, `css/style.css` y `assets/` se sirven tal cual. El fuente permanece en esa carpeta; al
+publicar, `scripts/build-pages-root.sh` copia **su contenido** a la raíz del artefacto de Pages. Por eso
+la URL pública termina en `/antfarm-idle/`; la antigua `/ant-farm-rpg/index.html` sólo redirige allí.
 
 ## Las pruebas
 
@@ -28,8 +30,9 @@ bash test/run-all.sh
 
 Comprobará de verdad, no de palabra: sintaxis de `app.js`, que no queden llamadas a funciones que
 ya no existen, las reglas por tamaño de mundo, que una calada repintada salga **idéntica** al mapa
-entero (píxel a píxel, en Chrome real), que el guardado sobreviva a recargar la página, y que el
-botón «+1 DÍA» simule el día entero y cave bloques. Necesita `npm install` (Puppeteer) y Chrome:
+entero (píxel a píxel, en Chrome real), que el almacén sólo exista tras trabajo físico en el nido
+conectado, que los oficios emerjan de experiencia/edad/rasgos/necesidad, que el guardado sobreviva a
+recargar la página, y que el botón «+1 DÍA» simule el día entero y cave bloques. Necesita `npm install` (Puppeteer) y Chrome:
 `bash scripts/setup-sandbox.sh` reinstala lo que falte y **no deja** correr la suite si el navegador
 no arranca — una comprobación que se salta en silencio no es una comprobación.
 
@@ -37,7 +40,7 @@ no arranca — una comprobación que se salta en silencio no es una comprobació
 
 | qué | cómo |
 | --- | --- |
-| demo en vivo (este sitio) | `bash scripts/push-ssh.sh` → el workflow `publicar-demo` monta y despliega |
+| demo en vivo (este sitio) | `git push origin master` → `publicar-demo` ejecuta `scripts/build-pages-root.sh` y despliega la raíz |
 | paquete para itch.io | `bash scripts/pack-itch.sh` → `dist/antfarm-itch-*.zip` (subir como *Playable*, oculto si quieres) |
 | desplegar a Vercel | `bash scripts/deploy-live.sh vercel` (necesita sesión; `--tmp` caduca) |
 | copias del proyecto | `bash scripts/snapshot.sh "mensaje" --full` → `snapshots/*.tgz` y un `.bundle` clonable |

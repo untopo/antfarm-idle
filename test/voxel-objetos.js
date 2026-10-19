@@ -71,6 +71,12 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ok   ' + m); } else { fai
   // freeze simulation and give it four isolated, fully-grown fixtures. The threshold remains strict and
   // now all four promised paint paths are exercised on every run.
   await page.evaluate(() => {
+    // El almacén ya no nace por proximidad: su marco se pinta sólo después de trabajo registrado.
+    const s=storageStructure(false),a=_storeAnchor(s);
+    if(s&&!s.built){
+      for(const id of s.builders){const w=workers.find(x=>x.id===id);if(w){w.x=a.x;w.y=a.y;}}
+      for(let i=0;i<140&&!s.built;i++)for(const id of s.builders){const w=workers.find(x=>x.id===id);if(w)workOnStore(w,1,1);}
+    }
     paused=true;
     const fixtures=[];
     for(const [c,type] of [[8,'clover'],[12,'grassTuft'],[16,'berryBush'],[20,'fruitTree']]){

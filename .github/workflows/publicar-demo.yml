@@ -1,8 +1,8 @@
 name: publicar-demo
 
-# El juego vive en ant-farm-rpg/. GitHub Pages no sabe de subcarpetas: aqui se monta un sitio
-# con la raiz limpia (un index.html que salta a la madriguera) y se publica como artefacto, que
-# es la unica via que funciona con el token por defecto del Actions y sin tocar un boton.
+# El código fuente del juego vive ordenado en ant-farm-rpg/, pero el artefacto de Pages publica SU
+# CONTENIDO en la raíz. Así la dirección visible es https://untopo.github.io/antfarm-idle/ y no una
+# ruta interna. La ruta antigua conserva un redirect mínimo para no romper enlaces ya compartidos.
 #
 # Se dispara solo en cada push a master y a mano desde Actions > publicar-demo > Run workflow.
 
@@ -29,16 +29,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: montar el sitio
-        run: |
-          set -eu
-          mkdir -p _sitio
-          cp index.html _sitio/index.html
-          [ -f .nojekyll ] && cp .nojekyll _sitio/.nojekyll || true
-          cp -r ant-farm-rpg _sitio/ant-farm-rpg
-          rm -rf _sitio/ant-farm-rpg/assets/_archivo   # arte muerto: no hace falta servirlo
-          echo "ficheros del sitio: $(find _sitio -type f | wc -l)  $(du -sh _sitio | cut -f1)"
-          echo "prueba de que la pagina y el js estan: $(ls _sitio/ant-farm-rpg/index.html _sitio/ant-farm-rpg/js/app.js | tr '\n' ' ')"
+      - name: montar el sitio en la raíz pública
+        run: bash scripts/build-pages-root.sh _sitio
 
       - uses: actions/configure-pages@v4
 

@@ -72,18 +72,12 @@ const FOOD_DEFS={
   grassSeed:{rotDays:99, color:'#7ad35f', cap:'#3a9d23', name:'GRANA'}
 };
 function isFoodInStockpile(f){
-  // DF: solo lo que está en despensa/granero no se pudre (conserva)
-  // Topo (regla que debe valer en CADA tamaño): contar como "almacenada" exige que la celda esté cavada.
-  // Miel dentro de tierra intacta está ENTERRADA, no guardada: no alimenta la reserva y sigue pudriéndose.
-  const _fc=Math.floor(f.x/CELL), _fr=Math.floor(f.y/CELL);
-  if(Array.isArray(soil) && soil.length && _fr>=SURFACE_ROW && soil[_fr] && soil[_fr][_fc]===1) return false;
-  const inPantry = Math.hypot(f.x - pantryPos.x, f.y - pantryPos.y) < 42;
-  if(inPantry) return true;
-  for(let s of structures){ if(s.type==='granary'){
-    const x=s.c*CELL, y=s.r*CELL, w=s.w*CELL, h=s.h*CELL;
-    if(f.x>=x-8 && f.x<=x+w+8 && f.y>=y-6 && f.y<=y+h+6) return true;
-  }}
-  return false;
+  // Preservation belongs to the physical store footprint, never to a radius around pantryPos. An
+  // excavated but disconnected hollow is still unknown to the colony and cannot preserve anything.
+  const fc=Math.floor(f.x/CELL), fr=Math.floor(f.y/CELL);
+  if(!Array.isArray(soil)||!soil[fr]||soil[fr][fc]!==0) return false;
+  if(typeof waterAtCell==='function'&&waterAtCell(fc,fr)>=WATER_AVOID_LEVEL) return false;
+  try{ return storageCells().some(cd=>cd.c===fc&&cd.r===fr); }catch(e){ return false; }
 }
 function foodRotProgressPerDt(food, dt){
   const def=FOOD_DEFS[food.ftype||'honey']||FOOD_DEFS.honey;
@@ -230,6 +224,9 @@ let worldAge=0;
 // === ESTRUCTURAS COMPLEJAS Y HERRAMIENTAS ===
 let structures=[]; // {c,r,type,w,h,builtBy,age}
 const STRUCTURE_DEFS={
+  // The founding store is a passable timber-and-earth frame built by workers inside an already
+  // connected chamber. It is never a magic radius around an arbitrary empty cell.
+  store:{w:3,h:2, need:{}, iq:0, gen:0, name:'NEST STORE', color:'#b47a35', bonus:'stable physical storage'},
   workshop:{w:2,h:2, need:{wood:3, stone:2}, iq:135, gen:4, name:'TALLER', color:'#8a6a3a', bonus:'fabrica herramientas'},
   granary:{w:3,h:2, need:{clay:2, fiber:2}, iq:132, gen:4, name:'GRANERO', color:'#c2a080', bonus:'+12 almacén'},
   bridge:{w:3,h:1, need:{wood:2, fiber:1}, iq:130, gen:4, name:'PUENTE', color:'#6b4a1f', bonus:'cruza huecos'},
@@ -753,6 +750,7 @@ function initSoil(){
       const base=workers[0]; if(!base) return 0;
       for(let i=0;i<n;i++){
         const cl=JSON.parse(JSON.stringify(base));
+        cl.id=String(base.id||'A')+'F'+String(i).padStart(2,'0'); cl.personalName=cl.id;
         cl.x=4*CELL+((i*37)%Math.max(1,COLS-8))*CELL+3; cl.y=(SURFACE_ROW+4)*CELL+((i*53)%12)*CELL+4;
         cl.state='IDLE'; cl.selected=false; cl._renderX=cl.x; cl._renderY=cl.y; cl._debugFake=true;
         workers.push(cl);
@@ -906,7 +904,7 @@ function isSoilSupported(r,c){
   // arco horizontal: ambos lados sólidos y tiene techo arriba -> bóveda
   if(c>0 && c<COLS-1 && soil[r][c-1]===1 && soil[r][c+1]===1 && r>SURFACE_ROW && soil[r-1][c]===1) return true;
   // estructuras cuentan como apoyo
-  for(let s of structures){ if(c>=s.c&&c<s.c+s.w && r+1>=s.r&&r+1<s.r+s.h) return true; }
+  for(let s of structures){ if(!s.abandoned&&c>=s.c&&c<s.c+s.w && r+1>=s.r&&r+1<s.r+s.h) return true; }
   // dejar que el suelo superficial aguante aunque no haya nada debajo si es el borde de cámara pequeña (evita derrumbe total)
   // pero si está aislado en aire sin nada, cae
   return false;
@@ -937,7 +935,9 @@ function updateFallingSand(dt){
         else if(t===4) chance=0.08; // piedra solo bloques sueltos
         else chance=0.35;
         if(Math.random() < chance*grav){
-          let nr=r+1; while(nr<ROWS-1 && soil[nr+1][c]===0) nr++;
+          let nr=r+1;
+          while(nr<ROWS-1 && soil[nr+1][c]===0 && !(typeof isStoreCell==='function'&&isStoreCell(c,nr+1))) nr++;
+          if(typeof isStoreCell==='function'&&isStoreCell(c,nr)) continue;
           if(nr!==r){
             soil[r][c]=0; const oldT=soilType[r][c]; soilType[r][c]=0;
             if(soil[nr][c]===0){ soil[nr][c]=1; soilType[nr][c]=oldT; }
@@ -1368,12 +1368,11 @@ function _sealFloodCell(ant,target){
   const trapped=waterAtCell(target.c,target.r); water[target.r][target.c]=0;
   // The three founding-shaft columns are the colony's only route to food and the first slab. There the
   // ants build a permeable-to-ants roof/grate; elsewhere they can safely pack the whole breach with soil.
-  const passable=Math.abs(target.c-CENTER_COL)<=1||target.r<=SURFACE_ROW+1;
+  const passable=Math.abs(target.c-CENTER_COL)<=1||target.r<=SURFACE_ROW+1||(typeof isStoreCell==='function'&&isStoreCell(target.c,target.r));
   let kind=1;
   if(passable){
     floodBarriers.add(target.c+','+target.r);
-    const cross=[CENTER_COL-1,CENTER_COL,CENTER_COL+1].every(c=>floodBarriers.has(c+','+target.r));
-    if(cross&&queens&&queens[0]) pantryPos={x:queens[0].x,y:queens[0].y};
+    // The grate protects the route; it does not move the physical store or its supplies.
   } else {
     soil[target.r][target.c]=1;
     if(economyLedger&&economyLedger.materials.clay>0){ economyLedger.debitMaterial('clay',1,{reason:'emergency flood barrier'}); kind=2; }
@@ -1384,7 +1383,7 @@ function _sealFloodCell(ant,target){
   pushEvent('eco',passable?'🪵 Entrada cubierta contra el agua':'🧱 Brecha de agua sellada',passable?'Techo drenante: corta el agua sin cerrar el paso de las hormigas':kind===2?'Dique de arcilla; el agua fue desplazada, no borrada':'Dique de tierra compactada; el agua fue desplazada, no borrada');
   pushToast((target.c+0.5)*CELL,target.r*CELL,passable?'🪵 CUBIERTO':'🧱 SELLADO','#9de5ff',3);
   for(let i=0;i<12;i++) particles.push({x:(target.c+0.5)*CELL,y:(target.r+0.5)*CELL,vx:(Math.random()-.5)*1.5,vy:-Math.random(),life:1,decay:.04,color:'#8ecae6'});
-  stats.xp+=20; colonyFitness+=0.3; if(ant) ant.fitness=(ant.fitness||0)+0.4; checkLevelUp();
+  stats.xp+=20; colonyFitness+=0.3; if(ant){ ant.fitness=(ant.fitness||0)+0.4; recordJobExperience(ant,'build',.8); } checkLevelUp();
   _clearFloodAssignment(ant); floodControl.target=null; floodControl.workerId=null; floodControl.scan=18;
   return true;
 }
@@ -1579,17 +1578,27 @@ function canBuildStructure(type){
 function tryBuildComplexStructure(ant, site){
   // prioriza estructuras útiles según necesidad de colonia
   let candidates=[];
-  if(canBuildStructure('granary') && economyLedger.food>8 && structures.filter(s=>s.type==='granary').length < 2) candidates.push('granary');
+  const existingStore=storageStructure(true);
+  if(canBuildStructure('granary') && existingStore && economyLedger.food>8 && (existingStore.level||1)<3) candidates.push('granary');
   if(canBuildStructure('workshop') && structures.filter(s=>s.type==='workshop').length < 1) candidates.push('workshop');
   if(canBuildStructure('bridge') && Math.random()<0.12) candidates.push('bridge');
   if(canBuildStructure('tower') && workers.length>=9 && structures.filter(s=>s.type==='tower').length < 1) candidates.push('tower');
   if(!candidates.length) return false;
   const type = candidates[Math.floor(Math.random()*candidates.length)];
   const def=STRUCTURE_DEFS[type];
+  if(type==='granary'){
+    const store=storageStructure(true); if(!store) return false;
+    economyLedger.payMaterials(def.need,'store upgrade');
+    store.level=Math.min(3,(store.level||1)+1); store.upgradedBy=ant.id; store.upgradedAt=time;
+    const a=_storeAnchor(store); pantryPos={x:a.x,y:a.y};
+    pushEvent('build',`🏗 ${ant.id} upgrades the NEST STORE`,`Level ${store.level} · same stable site [${store.c},${store.r}]`);
+    pushToast(a.x,a.y-18,'▣ STORE +','#ffcc33',2.2); economyLedger.creditFood(4,'store upgrade completed');
+    recordJobExperience(ant,'build',1.5); ant.fitness+=1.2; colonyFitness+=.9; return true;
+  }
   // verifica espacio libre  (site es celda única, expandimos)
   for(let dy=0; dy<def.h; dy++) for(let dx=0; dx<def.w; dx++){
     const cc=site.c+dx, rr=site.r+dy;
-    if(rr<0||rr>=ROWS||cc<0||cc>=COLS||soil[rr][cc]===1) return false;
+    if(rr<0||rr>=ROWS||cc<0||cc>=COLS||soil[rr][cc]===1||(typeof isStoreCell==='function'&&isStoreCell(cc,rr))) return false;
   }
   // consume materiales
   economyLedger.payMaterials(def.need,'structure '+type);
@@ -1605,8 +1614,7 @@ function tryBuildComplexStructure(ant, site){
   notifyCanon('🏗 ESTRUCTURA', `${def.name} construido por ${ant.id}`, 6000);
   pushToast(site.c*CELL+8, site.r*CELL+8, '🏗 '+def.name, def.color, 2.2);
   for(let i=0;i<12;i++) particles.push({x:site.c*CELL+8,y:site.r*CELL+8,vx:(Math.random()-0.5)*2,vy:-Math.random()*1.6,life:1,decay:0.03,color:def.color});
-  ant.fitness+=1.2; colonyFitness+=0.9;
-  if(type==='granary') economyLedger.creditFood(4,'granary completed'); // bonus almacén
+  recordJobExperience(ant,'build',1.25); ant.fitness+=1.2; colonyFitness+=0.9;
   return true;
 }
 function tryCraftTool(ant){
@@ -1628,6 +1636,7 @@ function tryCraftTool(ant){
 function drawStructures(ctx,W,H,isMini){
   if(isMini) return;
   for(let s of structures){
+    if(s.abandoned) continue;
     const x=s.c*CELL, y=s.r*CELL, w=s.w*CELL, h=s.h*CELL;
     const def=STRUCTURE_DEFS[s.type];
     let prog = s.buildProgress;
@@ -1638,7 +1647,21 @@ function drawStructures(ctx,W,H,isMini){
       ctx.save();
       ctx.beginPath(); ctx.rect(x, y + h*(1-prog), w, h*prog); ctx.clip();
     }
-    if(s.type==='workshop'){
+    if(s.type==='store'){
+      // Passable larder: posts, lintel, shelves and clay bins around open tunnel cells. The room remains
+      // traversable; unlike the old granary, its target is not replaced by a solid rectangle.
+      ctx.fillStyle='#2a190b'; ctx.fillRect(x,y,w,3); ctx.fillRect(x,y+h-3,w,3);
+      ctx.fillRect(x,y,3,h); ctx.fillRect(x+w-3,y,3,h);
+      ctx.fillStyle='#6f4720'; ctx.fillRect(x+2,y+1,w-4,2); ctx.fillRect(x+2,y+h-4,w-4,2);
+      const shelves=Math.max(1,Math.min(3,s.level||1));
+      for(let k=0;k<shelves;k++){
+        const yy=y+7+Math.floor(k*Math.max(6,(h-14)/Math.max(1,shelves)));
+        ctx.fillStyle='#4b3015'; ctx.fillRect(x+4,yy,w-8,3);
+        ctx.fillStyle='#96652d'; ctx.fillRect(x+5,yy,w-10,1);
+      }
+      ctx.fillStyle='#a86d31'; ctx.fillRect(x+5,y+h-10,8,6); ctx.fillRect(x+w-13,y+h-10,8,6);
+      ctx.fillStyle='#d09a4c'; ctx.fillRect(x+6,y+h-9,6,1); ctx.fillRect(x+w-12,y+h-9,6,1);
+    } else if(s.type==='workshop'){
       ctx.fillStyle='#4a2510'; ctx.fillRect(x,y,w,h);
       ctx.fillStyle='#6b3a1f'; ctx.fillRect(x+2,y+2,w-4,h-4);
       ctx.fillStyle='#8a6a3a'; ctx.fillRect(x,y, w,6);
@@ -1798,6 +1821,7 @@ function findFrontier(){ return worldStats().frontier; }
 function findBuildSite(ant){
   const cands=[];
   for(let r=SURFACE_ROW+1;r<ROWS-1;r++) for(let c=1;c<COLS-1;c++) if(soil[r][c]===0){
+    if(typeof isStoreCell==='function'&&isStoreCell(c,r)) continue;
     const dist=Math.hypot((c+0.5)*16-ant.x,(r+0.5)*16-ant.y);
     if(dist>65) continue;
     if(r===SURFACE_ROW+1 && Math.abs(c-CENTER_COL)<2) continue;
@@ -2120,7 +2144,7 @@ function freshFounder(opts){
   }catch(e){ console.error('freshFounder', e); q=opts; }
   return ensureQueenMeta(q);
 }
-let pantryPos={x:CENTER_COL*CELL+8, y:(SURFACE_ROW+6)*CELL+8}; // despensa emergente: donde las ingenieras decidan, no prefijada
+let pantryPos={x:CENTER_COL*CELL+8, y:(SURFACE_ROW+6)*CELL+8}; // stable anchor of the physical store (legacy save field)
 function getPantryPos(){ return pantryPos; }
 // Topo: las reglas de inicio se traducen al tamaño elegido (64x36 = referencia 1.0)
 function worldAreaRatio(){ try{ return Math.max(0.35, Math.min(2.6, (COLS*ROWS)/2304)); }catch(e){ return 1; } }
@@ -2179,32 +2203,213 @@ function enforceQueenCap(motivo){
 function startReserveFood(){ return reservaInicialComida(worldAreaRatio()); }
 function startSurfaceFood(){ return reservaSuperficie(worldAreaRatio()); }
 function surfaceFoodCap(){ return topeSuperficie(worldAreaRatio()); }
-function findLargestChamber(){
-  const visited=Array.from({length:ROWS},()=>Array(COLS).fill(false));
-  let best=null, bestSize=0, bestCx=0, bestCy=0;
-  for(let r=SURFACE_ROW;r<ROWS;r++) for(let c=0;c<COLS;c++) if(soil[r][c]===0 && !visited[r][c]){
-    // BFS
-    let q=[[c,r]], idx=0, cells=[];
-    visited[r][c]=true;
-    while(idx<q.length){
-      const [cx,cy]=q[idx++];
-      cells.push([cx,cy]);
-      for(let [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
-        const nc=cx+dx, nr=cy+dy;
-        if(nc<0||nc>=COLS||nr<SURFACE_ROW||nr>=ROWS) continue;
-        if(visited[nr][nc]||soil[nr][nc]===1) continue;
-        visited[nr][nc]=true; q.push([nc,nr]);
-      }
-    }
-    if(cells.length>bestSize){
-      bestSize=cells.length;
-      let sx=0,sy=0; for(let [cx,cy] of cells){ sx+=cx; sy+=cy; }
-      bestCx=Math.floor(sx/cells.length); bestCy=Math.floor(sy/cells.length);
-      best=cells;
+// === KNOWN NEST GEOMETRY + PHYSICAL STORE ===
+// Knowledge starts from the living colony. Procedural ruins and open pockets do not become usable just
+// because the generator placed air there; a four-neighbour tunnel must physically connect them first.
+let _nestReachCache={rev:-1,seed:'',set:new Set(),cells:[]};
+function _nearestKnownOpen(c0,r0,maxRadius=7){
+  c0=Math.max(0,Math.min(COLS-1,c0|0)); r0=Math.max(SURFACE_ROW,Math.min(ROWS-1,r0|0));
+  for(let rad=0;rad<=maxRadius;rad++){
+    for(let dr=-rad;dr<=rad;dr++) for(let dc=-rad;dc<=rad;dc++){
+      if(Math.max(Math.abs(dc),Math.abs(dr))!==rad) continue;
+      const c=c0+dc,r=r0+dr;
+      if(c>=0&&c<COLS&&r>=SURFACE_ROW&&r<ROWS&&soil[r]&&soil[r][c]===0) return [c,r];
     }
   }
-  if(best) return {x:bestCx*CELL+8, y:bestCy*CELL+8, size:bestSize};
   return null;
+}
+function _nestKnowledgeSeed(){
+  // Resolve lazily. In normal play the queen succeeds, so do not sort/copy the whole workforce merely
+  // to prepare a fallback that will never be read (this helper is hot while a blueprint is active).
+  try{ if(queens&&queens[0]){const q=_nearestKnownOpen(Math.floor(queens[0].x/CELL),Math.floor(queens[0].y/CELL));if(q)return q;} }catch(e){}
+  try{ if(workers&&workers.length){let deep=workers[0];for(let i=1;i<workers.length;i++)if(workers[i].y>deep.y)deep=workers[i];const w=_nearestKnownOpen(Math.floor(deep.x/CELL),Math.floor(deep.y/CELL));if(w)return w;} }catch(e){}
+  try{ const p=_nearestKnownOpen(Math.floor(pantryPos.x/CELL),Math.floor(pantryPos.y/CELL));if(p)return p; }catch(e){}
+  return _nearestKnownOpen(CENTER_COL,SURFACE_ROW);
+}
+function nestReachableData(){
+  // Geometry, not ant animation, defines the connected component. While soil revision is unchanged the
+  // set remains valid even as its queen walks inside it; this turns repeated membership checks into O(1).
+  if(_nestReachCache.rev===_soilRev&&_nestReachCache.cells.length) return _nestReachCache;
+  const seed=_nestKnowledgeSeed();
+  if(!seed) return {set:new Set(),cells:[],seed:null};
+  const key=seed[0]+','+seed[1];
+  const seen=new Set([key]), cells=[], q=[seed]; let head=0;
+  while(head<q.length&&head<COLS*ROWS){
+    const p=q[head++],c=p[0],r=p[1]; cells.push(p);
+    for(const d of [[1,0],[-1,0],[0,1],[0,-1]]){
+      const nc=c+d[0],nr=r+d[1],nk=nc+','+nr;
+      if(nc<0||nc>=COLS||nr<SURFACE_ROW||nr>=ROWS||seen.has(nk)||!soil[nr]||soil[nr][nc]!==0) continue;
+      seen.add(nk); q.push([nc,nr]);
+    }
+  }
+  _nestReachCache={rev:_soilRev,seed:key,set:seen,cells};
+  return _nestReachCache;
+}
+function isNestCellConnected(c,r){ return nestReachableData().set.has((c|0)+','+(r|0)); }
+function findLargestChamber(){
+  // Historical name kept for save/tests. The answer is now the colony's connected component only,
+  // never the globally largest void. Pick an actual open floor cell near its centroid.
+  const data=nestReachableData(); if(!data.cells.length) return null;
+  let sx=0,sy=0; for(const p of data.cells){ sx+=p[0]; sy+=p[1]; }
+  const cx=sx/data.cells.length,cy=sy/data.cells.length;
+  let best=data.cells[0],score=Infinity;
+  for(const p of data.cells){
+    const floor=soil[p[1]+1]&&soil[p[1]+1][p[0]]!==0;
+    const s=(p[0]-cx)*(p[0]-cx)+(p[1]-cy)*(p[1]-cy)+(floor?0:16);
+    if(s<score){ score=s; best=p; }
+  }
+  return {x:(best[0]+.5)*CELL,y:(best[1]+.5)*CELL,size:data.cells.length,c:best[0],r:best[1]};
+}
+
+const STORE_WORK_REQUIRED=54;
+function _storeAnchor(s){
+  if(!s) return null;
+  return {x:(s.c+Math.floor((s.w||3)/2)+.5)*CELL,y:(s.r+(s.h||2)-.5)*CELL};
+}
+function _storeKinds(s){ return !!s&&(s.type==='store'||s.type==='granary')&&!s.abandoned; }
+function storageStructure(builtOnly=true){
+  let list=[]; try{ list=structures.filter(_storeKinds); }catch(e){}
+  if(builtOnly) list=list.filter(s=>s.built!==false);
+  return list.sort((a,b)=>(b.primary?1:0)-(a.primary?1:0)||(a.builtAt||0)-(b.builtAt||0))[0]||null;
+}
+function _storeFootprint(s){
+  const out=[]; if(!s) return out;
+  for(let r=s.r;r<s.r+(s.h||2);r++) for(let c=s.c;c<s.c+(s.w||3);c++) out.push({c,r});
+  return out;
+}
+function isStoreCell(c,r){
+  return structures.some(s=>_storeKinds(s)&&!s.abandoned&&c>=s.c&&c<s.c+(s.w||3)&&r>=s.r&&r<s.r+(s.h||2));
+}
+function _storeSiteIsPhysical(s){
+  const cells=_storeFootprint(s); if(!cells.length) return false;
+  for(const p of cells){
+    if(p.c<0||p.c>=COLS||p.r<SURFACE_ROW||p.r>=ROWS||!soil[p.r]||soil[p.r][p.c]!==0) return false;
+    if(!isNestCellConnected(p.c,p.r)) return false;
+    // Water may make the room temporarily unusable, but it does not demolish its shelves. A flood must
+    // never teleport the colony's stable store; only lost/open-cell geometry can trigger reconstruction.
+  }
+  return true;
+}
+function _storeOverlaps(c,r,w,h,ignore){
+  return structures.some(s=>s!==ignore&&!s.abandoned&&c<s.c+(s.w||1)&&s.c<c+w&&r<s.r+(s.h||1)&&s.r<r+h);
+}
+function _findStoreSite(){
+  const data=nestReachableData(); if(!data.cells.length) return null;
+  const origin=queens&&queens[0]?{x:queens[0].x/CELL,y:queens[0].y/CELL}:{x:CENTER_COL,y:SURFACE_ROW+7};
+  let best=null,bestScore=Infinity;
+  for(const dims of [[3,2],[2,2]]){
+    const w=dims[0],h=dims[1];
+    for(const p of data.cells){
+      const c=p[0],r=p[1]; if(c+w>COLS||r+h>=ROWS||_storeOverlaps(c,r,w,h,null)) continue;
+      let ok=true,support=0;
+      for(let y=r;y<r+h&&ok;y++) for(let x=c;x<c+w;x++){
+        if(!soil[y]||soil[y][x]!==0||!data.set.has(x+','+y)||waterAtCell(x,y)>=WATER_AVOID_LEVEL){ ok=false; break; }
+      }
+      if(!ok) continue;
+      for(let x=c;x<c+w;x++) if(soil[r+h]&&soil[r+h][x]!==0) support++;
+      if(support<Math.max(1,w-1)) continue;
+      const ax=c+(w-1)/2,ay=r+h-0.5;
+      const score=Math.hypot(ax-origin.x,ay-origin.y)*2+(w===3?0:18)-support*3;
+      if(score<bestScore){ bestScore=score; best={c,r,w,h}; }
+    }
+    if(best) break;
+  }
+  return best;
+}
+function _storeBuilderAvailable(a){
+  if(!a||a.isQueen||a.health<=30||a.food||a._magmaRetreat||a.state==='CONTROLAR_AGUA'||(a.fatigue||0)>=78) return false;
+  if(a.y<=SURFACE_Y+CELL) return true; // meadow and entrance remain physically reachable through the shaft
+  return isNestCellConnected(Math.floor(a.x/CELL),Math.floor(a.y/CELL));
+}
+function _assignStoreBuilders(site){
+  if(!site||site.built!==false) return [];
+  const eligible=workers.filter(_storeBuilderAvailable);
+  eligible.sort((a,b)=>{
+    const score=x=>{
+      const exp=x.jobExperience&&x.jobExperience.build||0,age=(x.age||0)/DAY_LENGTH;
+      const ageFit=Math.max(0,18-Math.abs(age-.8)*12);
+      return (x.traits&&x.traits.construccion||0)*1.15+exp*14+ageFit+(antProfession(x)==='CONSTRUCTORA'?15:0)+(100-(x.fatigue||0))*.12;
+    };
+    return score(b)-score(a)||String(a.id).localeCompare(String(b.id));
+  });
+  const quota=Math.max(1,Math.min(2,Math.ceil(workers.length/4)));
+  site.builders=eligible.slice(0,quota).map(a=>a.id);
+  return site.builders;
+}
+function ensureStoreBlueprint(){
+  let current=storageStructure(false);
+  if(current&&_storeSiteIsPhysical(current)){
+    if(!current.builders) current.builders=[];
+    const a=_storeAnchor(current); if(a) pantryPos={x:a.x,y:a.y};
+    return current;
+  }
+  if(current){ current.abandoned=true; current.primary=false; }
+  const site=_findStoreSite(); if(!site) return null;
+  current={...site,type:'store',level:1,built:false,primary:true,work:0,workNeeded:STORE_WORK_REQUIRED,buildProgress:0,age:0,builders:[],builtBy:[]};
+  structures.push(current); const a=_storeAnchor(current); pantryPos={x:a.x,y:a.y}; _assignStoreBuilders(current);
+  return current;
+}
+function migrateLegacyStorage(){
+  _nestReachCache.rev=-1;
+  let store=structures.find(s=>s&&s.type==='store'&&!s.abandoned);
+  const old=structures.filter(s=>s&&s.type==='granary'&&!s.abandoned);
+  if(!store&&old.length){
+    store=old[0]; store.type='store'; store.level=Math.max(2,1+old.length); store.primary=true; store.built=true; store.buildProgress=1; store.work=STORE_WORK_REQUIRED; store.workNeeded=STORE_WORK_REQUIRED; store.builtAt=store.builtAt||time;
+    // Old granaries filled their entire target with solid blocks. The migration turns that same visible
+    // footprint into a passable framed room; otherwise its target remains physically unreachable.
+    for(const p of _storeFootprint(store)){ if(soil[p.r]) soil[p.r][p.c]=0; if(soilType[p.r]) soilType[p.r][p.c]=0; }
+    for(let i=1;i<old.length;i++) old[i].abandoned=true;
+    markSoilDirty();
+  }
+  if(store&&_storeSiteIsPhysical(store)){ const a=_storeAnchor(store); pantryPos={x:a.x,y:a.y}; return store; }
+  return ensureStoreBlueprint();
+}
+function workOnStore(ant,dt,speed){
+  let site=storageStructure(false);
+  // A completed address is inspected by maintainPhysicalStorage on its own cadence. Do not rescan the
+  // whole nest once per ant and do not silently replace damage before the loss/rebuild event is emitted.
+  if(site&&site.built!==false){ if(ant.state==='BUILD_STORE') ant.state='EXPLORAR'; return false; }
+  if(!site) site=ensureStoreBlueprint();
+  if(!site||site.built!==false) { if(ant.state==='BUILD_STORE') ant.state='EXPLORAR'; return false; }
+  let active=Array.isArray(site.builders)&&site.builders.some(id=>workers.some(w=>w.id===id&&_storeBuilderAvailable(w)&&!w.floodTarget));
+  if(!active&&time>=(site._builderReviewAt||0)){
+    _assignStoreBuilders(site); active=site.builders.some(id=>workers.some(w=>w.id===id&&_storeBuilderAvailable(w)&&!w.floodTarget));
+    site._builderReviewAt=active?0:time+DAY_LENGTH*.012;
+  }
+  if(!active||!site.builders.includes(ant.id)){ if(ant.state==='BUILD_STORE') ant.state='EXPLORAR'; return false; }
+  // Only an assigned worker pays the geometry check. Non-builders take the O(1) exit above.
+  if(!_storeSiteIsPhysical(site)){ site=ensureStoreBlueprint(); if(!site||!site.builders.includes(ant.id)) return false; }
+  if(ant.food||ant.wasteTarget||ant.floodTarget||(ant.fatigue||0)>=82) return false;
+  ant.state='BUILD_STORE'; ant.targetFood=null; ant.digTarget=null; ant.digProgress=0; ant.buildTarget=null;
+  const target=_storeAnchor(site),near=dist(ant,target)<11;
+  if(near){
+    if(!ant.jobExperience) ant.jobExperience={build:0,dig:0,forage:0,explore:0,nurse:0};
+    const trait=ant.traits&&ant.traits.construccion||40,experience=ant.jobExperience.build||0;
+    const effort=dt*(.74+trait/220+Math.min(.24,experience*.018))*(ant.tool==='trowel'?1.24:1);
+    site.work=(site.work||0)+effort; site.buildProgress=Math.min(1,site.work/(site.workNeeded||STORE_WORK_REQUIRED));
+    recordJobExperience(ant,'build',effort/(site.workNeeded||STORE_WORK_REQUIRED));
+    ant.fatigue=Math.min(100,(ant.fatigue||0)+_fatUnidad*dt*.7);
+    if(Math.random()<.18) particles.push({x:target.x+(Math.random()-.5)*30,y:target.y+(Math.random()-.5)*16,vx:(Math.random()-.5),vy:-.4,life:.7,decay:.05,color:'#b47a35'});
+    if(site.buildProgress>=1){
+      site.built=true; site.buildProgress=1; site.builtAt=time; site.age=0; site.builtBy=[...new Set(site.builders)];
+      pantryPos={x:target.x,y:target.y};
+      for(const w of workers) if(w.state==='BUILD_STORE') w.state='EXPLORAR';
+      pushEvent('build','NEST STORE completed',site.builtBy.join(', ')+' built a stable connected cache');
+      pushToast(target.x,target.y-18,'▣ STORE','#ffcc33',2.2); colonyFitness+=.45; stats.xp+=18; checkLevelUp();
+    }
+    return true;
+  }
+  let waypoint=target; const routed=routeStep(ant,target.x,target.y); if(routed) waypoint=routed;
+  const ang=Math.atan2(waypoint.y-ant.y,waypoint.x-ant.x); ant.angle+=((ang-ant.angle+Math.PI*3)%(Math.PI*2)-Math.PI)*.24;
+  const nx=ant.x+Math.cos(ant.angle)*speed,ny=ant.y+Math.sin(ant.angle)*speed;
+  if(canAntMove(ant,nx,ny)){ ant.x=nx; ant.y=ny; ant.blocked=0; } else { ant.blocked++; ant._routeUntil=0; ant.angle=ang; }
+  return true;
+}
+function maintainPhysicalStorage(){
+  const built=storageStructure(true);
+  if(built&&_storeSiteIsPhysical(built)){ const a=_storeAnchor(built); pantryPos={x:a.x,y:a.y}; return built; }
+  if(built&&!built._lostNotice){ built._lostNotice=true; built.abandoned=true; built.primary=false; pushEvent('build','STORE LOST','The chamber was cut off or collapsed; workers must rebuild it.'); }
+  return ensureStoreBlueprint();
 }
 let _pantryTimer=0, _queenMoveTimer=0;
 let queens=[queen];
@@ -2527,7 +2732,8 @@ function makeAnt(genome, pos=null, opts={}){
     mood:{joy:0.5+Math.random()*0.2, anger:Math.random()*0.08, fear:Math.random()*0.06, sadness:Math.random()*0.07, loyalty:0.62+Math.random()*0.18, stress:0.08+Math.random()*0.08},
     faction: opts.faction!==undefined? opts.faction : (queens[0]?.faction||0),
     belief: null, aggression: 0.12 + Math.random()*0.18 + traits.comunica*0.0015, crimes:0, followers:0,
-    genome:g, traits, role, affinity, rank, hierarchy, jobAge:0, lastJob:'NADA',
+    genome:g, traits, role, affinity, rank, hierarchy, profession:'OBRERA', professionSince:0, jobAge:0, lastJob:'NADA',
+    jobExperience:{build:0,dig:0,forage:0,explore:0,nurse:0},
     deliveries:0, digsDone:0, commsSent:0, lastInk:0, lastPhero:0, blocked:0, selected:false, digTarget:null, digProgress:0, digNeeded:14, commOut:[0,0], sensors:{}, nnHidden:[], nnOut:[],
     parents: opts.parents||[], children:[], history:[], birthDay: day, deathDay:null }
 }
@@ -2556,7 +2762,7 @@ function topoCreateFreshWorld(cols, rows){
   try{ wastePiles.length=0; fungusGardens.length=0; structures.length=0; }catch(e){ console.warn('limpieza herencia', e.message); }
   try{ if(typeof water!=='undefined' && water) water.forEach(r=>r.fill(0)); }catch(e){}
   try{ _waterActive=false; floodBarriers.clear(); floodControl.target=null; floodControl.workerId=null; floodControl.scan=0; floodControl.worldKey=''; }catch(e){}
-  try{ window._foodlessTimer=0; }catch(e){}
+  try{ window._foodlessTimer=0; window._jobTimer=0; window._hierTimer=0; window._lastLeader=null; }catch(e){}
   day=1; time=DAY_LENGTH*0.28; deliveries=0; digs=0; gen=0; worldAge=0;
   worldSeed=worldSeed32(Math.floor(Math.random()*4294967296));
   worldProfile=createWorldProfile(worldSeed,COLS); ancientSites=[]; ancientMasonry=[]; _generatedSiteIds=new Set(); rebuildAncientIndexes();
@@ -2592,6 +2798,9 @@ function topoCreateFreshWorld(cols, rows){
     workers.forEach((w,i)=> w.angle=(i*2.1)+Math.random()*0.6);
     if(workers[0]) workers[0].selected=true;
   }catch(e){ console.error('queen/workers fresh',e); }
+  // The site is selected from the connected founding shaft, then real workers build it during the
+  // first moments of play. Founding provisions are laid beside that stable site, not in a roaming void.
+  try{ ensureStoreBlueprint(); }catch(e){ console.warn('store blueprint fresh',e.message); }
   try{ detectarEntrada(); }catch(e){}
   markSoilDirty(); try{ markSoilDirty(); }catch(e){}
   // ajuste anti-extinción aplicado al nacer el mundo (antes corría en load y crasheaba)
@@ -2621,37 +2830,120 @@ function topoCreateFreshWorld(cols, rows){
   try{ setTimeout(()=>{ if(typeof _updateBothAntCounts==='function') _updateBothAntCounts(); if(typeof updateColonyUI==='function') updateColonyUI(); }, 120); }catch(e){}
 }
 window.topoCreateFreshWorld=topoCreateFreshWorld;
-// === JERARQUÍA LABORAL EMERGENTE ===
+// === OFICIOS Y JERARQUÍA EMERGENTES ===
+// `profession` is the learned job. `role` remains the old broad behavioural band so old saves,
+// colours and the sealed COLONY profile keep working without a second set of counters.
+const ANT_PROFESSIONS=['CONSTRUCTORA','MINERA_PROFUNDA','EXPLORADORA','RECOLECTORA_EXTERIOR','NODRIZA'];
+const ANT_PROFESSION_SET=new Set(ANT_PROFESSIONS),JOB_KEYS=['build','dig','forage','explore','nurse'];
+const JOB_NAME={build:'CONSTRUCTORA',dig:'MINERA_PROFUNDA',forage:'RECOLECTORA_EXTERIOR',explore:'EXPLORADORA',nurse:'NODRIZA'};
+const PROFESSION_LABELS={CONSTRUCTORA:'BUILDER',MINERA_PROFUNDA:'DEEP MINER',EXPLORADORA:'SCOUT',RECOLECTORA_EXTERIOR:'SURFACE FORAGER',NODRIZA:'NURSE',OBRERA:'WORKER'};
+function _jobBook(w){
+  if(w._jobBookReady&&w.jobExperience) return w.jobExperience;
+  if(!w.jobExperience||typeof w.jobExperience!=='object') w.jobExperience={};
+  for(const k of JOB_KEYS) if(!Number.isFinite(w.jobExperience[k])) w.jobExperience[k]=0;
+  w._jobBookReady=true; return w.jobExperience;
+}
+function recordJobExperience(w,kind,amount=1){
+  if(!w||!JOB_NAME[kind]||!Number.isFinite(amount)||amount<=0) return 0;
+  const e=_jobBook(w); e[kind]=Math.min(1e6,e[kind]+amount);
+  w.lastJob=JOB_NAME[kind]; return e[kind];
+}
+function _legacyRoleForProfession(p){
+  if(p==='CONSTRUCTORA'||p==='MINERA_PROFUNDA') return 'EXCAVADORA';
+  if(p==='RECOLECTORA_EXTERIOR') return 'RECOLECTORA';
+  return p==='EXPLORADORA'||p==='NODRIZA'?p:'OBRERA';
+}
+function antProfession(w){
+  if(w&&ANT_PROFESSION_SET.has(w.profession)) return w.profession;
+  // `lastJob` is only a migration hint for saves made before `profession` existed. In current worlds an
+  // ant does not become a specialist after one action; the periodic age/experience/need review decides.
+  if(w&&w.profession===undefined&&ANT_PROFESSION_SET.has(w.lastJob)) return w.lastJob;
+  if(!w) return 'OBRERA';
+  if(w.role==='EXCAVADORA'){
+    const e=_jobBook(w); return e.build>e.dig*1.18?'CONSTRUCTORA':'MINERA_PROFUNDA';
+  }
+  if(w.role==='RECOLECTORA') return 'RECOLECTORA_EXTERIOR';
+  if(w.role==='EXPLORADORA'||w.role==='NODRIZA') return w.role;
+  return 'OBRERA';
+}
+function colonyProfessionNeeds(){
+  const n=workers.length;
+  const pendingStore=!!(storageStructure(false)&&!storageStructure(false).built);
+  const pendingBuild=pendingStore||structures.some(s=>!s.abandoned&&s.type!=='store'&&(s.buildProgress||0)<1);
+  const lowFood=economyLedger.food < Math.max(_reservaVital()+2,workers.length*0.9+brood.length*1.4);
+  const materialStock=Object.values(economyLedger.materials||{}).reduce((a,v)=>a+(Number(v)||0),0);
+  const raw={
+    CONSTRUCTORA:pendingBuild?Math.max(1,Math.ceil(n*.20)):(n>=8?1:0),
+    MINERA_PROFUNDA:Math.max(n>=3?1:0,Math.ceil(n*(materialStock<6?.25:.18))),
+    EXPLORADORA:n>=5?Math.max(1,Math.round(n*.12)):0,
+    RECOLECTORA_EXTERIOR:Math.max(n?1:0,Math.ceil(n*(lowFood?.42:.16))),
+    NODRIZA:brood.length?Math.max(1,Math.min(Math.ceil(n*.22),Math.ceil(brood.length/3))):0
+  };
+  const urgency={CONSTRUCTORA:pendingBuild?100:26,RECOLECTORA_EXTERIOR:lowFood?96:42,NODRIZA:brood.length?88:0,MINERA_PROFUNDA:materialStock<6?74:62,EXPLORADORA:48};
+  const target={CONSTRUCTORA:0,MINERA_PROFUNDA:0,EXPLORADORA:0,RECOLECTORA_EXTERIOR:0,NODRIZA:0};
+  let left=n;
+  // One indispensable pair of mandibles per active need, in colony-urgency order.
+  for(const p of [...ANT_PROFESSIONS].sort((a,b)=>urgency[b]-urgency[a])) if(left>0&&raw[p]>0){target[p]++;left--;}
+  // Remaining workers follow need ratios rather than a die roll. Ratios may grow beyond `raw` so every
+  // mature worker still has useful work when the colony is large.
+  while(left>0){
+    let best='RECOLECTORA_EXTERIOR',score=-Infinity;
+    for(const p of ANT_PROFESSIONS){
+      if(raw[p]<=0) continue;
+      const deficit=(raw[p]-target[p])/(target[p]+1);
+      const s=deficit*30+urgency[p]/(target[p]+1);
+      if(s>score){score=s;best=p;}
+    }
+    target[best]++; left--;
+  }
+  return {target,urgency,pendingStore,pendingBuild,lowFood,materialStock};
+}
+function _professionScore(w,p){
+  const t=w.traits||{},e=_jobBook(w),age=Math.max(0,(w.age||0)/DAY_LENGTH),stress=w.mood&&w.mood.stress||0;
+  let s=(w.health||100)*.035-stress*7+(antProfession(w)===p?13:0);
+  const xp=x=>Math.log1p(Math.max(0,x))*24;
+  if(p==='CONSTRUCTORA') s+=(t.construccion||0)*.55+(t.cuidado||0)*.10+xp(e.build)+(age>=.28&&age<=1.8?14:age<.16?-9:2);
+  else if(p==='MINERA_PROFUNDA') s+=(t.construccion||0)*.43+(t.exploracion||0)*.17+xp(e.dig)+Math.min(14,((w.deepestWork||0)-SURFACE_ROW)*.7)+(age>=.55?11:-5)+(w.caste==='major'?5:0);
+  else if(p==='EXPLORADORA') s+=(t.exploracion||0)*.62+(t.comunica||0)*.10+xp(e.explore)+(age>=.75?12:-4)+(w.caste==='major'?3:0);
+  else if(p==='RECOLECTORA_EXTERIOR') s+=(t.recoleccion||0)*.62+(t.exploracion||0)*.10+xp(e.forage)+(age>=.62?13:-3)+(w.deliveries||0)*.7;
+  else if(p==='NODRIZA') s+=(t.cuidado||0)*.67+(t.comunica||0)*.08+xp(e.nurse)+(age<=.9?15:0)+(w.caste==='minim'?7:0);
+  // Stable deterministic tie-breaker: heredity influences the outcome, a frame-level random roll does not.
+  for(const ch of String(w.id||'')) s+=ch.charCodeAt(0)*0.00001;
+  return s;
+}
+function assignEmergentProfessions(emit=true){
+  const need=colonyProfessionNeeds();
+  const eligible=workers.filter(w=>(w.age||0)>=DAY_LENGTH*.16||Object.values(_jobBook(w)).some(v=>v>=.18));
+  const free=new Set(eligible),chosen=new Map();
+  const slots=[];
+  for(const p of [...ANT_PROFESSIONS].sort((a,b)=>need.urgency[b]-need.urgency[a])) for(let i=0;i<need.target[p];i++) slots.push(p);
+  for(const p of slots){
+    let best=null,bestScore=-Infinity;
+    for(const w of free){const s=_professionScore(w,p);if(s>bestScore){bestScore=s;best=w;}}
+    if(best){chosen.set(best,p);free.delete(best);}
+  }
+  for(const [w,p] of chosen){
+    const old=antProfession(w);
+    if(old!==p){
+      w.profession=p; w.professionSince=time; w.jobAge=0; w.lastJob=p;
+      if(emit) pushEvent('evo',`🔧 ${w.id} learns ${PROFESSION_LABELS[p]}`,`Experience, age, traits and colony demand`);
+    } else { w.profession=p; }
+    w.role=_legacyRoleForProfession(p);
+  }
+  return {need,assignments:[...chosen].map(([w,p])=>({id:w.id,profession:p,score:_professionScore(w,p)}) )};
+}
 function updateHierarchy(dt){
-  if(workers.length<4 || gen<2 || colonyIQ<112) return;
-  // realista: jerarquía no aparece al instante - reevalúa cada ~0.62d (~12 min a x1)
+  for(const w of workers){ _jobBook(w); w.jobAge=(w.jobAge||0)+dt; }
+  if(!window._jobTimer) window._jobTimer=0;
+  window._jobTimer+=dt;
+  if(workers.length>=3&&window._jobTimer>=DAY_LENGTH*.16){window._jobTimer=0;assignEmergentProfessions(true);}
+  // Social rank is slower and still needs a sufficiently developed colony. Jobs do not: work teaches them.
+  if(workers.length<4||gen<2||colonyIQ<112) return;
   if(!window._hierTimer) window._hierTimer=0;
   window._hierTimer+=dt;
   if(window._hierTimer < DAY_LENGTH*0.62) return;
   window._hierTimer=0;
-  // puntuar a cada obrera por lo que más ha hecho + fitness + IQ
   workers.forEach(w=>{
-    w.jobAge+=dt;
-    const ageDays = w.age/DAY_LENGTH;
-    // polietismo temporal real: jóvenes nodrizas, medianas constructoras, viejas forrajeras
-    if(w.role==='OBRERA' && w.jobAge > DAY_LENGTH*0.42){
-      const need = {EXCAVADORA: workers.filter(x=>x.role==='EXCAVADORA').length, EXPLORADORA: workers.filter(x=>x.role==='EXPLORADORA').length, NODRIZA: workers.filter(x=>x.role==='NODRIZA').length, RECOLECTORA: workers.filter(x=>x.role==='RECOLECTORA').length};
-      const scarcest = Object.entries(need).sort((a,b)=>a[1]-b[1])[0][0];
-      let agePreferred=null;
-      if(ageDays < 0.52) agePreferred='NODRIZA';
-      else if(ageDays < 1.15) agePreferred='EXCAVADORA';
-      else agePreferred = Math.random()<0.62?'RECOLECTORA':'EXPLORADORA';
-      // caste modula: minim tiende a nodriza, major a defensa/exploradora
-      if(w.caste==='minim' && Math.random()<0.28) agePreferred='NODRIZA';
-      if(w.caste==='major' && Math.random()<0.32) agePreferred='EXPLORADORA';
-      const r=Math.random();
-      if(r<0.42) w.role=agePreferred;
-      else if(r<0.78) w.role=w.affinity;
-      else w.role=scarcest;
-      w.jobAge=0; w.lastJob=w.role;
-      pushEvent('evo', `🔧 ${w.id} asume oficio ${w.role}`, `Afinidad ${w.affinity} - Hier emergente`);
-    }
-    // jerarquía: elige líderes por fitness + seguidores + cuidado
     const score = w.fitness*1.4 + w.deliveries*0.12 + w.digsDone*0.09 + w.traits.cuidado*0.02 + w.traits.comunica*0.03 - w.mood.stress*0.5;
     w._hierScore = score;
   });
@@ -2841,35 +3133,25 @@ const _MAT_DEFS = [
   {k:'oro',   n:'GOLD',   col:'#e8c14b', col2:'#8a6a12', icon:'\u{1F7E1}', sirve:'rustproof: offerings, ornaments, and contacts'}
 ];
 function storagePos(){
-  // Topo: el almacen es el GRANERO que ellas construyen; si todavia no hay ninguno, la camara que
-  // eligieron como despensa (pantryPos). Antes la miel viajaba siempre a pantryPos aunque hubiera
-  // granero: el almacen existia en el numero, no en el mapa.
-  try{
-    let mejor=null, md=Infinity;
-    for(const st of structures){
-      if(!st || st.type!=='granary' || st.built===false) continue;
-      const gx=(st.c+ (st.w||3)/2)*CELL, gy=(st.r+(st.h||2)/2)*CELL;
-      const d=Math.hypot(gx-pantryPos.x, gy-pantryPos.y);
-      if(d<md){ md=d; mejor={x:gx, y:gy}; }
-    }
-    if(mejor) return mejor;
-  }catch(e){}
-  return {x:pantryPos.x, y:pantryPos.y};
+  // A blueprint fixes the intended location; a completed store makes it operational. Neither the
+  // largest room nor a stalled forager is allowed to move this anchor.
+  try{ const s=storageStructure(false); const a=_storeAnchor(s); if(a) return a; }catch(e){}
+  try{ if(queens&&queens[0]) return {x:queens[0].x,y:queens[0].y}; }catch(e){}
+  return {x:pantryPos.x,y:pantryPos.y};
 }
-// celdas libres de la camara de almacen, con el suelo primero (lo que se apoya, se apoya)
 function storageCells(){
-  const p=storagePos(); const c0=Math.floor(p.x/CELL), r0=Math.floor(p.y/CELL); const out=[];
-  for(let r=r0-1;r<=r0+1;r++){
-    for(let c=c0-2;c<=c0+2;c++){
-      if(r<SURFACE_ROW||r>=ROWS||c<0||c>=COLS) continue;
-      if(soil[r] && soil[r][c]===0) out.push({c, r, suelo: !!(soil[r+1] && soil[r+1][c]!==0)});
-    }
-  }
-  out.sort((x,y)=> (y.suelo?1:0)-(x.suelo?1:0) || y.r-x.r || x.c-y.c);
+  const s=storageStructure(true); if(!s||!_storeSiteIsPhysical(s)) return [];
+  const out=_storeFootprint(s).map(p=>({c:p.c,r:p.r,suelo:!!(soil[p.r+1]&&soil[p.r+1][p.c]!==0)}));
+  out.sort((x,y)=>(y.suelo?1:0)-(x.suelo?1:0)||y.r-x.r||x.c-y.c);
   return out;
 }
-function granerosConstruidos(){ let n=0; try{ for(const st of structures){ if(st && st.type==='granary' && st.built!==false) n++; } }catch(e){} return n; }
-function capacidadAlmacen(){ return 14 + storageCells().length*2 + granerosConstruidos()*12; }
+function granerosConstruidos(){
+  const s=storageStructure(true); return s?Math.max(0,(s.level||1)-1):0;
+}
+function capacidadAlmacen(){
+  const s=storageStructure(true); if(!s||!_storeSiteIsPhysical(s)) return 0;
+  return 8+storageCells().length*2+granerosConstruidos()*12;
+}
 // UN CUADRO, SIEMPRE DEL MISMO TAMAÑO. El dueno lo pidio claro: las siluetas distintas (bote, losa,
 // monton) se leian mal a 16 px y no decian que eran. Todo es un cuadrado de 6x6 con su borde negro y su
 // franja de apoyo; lo unico que cambia es el color, y los metales llevan encima dos puntitos del tono
@@ -2914,27 +3196,8 @@ function dibujarAlmacen(){
     for(let p=0;p<alto;p++) _boteAlmacen(bx0 + p*(_CUADRO+1), base, _CUADRO, _CUADRO, d.col, d.col2, p===alto-1, _METAL_PUNTO[d.k]||null);
     i+=1;
   }
-  // 3) la marca de la camara: un travesaño de madera en el techo, para que se vea QUE es un sitio
-  // 3) LA CAMARA, no botes sueltos en un agujero (Topo: «el almacen tiene que ser una estructura de verdad»).
-  // Se enmarca el contorno de las celdas abiertas - dintel, suelo y dos postes - y con cada granero que
-  // construyen sale un travesano mas: la obra se ve en el muro, no hace falta contarla en un cartel.
-  let _c0=1e9,_c1=-1e9,_r0=1e9,_r1=-1e9;
-  for(const cd of celdas){ if(cd.c<_c0)_c0=cd.c; if(cd.c>_c1)_c1=cd.c; if(cd.r<_r0)_r0=cd.r; if(cd.r>_r1)_r1=cd.r; }
-  if(_c1>=_c0 && _r1>=_r0){
-    const x0=_c0*CELL, y0=_r0*CELL, x1=(_c1+1)*CELL, y1=(_r1+1)*CELL;
-    ctx.fillStyle='#3a2610';
-    ctx.fillRect(x0-2, y0-2, (x1-x0)+4, 3);
-    ctx.fillRect(x0-2, y1-1, (x1-x0)+4, 3);
-    ctx.fillRect(x0-2, y0-2, 3, (y1-y0)+4);
-    ctx.fillRect(x1-1, y0-2, 3, (y1-y0)+4);
-    ctx.fillStyle='#5b3d1c'; ctx.fillRect(x0+1, y0-1, (x1-x0)-2, 1);
-    for(let k=0;k<Math.min(3, granerosConstruidos());k++){
-      const yy = y0 + Math.round((_r1-_r0+1)*CELL*(k+1)/4);
-      ctx.fillStyle='#4a3214'; ctx.fillRect(x0+1, yy-1, (x1-x0)-2, 2);
-    }
-  }
-  const top=celdas[celdas.length-1];
-  if(top){ ctx.fillStyle='#4a3214'; ctx.fillRect(top.c*CELL-CELL, top.r*CELL+1, CELL*5, 2); ctx.fillStyle='#2a1b0a'; ctx.fillRect(top.c*CELL-CELL, top.r*CELL+3, CELL*5, 1); }
+  // The timber frame itself is drawn by drawStructures(). Keeping it there lets the same structure
+  // appear progressively while workers build it; this pass owns only the supplies placed on its floor.
 }
 function surfaceEntrance(){return {x:CENTER_COL*CELL+8,y:SURFACE_Y-4};}
 function rayWallDist(x,y,angle,max){for(let d=4;d<=max;d+=4){const nx=x+Math.cos(angle)*d, ny=y+Math.sin(angle)*d; if(isSolidPixel(nx,ny)) return d;}return max;}
@@ -3219,7 +3482,7 @@ function updateBrood(dt){
         b.progress += _g;
         if(nivel<=2){
           const donor = workers.find(w=> (w.role==='NODRIZA'||w.caste==='minim'||(w.crop||0)>0.16) && (w.crop||0)>0.12);
-          if(donor) donor.crop = Math.max(0, (donor.crop||0) - _g*0.020);
+          if(donor){ donor.crop = Math.max(0, (donor.crop||0) - _g*0.020); recordJobExperience(donor,'nurse',_g*.04); }
         }
         if(nivel>=3){
           const _costeCria=_g*(nivel===3?0.030:0.018);
@@ -4012,7 +4275,7 @@ function updateAnt(ant, dt){
     }
   }
   // herramientas: forja cerca del almacén/taller si es inteligente
-  if(!ant.tool && !ant.food && dist(ant, storagePos())<26 && Math.random()<0.009){
+  if(storageStructure(true) && !ant.tool && !ant.food && dist(ant,storagePos())<26 && Math.random()<0.009){
     tryCraftTool(ant);
   }
   // edad ya sumada en loop, aquí solo lógica social/emocional
@@ -4098,7 +4361,7 @@ function updateAnt(ant, dt){
     const _c=Math.floor(_x/CELL), _footR=Math.floor((_y+10)/CELL);
     if(_footR>=0&&_footR<ROWS&&_c>=0&&_c<COLS){
       if(soil[_footR]&&soil[_footR][_c]===1) return 'floor';
-      for(let s of structures){ if(_c>=s.c&&_c<s.c+s.w && _footR>=s.r&&_footR<s.r+s.h) return 'floor'; }
+      for(let s of structures){ if(!s.abandoned&&_c>=s.c&&_c<s.c+s.w && _footR>=s.r&&_footR<s.r+s.h) return 'floor'; }
     }
     // Arolia + garras: medir la distancia al BORDE real de la pared que rodea el cuerpo. Antes se
     // mezclaba la fila de los pies con la de la cabeza y, durante media celda de cada paso, no se
@@ -4115,6 +4378,7 @@ function updateAnt(ant, dt){
       if(nc<0||nc>=COLS||nr<SURFACE_ROW||nr>=ROWS) continue;
       if(soil[nr]&&soil[nr][nc]===1 && _tocaRect(nc*CELL,nr*CELL,(nc+1)*CELL,(nr+1)*CELL)) return 'wall';
       for(let s of structures){
+        if(s.abandoned) continue;
         if(nc>=s.c&&nc<s.c+s.w && nr>=s.r&&nr<s.r+s.h &&
            _tocaRect(s.c*CELL,s.r*CELL,(s.c+s.w)*CELL,(s.r+s.h)*CELL)) return 'wall';
       }
@@ -4312,6 +4576,16 @@ function updateAnt(ant, dt){
     return;
   }
 
+  // Exploration is learned only while actually ranging: time on the meadow or at a deep free frontier.
+  // Merely existing in an idle chamber grants no scout experience.
+  if(!ant.food&&(ant.state==='EXPLORAR'||ant.targetFood)){
+    const _field=ant.y<SURFACE_Y+4||ant.y>(SURFACE_ROW+8)*CELL;
+    if(_field) recordJobExperience(ant,'explore',dt/DAY_LENGTH*(ant.targetFood?1.05:.65));
+  }
+  // Founding storage is an urgent colony need, but assignment remains emergent: the most suitable
+  // healthy workers win it from age, construction trait and accumulated building experience.
+  if(workOnStore(ant,dt,speed)) return;
+
   if(ant.state!=='DESCANSAR'){
     // Unidades: la fatiga se media por FRAME y el reloj simula en milisegundos escalados, asi que a
     // dt~42 (x64) o incluso a x1 la escala subia +1,7 por paso: cualquier obrera estaba al 100% en un
@@ -4500,6 +4774,7 @@ function updateAnt(ant, dt){
           pushToast(ant.x,ant.y-10,'🔥 QUEMA','#ff6a1e'); return;
         } if(_mt===7 && (gen<8 || !inventions.masonry)){ ant.digTarget=null; ant.digProgress=0; ant.state='EXPLORAR'; pushToast(ant.x,ant.y-10,'⛔ BEDROCK','#555'); return; }
         soil[ant.digTarget.r][ant.digTarget.c]=0; if(soilType[ant.digTarget.r]) soilType[ant.digTarget.r][ant.digTarget.c]=0; markSoilDirty(ant.digTarget.c,ant.digTarget.r); ant.digsDone++; digs++; colonyFitness+=0.35;
+        ant.deepestWork=Math.max(ant.deepestWork||SURFACE_ROW,ant.digTarget.r); recordJobExperience(ant,'dig',1+Math.max(0,ant.digTarget.r-SURFACE_ROW)*.025);
         // La evolución mide trabajo de la colonia, no solo viajes de miel. Una calada vale menos de
         // la mitad de una entrega mínima (8 frente a 21 XP), pero una fundación que excava de verdad
         // puede alcanzar GEN1 aunque su linaje tarde en coronar el pozo de salida.
@@ -4566,8 +4841,8 @@ function updateAnt(ant, dt){
     // decidir si construir una pared estratégica en vez de solo tirar tierra en la entrada. Una
     // obrera escaldada no se detiene a construir: primero sale del basalto y recupera el aliento.
     if(!ant.buildTarget && !ant._magmaRetreat){
-      const buildChance = 0.16 + (ant.traits.construccion/100)*0.22 + Math.min(0.14, (colonyIQ-100)/520) + gen*0.009; // más lento al inicio
-      const canBuild = ant.role==='EXCAVADORA' || ant.role==='NODRIZA' || ant.traits.construccion>48;
+      const buildChance = 0.16 + (ant.traits.construccion/100)*0.22 + (antProfession(ant)==='CONSTRUCTORA'?.16:0) + Math.min(0.14, (colonyIQ-100)/520) + gen*0.009; // la práctica constructiva pesa, no un botón
+      const canBuild = antProfession(ant)==='CONSTRUCTORA' || ant.role==='NODRIZA' || ant.traits.construccion>48;
       if(canBuild && Math.random()<buildChance){
         const site=findBuildSite(ant);
         if(site){ ant.buildTarget=site; ant.buildProgress=0; }
@@ -4621,6 +4896,7 @@ function updateAnt(ant, dt){
           if(usedType===1) pushToast(tgt.x,tgt.y-10,'🧱 PARED','#8b5a2b',1.6);
           const after=countChambers();
           if(after>=chambersBefore) { colonyFitness+=0.28; ant.fitness+=0.45; }
+          recordJobExperience(ant,'build',1);
           pushEvent('build',`${ant.id} construye pared [${c},${r}]`, `Cámaras ${after} - IQ ${colonyIQ}`);
           if(Math.random()<0.35) setNarration(`<b>${ant.id} levanta un muro</b> en [${c},${r}] - la colonia diseña sus cuartos.`);
         }
@@ -4634,6 +4910,7 @@ function updateAnt(ant, dt){
             const nc=Math.floor(ant.x/CELL)+dc, nr=Math.floor(ant.y/CELL)+dr;
             if(nr<SURFACE_ROW||nr>=ROWS||nc<0||nc>=COLS) continue;
             if(soil[nr][nc]!==0) continue;
+            if(typeof isStoreCell==='function'&&isStoreCell(nc,nr)) continue;
             // necesita apoyo debajo para no flotar (Terraria)
             const hasSupport = (nr+1<ROWS && soil[nr+1][nc]===1) || (nc>0&&nr+1<ROWS&&soil[nr+1][nc-1]===1) || (nc<COLS-1&&nr+1<ROWS&&soil[nr+1][nc+1]===1);
             if(!hasSupport) continue;
@@ -4679,30 +4956,14 @@ function updateAnt(ant, dt){
     const nx=ant.x+Math.cos(ant.angle)*speed, ny=ant.y+Math.sin(ant.angle)*speed;
     if(canAntMove(ant,nx,ny)){ant.x=nx;ant.y=ny;ant.blocked=0;}else{ ant.blocked++; ant.angle+=(Math.random()-0.5)*0.9 + 0.12; if(ant.blocked>32){ ant.angle+=Math.PI*0.45; ant.blocked=0; /* no abandonar miel: seguir intentando VOLVER_COMIDA */ } }
     if(time-ant.lastPhero>11){ const isRecruit=!!ant.food && !ant.food.isSoil; const amt=isRecruit?(ant.food.amount||1):1; pheromones.push({x:ant.x,y:ant.y,strength: isRecruit? 0.92+amt*0.18 : 0.38, life:1, type: isRecruit?'recruit':'explore', quality: amt}); ant.lastPhero=time; }
-    let _guarda = dist(ant,tgt)<14;
-    // Una obrera que lleva media jornada dando vueltas DENTRO del nido no esta perdida: esta en un
-    // rincon sin galeria hasta el punto exacto de los tarros. La miel se guarda ahi mismo - lo que
-    // importa es que entre en el nido, no que acierte con la celda - y ella vuelve libre a por mas.
-    if(!_guarda && ant.y > SURFACE_Y+CELL && (time-(ant._cargaDesde||-1e9)) > DAY_LENGTH*0.22){
-      // LA DESPENSA NO PUEDE SER UN PUNTO DEL AIRE. Antes valia el sitio donde una obrera hubiera soltado la
-      // carga, aunque fuera un tunel de una celda: los botes quedaban flotando y al dia siguiente no habia nada
-      // dibujado, porque la camara no tenia ni suelo donde apoyar los cuadros. Se funda donde hay piso y al
-      // menos cinco celdas abiertas alrededor; si no, se busca la camara mas grande; y si tampoco la hay, se
-      // deja donde estaba - no se muda el almacen a la nada.
-      const _fc=Math.round(ant.x/CELL), _fr=Math.round(ant.y/CELL);
-      let _abiertas=0;
-      for(let r=_fr-1;r<=_fr+1;r++) for(let c=_fc-2;c<=_fc+2;c++){
-        if(r<SURFACE_ROW||r>=ROWS||c<0||c>=COLS) continue;
-        if(soil[r] && soil[r][c]===0) _abiertas++;
-      }
-      const _piso = !!((soil[_fr+1] && soil[_fr+1][_fc]!==0));
-      if(_abiertas>=5 && _piso){ pantryPos={x:_fc*CELL+8, y:_fr*CELL+8}; }
-      else {
-        const _big=findLargestChamber();
-        if(_big) pantryPos={x:Math.round(_big.x/CELL)*CELL+8, y:Math.round(_big.y/CELL)*CELL+8};
-      }
-      _guarda=true;
-      if(Math.random()<0.5) pushToast(ant.x, ant.y-14, '\u{1F360} aquí', '#ffcc00', 1.1);
+    const _physicalStore=storageStructure(true);
+    let _guarda = !!_physicalStore && dist(ant,tgt)<14;
+    // A delayed carrier may unload at any cell of the SAME built footprint, but never found a new
+    // pantry wherever she got stuck. This keeps one stable address without sacrificing a valid return.
+    if(!_guarda&&_physicalStore&&(time-(ant._cargaDesde||-1e9))>DAY_LENGTH*.22){
+      let nearest=Infinity;
+      for(const cd of storageCells()) nearest=Math.min(nearest,Math.hypot(ant.x-(cd.c+.5)*CELL,ant.y-(cd.r+.5)*CELL));
+      _guarda=nearest<CELL*1.35;
     }
     if(_guarda){
       const amt=ant.food.amount;
@@ -4713,6 +4974,7 @@ function updateAnt(ant, dt){
       // a la camara de la cria, amonton los jardines en un rincon y el resto del nido se quedaba sin cosecha).
       _votaHuerto(ant.x, ant.y, (ant.food.type==='mushroom'||ant.food.type==='seed'||ant.food.type==='berry') ? 2 : 1);
       ant.food=null; ant.targetFood=null; ant.deliveries++; deliveries++; economyLedger.creditFood(amt,'worker delivery');
+      recordJobExperience(ant,'forage',Math.max(.5,amt));
       // trofalaxia: la forrajera llena su buche y comparte luego
       ant.crop=Math.min(ant.cropMax||1.6, (ant.crop||0)+ amt*0.38);
       const xpGain=amt*14+7; stats.xp+=xpGain; // -40% XP, lleva tiempo
@@ -4748,7 +5010,8 @@ function updateAnt(ant, dt){
     for(const _w of workers){ if(_w._excursion && dist(_w, storagePos()) > CELL*6) _fuera++; }
     const _cupo = Math.max(1, Math.floor(workers.length/4));
     const _ganas = (ant.traits && ant.traits.exploracion ? ant.traits.exploracion : 40)
-                 + (ant.affinity==='EXPLORADORA'? 25:0) + (colonyIQ>140? 10:0);
+                 + (antProfession(ant)==='EXPLORADORA'?32:antProfession(ant)==='RECOLECTORA_EXTERIOR'?18:0)
+                 + (ant.affinity==='EXPLORADORA'? 12:0) + (colonyIQ>140? 10:0);
     if(_fuera < _cupo && _ganas >= 70){
       let _fx=null, _fd=Infinity;
       for(const _x of foods){ const _dd=dist(ant,_x); if(_dd<_fd){ _fd=_dd; _fx=_x; } }
@@ -4838,7 +5101,8 @@ function updateAnt(ant, dt){
            !_cuadrillaPozo.wasteTarget && _cuadrillaPozo.state!=='DESCANSAR') _constructoraTurno=_cuadrillaPozo;
         if(!_constructoraTurno) for(const w of workers){
           if(w.health<=0 || w.food || w.targetFood || w.digTarget || w.wasteTarget || w.state==='DESCANSAR') continue;
-          if(!_constructoraTurno || (w.traits&&w.traits.construccion||0) > (_constructoraTurno.traits&&_constructoraTurno.traits.construccion||0)) _constructoraTurno=w;
+          const _minaScore=x=>(x.traits&&x.traits.construccion||0)+(antProfession(x)==='MINERA_PROFUNDA'?28:antProfession(x)==='CONSTRUCTORA'?8:0)+(_jobBook(x).dig||0)*3;
+          if(!_constructoraTurno || _minaScore(w)>_minaScore(_constructoraTurno)) _constructoraTurno=w;
         }
       }
       const _instintoObra = _constructoraTurno===ant;
@@ -4847,7 +5111,7 @@ function updateAnt(ant, dt){
       // su impulso neuronal. Así se forma un frente visible antes del primer mordisco, no una obrera
       // solitaria que por azar toca la losa mientras las demás pasean por la misma galería.
       const _juntoAlUmbral=!!(umbral && puedeGolpearUmbral() && Math.abs(((ant.y/CELL)|0)-umbral.r)<=1);
-      if(_pozoPuedeCavar && !_aprieto && (_juntoAlUmbral || _frustrada || _instintoObra || (!_pocaComida && digIntent>0.48 && wallAvg>0.18 && Math.random()<0.11 && (ant.role==='EXCAVADORA' || Math.random()<0.38)))){
+      if(_pozoPuedeCavar && !_aprieto && (_juntoAlUmbral || _frustrada || _instintoObra || (!_pocaComida && digIntent>0.48 && wallAvg>0.18 && Math.random()<0.11 && (antProfession(ant)==='MINERA_PROFUNDA' || Math.random()<0.38)))){
         const frontier=findFrontier();
         if(frontier.length){
           // Topo: muestrear en vez de filtrar las miles de celdas del frontier (coste fijo por hormiga
@@ -4861,7 +5125,8 @@ function updateAnt(ant, dt){
             const _f=frontier[(Math.random()*_fn)|0];
             const _row=soil[_f.r]; if(!_row || _row[_f.c]!==1) continue;
             if(!puedeAbrirSuperficie(_f.c, _f.r)) continue; // cesped blindado: no es un frente valido
-            const _d=Math.hypot((_f.c+0.5)*CELL-ant.x,(_f.r+0.5)*CELL-ant.y) - (_f.r-SURFACE_ROW)*1.35;   // EL POZO TIRA: a igualdad de pasos, gana el frente mas hondo
+            const _depthPull=antProfession(ant)==='MINERA_PROFUNDA'?2.05:1.35;
+            const _d=Math.hypot((_f.c+0.5)*CELL-ant.x,(_f.r+0.5)*CELL-ant.y) - (_f.r-SURFACE_ROW)*_depthPull;   // EL POZO TIRA: la minera aprendida prioriza profundidad
             if(_d<90){ if(!_cands) _cands=[]; _cands.push(_f); }
             else if(_d<_bestD){ _bestD=_d; _far=_f; }
           }
@@ -4895,7 +5160,7 @@ function updateAnt(ant, dt){
           // una hormiga encima de la losa, y eso no es una decision de la colonia, es una ruleta.
           const _yaEnUmbral=umbral?workers.filter(w=>w.digTarget&&w.digTarget.r===umbral.r&&soilType[umbral.r]&&soilType[umbral.r][w.digTarget.c]===17).length:0;
           const _cupoUmbral=Math.min(8,Math.max(4,Math.floor(workers.length*0.24)));
-          if(umbral && _yaEnUmbral<_cupoUmbral && puedeGolpearUmbral() && (ant.role==='EXCAVADORA'||(ant.traits&&ant.traits.construccion>52)) && (_juntoAlUmbral||Math.random()<0.5)){
+          if(umbral && _yaEnUmbral<_cupoUmbral && puedeGolpearUmbral() && (antProfession(ant)==='MINERA_PROFUNDA'||(ant.traits&&ant.traits.construccion>52)) && (_juntoAlUmbral||Math.random()<0.5)){
             // para morder la losa hay que tener donde pararse: una casilla de aire justo encima. Se busca la
             // columna con hueco MAS CERCANA a la hormiga (antes se usaba la columna de la propia hormiga y,
             // si ahi arriba aun no habian cavado, la obra de la losa no empezaba nunca).
@@ -4928,7 +5193,7 @@ function updateAnt(ant, dt){
           }
           if(pick){
           // cavado más rápido si es excavadora, tiene rasgo alto o colonia evolucionada
-          const bonus = (ant.role==='EXCAVADORA'? 8:0) + Math.floor(ant.traits.construccion/18) + Math.floor(colonyIQ/45) + Math.min(6, gen);
+          const bonus = (antProfession(ant)==='MINERA_PROFUNDA'? 8:antProfession(ant)==='CONSTRUCTORA'?3:0) + Math.floor(ant.traits.construccion/18) + Math.floor(colonyIQ/45) + Math.min(6, gen);
           ant.digTarget=pick; ant.digProgress=0;
           const _type=soilType[pick.r]&&soilType[pick.r][pick.c]; const _hard = durezaDe(_type); // la tabla vive en BANDAS/DUREZA_EXTRA: bedrock 38, magma 999, y cada banda lo suyo
           if(_type===17){
@@ -7360,34 +7625,17 @@ function tickStep(dt){
     // actualizar cada hormiga (si sigue viva)
     for(let w of [...workers]) updateAnt(w, dt);
     updateSociety(dt);
-    // estructuras: construcción progresiva poco a poco ~4s reales (expert: sin salto)
-    for(let s of structures){ s.age=(s.age||0)+dt; if(s.buildProgress===undefined) s.buildProgress=0; s.buildProgress=Math.min(1, (s.age)/(DAY_LENGTH*0.007)); }
-    // --- despensa y cámara real emergentes: las ingenieras deciden ---
-    _pantryTimer+=dt;
-    if(_pantryTimer> DAY_LENGTH*0.12){ // cada ~0.12 día (~2.4 min) reevalúa mejor cámara
-      _pantryTimer=0;
-      const best=findLargestChamber();
-      if(best && best.size>=10){
-        // si la mejor cámara es >=30% más grande que la actual y está a >40px, migra despensa (las obreras la mudan)
-        const curCells= (()=>{
-          let cnt=0; for(let dy=-2;dy<=2;dy++) for(let dx=-3;dx<=3;dx++){ const cc=Math.floor(pantryPos.x/CELL)+dx, rr=Math.floor(pantryPos.y/CELL)+dy; if(rr>=SURFACE_ROW&&rr<ROWS&&cc>=0&&cc<COLS&&soil[rr][cc]===0) cnt++; }
-          return cnt;
-        })();
-        const dist=Math.hypot(best.x-pantryPos.x, best.y-pantryPos.y);
-        if(best.size > curCells*1.3 && dist>40){
-          // migración gradual
-          pantryPos.x += (best.x - pantryPos.x)*0.22;
-          pantryPos.y += (best.y - pantryPos.y)*0.22;
-          pushEvent('evo', `🏗 Despensa migrada hacia [${Math.floor(best.x/CELL)},${Math.floor(best.y/CELL)}]`, `Cámara ${best.size} celdas - votado por constructoras`);
-          notifyCanon('🏗 DESPENSA MÓVIL', `Las arquitectas mudan la despensa a cámara más amplia`, 4800);
-          for(let i=0;i<8;i++) particles.push({x:pantryPos.x,y:pantryPos.y,vx:(Math.random()-0.5)*2,vy:-Math.random()*1.5,life:1,decay:0.02,color:'#00e5ff'});
-        } else {
-          // pequeño ajuste hacia el centro de la mejor cámara
-          pantryPos.x += (best.x - pantryPos.x)*0.04;
-          pantryPos.y += (best.y - pantryPos.y)*0.04;
-        }
-      }
+    // Complex structures animate from age. The founding store is different: only recorded worker effort
+    // advances its buildProgress, so leaving the game running without builders cannot create it.
+    for(let s of structures){
+      if(s.type==='store'&&s.built===false){ if(s.buildProgress===undefined) s.buildProgress=0; continue; }
+      s.age=(s.age||0)+dt; if(s.buildProgress===undefined) s.buildProgress=0; s.buildProgress=Math.min(1,(s.age)/(DAY_LENGTH*.007));
     }
+    // The store has one address. Periodic work only verifies that its physical footprint still exists;
+    // a larger room elsewhere is not a reason to teleport supplies. Rebuilding happens solely after an
+    // actual collapse/disconnection and again requires worker labour.
+    _pantryTimer+=dt;
+    if(_pantryTimer>DAY_LENGTH*.12){ _pantryTimer=0; maintainPhysicalStorage(); }
     // reina puede reubicarse si la cámara actual es pequeña y hay una mejor a >50px
     _queenMoveTimer+=dt;
     if(_queenMoveTimer> DAY_LENGTH*0.28 && queens.length===1){
@@ -9530,7 +9778,15 @@ function deserializeSave(){
     while(fertility.length<COLS) fertility.push(0.55);
     // 3) entidades
     workers = Array.isArray(data.workers)? data.workers : [];
-    workers.forEach(w=>{ w.selected=false; if(w.digTarget===undefined) w.digTarget=null; delete w.floodTarget; delete w.floodWork; if(w.state==='CONTROLAR_AGUA'||w.state==='HUIR_AGUA') w.state='EXPLORAR'; });
+    workers.forEach(w=>{
+      w.selected=false; if(w.digTarget===undefined) w.digTarget=null;
+      _jobBook(w);
+      if(!ANT_PROFESSIONS.includes(w.profession)) w.profession=antProfession(w);
+      if(w.profession!=='OBRERA') w.role=_legacyRoleForProfession(w.profession);
+      if(!Number.isFinite(w.professionSince)) w.professionSince=0;
+      delete w.floodTarget; delete w.floodWork;
+      if(w.state==='CONTROLAR_AGUA'||w.state==='HUIR_AGUA') w.state='EXPLORAR';
+    });
     try{ floodControl.target=null; floodControl.workerId=null; floodControl.scan=0; floodControl.worldKey=''; }catch(e){}
     queens = Array.isArray(data.queens)? data.queens : [];
     if(data.queen && !queens.length) queens=[data.queen];
@@ -9563,6 +9819,7 @@ function deserializeSave(){
     mound = Array.isArray(data.mound)? data.mound.map(m=>({x:m.x,y:m.y,h:m.h})) : [];
     economyLedger.replaceMaterials(data.worldMaterials||{},'load save'); inventions = data.inventions||inventions;
     society = data.society||society; pantryPos = data.pantryPos||{x:CENTER_COL*CELL+8,y:(SURFACE_ROW+8)*CELL+8};
+    try{ migrateLegacyStorage(); }catch(e){ console.warn('store migration',e); }
     if(data.stats) stats = {...stats, ...data.stats};
     if(data.weather && typeof data.weather==='object'){ weather.type=data.weather.type||'clear'; weather.intensity=data.weather.intensity||0; weather.nextChange=data.weather.nextChange||800; weather.rainParticles=[]; }
     if(Array.isArray(data.events)){ events.length=0; data.events.forEach(e=>events.push(e)); }
@@ -10190,7 +10447,7 @@ function _filaInv(def, valor){
 }
 function pintarInventario(){
   const body=document.getElementById('invBody'); if(!body) return;
-  const celdas=storageCells(), p=storagePos(), cap=capacidadAlmacen();
+  const celdas=storageCells(), p=storagePos(), cap=capacidadAlmacen(), sitio=storageStructure(false);
   const miel=Math.max(0, Math.floor(economyLedger.food));
   const lleno=Math.max(0, Math.min(100, Math.round(miel/Math.max(1,cap)*100)));
   const graneros=granerosConstruidos();
@@ -10206,9 +10463,9 @@ function pintarInventario(){
   html += '<article class="inv-card inv-cache-card">'
     + '<span class="inv-cell-map" aria-hidden="true"><i></i></span><span class="inv-cache-copy">'
     + '<span class="inv-card-eyebrow">CACHE SITE</span>'
-    + '<b class="inv-cache-coord">'+(celdas.length?'['+cx+','+cy+']':'UNASSIGNED')+'</b>'
-    + '<span class="inv-cache-detail">'+(celdas.length?'<b>'+celdas.length+'</b> chamber '+(celdas.length===1?'cell':'cells'):'<span class="is-empty">no excavated chamber</span>')
-    + (graneros?' · <b>'+graneros+'</b> '+(graneros===1?'granary':'granaries'):'')+'</span></span></article></section>';
+    + '<b class="inv-cache-coord">'+(sitio?'['+cx+','+cy+']':'UNASSIGNED')+'</b>'
+    + '<span class="inv-cache-detail">'+(celdas.length?'<b>'+celdas.length+'</b> structure '+(celdas.length===1?'cell':'cells'):sitio?'<span class="is-empty">under construction · '+Math.round((sitio.buildProgress||0)*100)+'%</span>':'<span class="is-empty">no connected build site</span>')
+    + (graneros?' · <b>'+graneros+'</b> '+(graneros===1?'upgrade':'upgrades'):'')+'</span></span></article></section>';
   html += '<section class="inv-section" aria-labelledby="invMaterialsTitle"><h3 class="inv-section-head" id="invMaterialsTitle">RAW MATERIALS</h3><div class="inv-resource-grid">';
   for(const d of _MAT_DEFS){
     html += _filaInv(d, Math.max(0, Math.floor(economyLedger.materials[d.k]||0)));
