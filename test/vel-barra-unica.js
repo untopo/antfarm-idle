@@ -64,7 +64,7 @@ const js = fs.readFileSync(path.join(ROOT, 'ant-farm-rpg/js/app.js'), 'utf8');
   await page.waitForFunction("!document.getElementById('splashScreen') || document.getElementById('splashScreen').style.display==='none'", { timeout: 15000 }).catch(() => { });
   await page.click('#btnMainCreate'); await sleep(400);
   await page.click('#createSizeScreen [data-size="small"]'); await sleep(400);
-  await page.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (!h) return; const b = [...h.querySelectorAll('button')].find(x => x.textContent.trim() === 'SÍ'); if (b) b.click(); });
+  await page.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (!h) return; const b = [...h.querySelectorAll('button')].find(x => /^(SÍ|YES)$/i.test(x.textContent.trim())); if (b) b.click(); });
   for (let i = 0; i < 16; i++) {
     const abierto = await page.evaluate(() => {
       const m = document.getElementById('onboardingModal');

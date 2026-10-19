@@ -187,8 +187,8 @@ store.set('antFarm_fullSave_v2', JSON.stringify(saveObj));
 gens = 0;
 clickSize('medium');
 ok(hosts().length === 1, 'con granja existente sale el dialogo propio pidiendo confirmacion');
-const yes = findBtn(hosts()[0], 'SÍ');
-ok(!!yes, 'el dialogo tiene boton SÍ');
+const yes = findBtn(hosts()[0], 'YES');
+ok(!!yes, 'el diálogo tiene botón YES');
 yes && yes.dispatch('click', {});
 pump(8);
 ok(world() === '64x36', 'al confirmar se siembra MEDIUM 64x36 (' + world() + ')');
@@ -214,13 +214,13 @@ clickSize('big');
 pump(8);
 ok(hosts().length === 1, 'un fallo sembrando muestra un aviso en pantalla');
 const txt = hosts().map(h => JSON.stringify(h)).join(' ') + ' ' + hosts().map(h => (h.children || []).map(c => c.textContent + ' ' + (c.children || []).map(x => x.textContent).join(' ')).join(' ')).join(' ');
-ok(/SIEMBRA|ATASC/i.test(txt), 'el aviso dice que la siembra se atasco y ofrece reintento');
+ok(/WORLD GENERATION|STOPPED|TRY AGAIN/i.test(txt), 'el aviso explica que la generación se detuvo y ofrece reintento');
 ok(gen.style.display === 'none', 'tras el fallo la pantalla de carga se oculta (nunca queda colgada)');
 ok(world() === worldBefore, 'el mundo anterior sigue vivo tras el fallo (' + world() + ')');
 sb.topoCreateFreshWorld = realCreate;
 
 /* ---------- 8) borrar granja: el mismo canal de confirmacion ---------- */
-ok(/getElementById\('btnWipeFarm'\)[\s\S]{0,80}gameConfirm/.test(code) || /w\.onclick=\(\)=>\{ gameConfirm/.test(code), 'el boton de borrar pasa por gameConfirm (sin confirm nativo)');
+ok(/getElementById\('btnWipeSave'\)[\s\S]{0,180}gameConfirm/.test(code), 'el botón de borrar todo pasa por gameConfirm (sin confirm nativo)');
 ok(sb.__nativo === 0, 'en TODO el flujo de creacion nunca se llamo a confirm/alert/prompt del navegador');
 
 console.log('');

@@ -12,7 +12,7 @@ node dev-server.js 8017      # raiz: ant-farm-rpg/, sin cache (Cache-Control: no
 
 Servir con `no-store` importa: con HTML nuevo y `app.js` de la cache vieja el juego se comporta de
 forma distinta a como está escrito y no se puede depurar. `index.html`, `css/style.css` y los assets
-llevan **un solo** `?v=` (`20261015e`); al tocar CSS o JS se sube en todos los sitios a la vez.
+llevan **un solo** `?v=` (`20261019b`); al tocar CSS o JS se sube en todos los sitios a la vez.
 
 Depuración: `?debug=1` en la URL (o `localStorage.antfarm_debug='1'`) enciende el registro del juego
 (`tlog`) que está callado por defecto. En la consola: `_topoDbg()` devuelve día, obreras, comida,
@@ -22,10 +22,10 @@ dimensiones y si está pausado.
 
 ```
 ant-farm-rpg/
-├── index.html          758 líneas · pantallas (splash, menú, tamaños, cargar, ajustes, créditos,
+├── index.html          ~940 líneas · pantallas (splash, menú, tamaños, cargar, ajustes, créditos,
 │                       onboarding, siembra), HUD, un único <script> inline: el vigía de arranque
-├── css/style.css       510 líneas · tema pixel, tiras del HUD, calendario, diálogos
-├── js/app.js           ~7 600 líneas · TODO el motor (sin dependencias, sin build)
+├── css/style.css       tema del juego; css/startup.css contiene la familia voxel responsive de entrada
+├── js/app.js           ~10 000 líneas · TODO el motor (sin dependencias, sin build)
 ├── assets/             sprites de hormigas/reina, hojas de texturas, fondo del menú
 └── docs/
     ├── ARCHITECTURE.md    contrato del flujo de creación, guardado, helpers de HUD
@@ -56,6 +56,9 @@ node test/browser-smoke.js    # solo el navegador real (creación, iframe sandbo
 | `test/save-roundtrip.js` | Guardar → recargar → mismo mundo, obreras y tesoros |
 | `test/reload-simulation.js` | La granja activa sobrevive a llenar el archivo de 5 granjas |
 | `test/browser-smoke.js` | Chrome real: menú → tamaños → siembra → mundo 96×48 pintado, colonia viva, recarga, y el mismo flujo dentro de un `iframe sandbox` sin `allow-modals` |
+| `test/intro-topo.js` | La transición usa la geometría responsive definitiva desde el primer píxel visible, sin título grande que luego se encoja |
+| `test/startup-menu.js` | Orden, teclado y tamaños táctiles del menú en escritorio, móvil y landscape |
+| `test/front-menu-settings.js` | Familia voxel completa: paneles sin recorte, ajustes persistentes, fondo inmóvil al desactivarlo, exportación/importación y borrado seguro |
 
 `test/world-perf-proflib.js` es el DOM de juguete que usan los tests de node; `world-create-breakdown.js`
 y `world-frame-driver.js` son para mirar de dónde viene el coste (la fila "crear mundo (todo)" imprime

@@ -1854,14 +1854,14 @@ function gameDialog(opts){
   host.style.cssText='position:fixed;inset:0;z-index:10050;background:rgba(0,0,0,0.74);display:flex;align-items:center;justify-content:center;padding:18px;box-sizing:border-box';
   const box=document.createElement('div');
   box.style.cssText='width:430px;max-width:100%;background:#1a140f;border:4px solid #000;box-shadow:8px 8px 0 #000;padding:18px;display:flex;flex-direction:column;gap:12px;text-align:center';
-  const ttl=document.createElement('div'); ttl.style.cssText="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00;line-height:1.6"; ttl.textContent=o.title||'¿Seguro?';
+  const ttl=document.createElement('div'); ttl.style.cssText="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00;line-height:1.6"; ttl.textContent=o.title||'ARE YOU SURE?';
   const bod=document.createElement('div'); bod.style.cssText="font-family:'VT323',monospace;font-size:15px;color:#c9b896;line-height:1.35;white-space:pre-line;text-align:left"; bod.textContent=o.body||'';
   const row=document.createElement('div'); row.style.cssText='display:flex;gap:8px;justify-content:center;flex-wrap:wrap';
   let closed=false;
   function close(){ if(closed) return; closed=true; document.removeEventListener('keydown', onKey, true); if(host.parentNode) host.remove(); const i=_dialogStack.indexOf(host); if(i>=0) _dialogStack.splice(i,1); }
   function no(){ close(); if(o.onNo) try{ o.onNo(); }catch(e){ console.error(e); } }
   function mk(txt, primary, fn){ const el=document.createElement('button'); el.className='pixel-btn'+(primary?' primary':''); el.textContent=txt; el.style.cssText='flex:1;min-width:118px;justify-content:center'; el.onclick=()=>{ close(); if(fn) try{ fn(); }catch(e){ console.error(e); } }; row.appendChild(el); return el; }
-  const yes=mk(o.yes||'SÍ', true, o.onYes);
+  const yes=mk(o.yes||'YES', true, o.onYes);
   if(o.no!==false) mk(o.no||'NO', false, o.onNo? no : null);
   box.appendChild(ttl); if(o.body) box.appendChild(bod); box.appendChild(row); host.appendChild(box);
   document.body.appendChild(host); _dialogStack.push(host);
@@ -1871,7 +1871,7 @@ function gameDialog(opts){
   try{ yes.focus(); }catch(e){}
   return close;
 }
-function gameAlert(title, body, onClose){ return gameDialog({title, body, no:false, yes:'ENTENDIDO', onYes:onClose||null}); }
+function gameAlert(title, body, onClose){ return gameDialog({title, body, no:false, yes:'GOT IT', onYes:onClose||null}); }
 function gameConfirm(title, body, onYes, onNo){ return gameDialog({title, body, onYes, onNo}); }
 window.gameDialog=gameDialog; window.gameAlert=gameAlert; window.gameConfirm=gameConfirm;
 function setNarration(html){ const n=document.getElementById('narrationTxt'); if(n) n.innerHTML=html; }
@@ -9615,7 +9615,7 @@ window.topoResumeGame=topoResumeGame;
 // auto-save: cada 4s solo si hay mundo; al cerrar/ocultar tab siempre
 let _lastAutoSave=0;
 setInterval(()=>{ try{ if(_topoHasWorld){ if(serializeSave()) _lastAutoSave=Date.now(); } }catch(e){} }, 4200);
-window.addEventListener('beforeunload', ()=>{ try{ localStorage.setItem(LS_INGAME, _topoHasWorld?'1':'0'); serializeSave(); }catch(e){} });
+window.addEventListener('beforeunload', ()=>{ try{ if(_topoHasWorld){ localStorage.setItem(LS_INGAME,'1'); serializeSave(); }else localStorage.removeItem(LS_INGAME); }catch(e){} });
 document.addEventListener('visibilitychange', ()=>{ if(document.hidden){ try{ serializeSave(); }catch(e){} } else { try{ last=performance.now(); lastRealWall=Date.now(); }catch(e){} } });
 window.addEventListener('pagehide', ()=>{ try{ serializeSave(); }catch(e){} });
 // borrar partida (consola o boton de la pantalla de carga)
@@ -9658,7 +9658,7 @@ function topoRestoreFarm(id){
 function topoDeleteFarm(id){ try{ const list=topoListFarms().filter(x=>x.id!==id); topoWriteFarms(list); return true; }catch(e){ return false; } }
 window.topoListFarms=topoListFarms; window.topoArchiveCurrent=topoArchiveCurrent;
 window.topoRestoreFarm=topoRestoreFarm; window.topoDeleteFarm=topoDeleteFarm;
-window.topoDropCurrent=()=>{ try{ localStorage.removeItem(SAVE_KEY); localStorage.removeItem(LS_ALIVE); localStorage.removeItem(LS_INGAME); return true; }catch(e){ return false; } };
+window.topoDropCurrent=()=>{ try{ [SAVE_KEY,LS_ALIVE,LS_INGAME,'antfarm_lastReal','antfarm_time','antfarm_createdAt'].forEach(k=>localStorage.removeItem(k)); return true; }catch(e){ return false; } };
 
 window.serializeSave=serializeSave;
 window.deserializeSave=deserializeSave;
@@ -9709,12 +9709,56 @@ setTimeout(_updateBothAntCounts, 1800);
   const settingsSc=document.getElementById('settingsScreen');
   const creditsSc=document.getElementById('creditsScreen');
   const onboarding=document.getElementById('onboardingModal');
-  // Topo 2026-10-14: el menu tenia que salir de en medio. hideAll() no ocultaba #mainMenu, asi que
-  // la pantalla de tamanos quedaba DETRAS del menu (misma capa fija, z 9997 vs 9998) y el click en
-  // un tamano caia sobre el boton CREAR de encima: parecia que "no pasaba nada".
-  function hideAll(){ [splash,main,createSc,loadSc,settingsSc,creditsSc,onboarding].forEach(el=>{ if(el) el.style.display='none'; }); if(main) main.setAttribute('aria-hidden','true'); if(splash) splash.setAttribute('aria-hidden','true'); const leg=document.getElementById('onboardingLegacy'); if(leg) leg.style.display='none'; }
-  function show(el){ if(!el) return; hideAll(); el.style.display='flex'; }
-  // splash-topo.js owns the visible intro and calls topoShowMainMenu() after the tunnel transition.
+  const worldGenSc=document.getElementById('worldGenScreen');
+  const legacyOnboarding=document.getElementById('onboardingLegacy');
+  const menuScreens=[createSc,loadSc,settingsSc,creditsSc,onboarding,worldGenSc].filter(Boolean);
+
+  // Front-door preferences are deliberately separate from the simulation save: importing a farm must
+  // not unexpectedly change accessibility choices, and deleting a farm must not reset the display.
+  const MENU_SETTINGS_KEY='antfarm_menu_settings_v1';
+  const MENU_DEFAULTS={motion:'system',ambience:true,contrast:false,ui:'default'};
+  let menuSettings={...MENU_DEFAULTS};
+  try{ const d=JSON.parse(localStorage.getItem(MENU_SETTINGS_KEY)||'null'); if(d&&typeof d==='object') menuSettings={...MENU_DEFAULTS,...d}; }catch(e){}
+  function applyMenuSettings(announce){
+    const root=document.documentElement;
+    if(root&&root.dataset){ root.dataset.topoMotion=menuSettings.motion; root.dataset.topoAmbience=menuSettings.ambience?'on':'off'; root.dataset.topoContrast=menuSettings.contrast?'true':'false'; root.dataset.topoUi=menuSettings.ui; }
+    if(announce){
+      try{ document.dispatchEvent(new CustomEvent('topo-settings-change',{detail:{...menuSettings}})); }catch(e){}
+      const st=document.getElementById('settingsStatus'); if(st){ st.textContent='SAVED'; setTimeout(()=>{ if(st) st.textContent='SETTINGS SAVE AUTOMATICALLY'; },1100); }
+    }
+  }
+  function saveMenuSettings(patch){
+    menuSettings={...menuSettings,...patch};
+    try{ localStorage.setItem(MENU_SETTINGS_KEY,JSON.stringify(menuSettings)); }catch(e){}
+    applyMenuSettings(true); renderMenuSettings();
+  }
+  window.topoGetMenuSettings=()=>({...menuSettings});
+  window.topoResetMenuSettings=()=>{ menuSettings={...MENU_DEFAULTS}; try{ localStorage.removeItem(MENU_SETTINGS_KEY); }catch(e){} applyMenuSettings(true); renderMenuSettings(); };
+  applyMenuSettings(false);
+
+  function hideMenuScreens(){
+    menuScreens.forEach(el=>{ el.style.display='none'; try{ el.setAttribute('aria-hidden','true'); }catch(e){} });
+    if(legacyOnboarding) legacyOnboarding.style.display='none';
+  }
+  function hideAll(){
+    hideMenuScreens();
+    [splash,main].forEach(el=>{ if(el) el.style.display='none'; });
+    if(main){ main.setAttribute('aria-hidden','true'); main.classList.remove('is-subscreen','is-intro-reveal'); }
+    if(splash) splash.setAttribute('aria-hidden','true');
+  }
+  function show(el){
+    if(!el) return;
+    hideMenuScreens();
+    if(splash){ splash.style.display='none'; splash.setAttribute('aria-hidden','true'); }
+    if(main){
+      main.style.display='flex'; main.classList.remove('is-intro-reveal'); main.classList.add('is-subscreen'); main.setAttribute('aria-hidden','true');
+      try{ if(typeof window.topoStartMenuVisual==='function') window.topoStartMenuVisual(); }catch(e){}
+    }
+    el.style.display='flex'; try{ el.setAttribute('aria-hidden','false'); }catch(e){}
+    requestAnimationFrame(()=>{ try{ const target=el.querySelector('button:not([disabled]),[tabindex="0"]'); if(target) target.focus({preventScroll:true}); }catch(e){} });
+  }
+  window.topoShowMenuScreen=show;
+  // splash-topo.js owns the visible intro and reveals this exact responsive DOM beneath its voxel mask.
   function topoMainItems(){
     if(!main) return [];
     return [...main.querySelectorAll('.topo-menu-option')].filter(b=>!b.hidden && getComputedStyle(b).display!=='none' && !b.disabled);
@@ -9728,16 +9772,25 @@ setTimeout(_updateBothAntCounts, 1800);
     return items[idx];
   }
   function topoShowMainMenu(opts){
-    [createSc,loadSc,settingsSc,creditsSc,onboarding].forEach(el=>{ if(el) el.style.display='none'; });
-    const leg=document.getElementById('onboardingLegacy'); if(leg) leg.style.display='none';
+    hideMenuScreens();
     if(main){
-      main.style.display='flex'; main.setAttribute('aria-hidden','false');
+      main.style.display='flex'; main.classList.remove('is-subscreen','is-intro-reveal'); main.setAttribute('aria-hidden','false');
       try{ topoRefreshContinueBtn(); }catch(e){}
       try{ if(typeof window.topoStartMenuVisual==='function') window.topoStartMenuVisual(); }catch(e){}
       topoSelectMainItem(0,!(opts&&opts.noFocus));
     }
   }
+  function topoPrepareMainMenu(){
+    hideMenuScreens();
+    if(main){
+      main.style.display='flex'; main.classList.remove('is-subscreen'); main.classList.add('is-intro-reveal'); main.setAttribute('aria-hidden','true');
+      try{ topoRefreshContinueBtn(); }catch(e){}
+      try{ if(typeof window.topoStartMenuVisual==='function') window.topoStartMenuVisual(); }catch(e){}
+      topoSelectMainItem(0,false);
+    }
+  }
   window.topoShowMainMenu=topoShowMainMenu;
+  window.topoPrepareMainMenu=topoPrepareMainMenu;
   window.topoRefreshContinueBtn = function(){
     if(!main) return;
     const meta = (typeof topoHasSave==='function')? topoHasSave() : null;
@@ -9800,127 +9853,160 @@ setTimeout(_updateBothAntCounts, 1800);
   document.addEventListener('keydown', (e)=>{
     if(e.key!=='Escape' && e.key!=='Esc') return;
     const inp=e.target && e.target.tagName; if(inp==='INPUT'||inp==='TEXTAREA'||inp==='SELECT') return;
+    const subVisible=[createSc,loadSc,settingsSc,creditsSc,onboarding].some(el=>el&&getComputedStyle(el).display!=='none');
+    if(subVisible){ e.preventDefault(); topoShowMainMenu(); return; }
     const menuVisible = main && getComputedStyle(main).display!=='none';
     if(menuVisible){
       if(_topoHasWorld && document.body.classList.contains('game-started')){ e.preventDefault(); topoCloseMenuToGame(); }
       return;
     }
-    const subVisible=[createSc,loadSc,settingsSc,creditsSc].some(el=>el&&getComputedStyle(el).display!=='none');
-    if(subVisible){ e.preventDefault(); topoShowMainMenu(); return; }
     if(!_topoHasWorld) return;
     e.preventDefault(); topoOpenMenu();
   });
-  if(btnLoad) btnLoad.onclick=()=>{
-    // lista real desde el slot de guardado + formato viejo
-    const list=document.getElementById('loadList');
-    if(list){
-      list.innerHTML='';
-      const saves=[];
-      try{
-        const meta=(typeof topoHasSave==='function')? topoHasSave():null;
-        if(meta){
-          const ago=meta.savedAt? Math.max(0,Date.now()-meta.savedAt):0;
-          const mins=Math.floor(ago/60000);
-          const when = !meta.savedAt? '-' : mins<1? 'seconds ago' : mins<60? mins+' min ago' : mins<1440? Math.floor(mins/60)+'h ago' : new Date(meta.savedAt).toLocaleString('en-US');
-          saves.push({key:SAVE_KEY, label:'MY FARM', size:meta.cols+'×'+meta.rows, day:meta.day, pop:meta.pop, when});
-        }
-        for(const k of ['antfarm_save_v4','antfarm_save_v3','antfarm_save_v2','antfarm_save']){
-          const raw=localStorage.getItem(k); if(!raw) continue;
-          try{ const d=JSON.parse(raw); if(!d || !Array.isArray(d.workers) || !d.workers.length) continue;
-            saves.push({key:k, label:'LEGACY SAVE', size:(d.COLS||64)+'×'+(d.ROWS||36), day:d.day||1, pop:d.workers.length, when:d.savedAt? new Date(d.savedAt).toLocaleString('en-US') : 'no date'});
-          }catch(e){}
-        }
-      }catch(e){ console.warn('loadList',e); }
-      if(!saves.length){
-        const empty=document.createElement('div');
-        empty.style.cssText='padding:22px 10px;text-align:center;font-family:VT323,monospace;font-size:15px;color:#8a7a5a';
-        empty.innerHTML='There are no saved farms yet.<br><span style="color:#5a4a3a;font-size:12px">Create one from the menu; it will save itself every 4 seconds.</span>';
-        list.appendChild(empty);
-        const b=document.createElement('button');
-        b.className='pixel-btn primary'; b.style.cssText='width:100%;justify-content:center'; b.textContent='➕ CREATE NEW FARM';
-        b.onclick=()=> show(createSc);
-        list.appendChild(b);
-      }
-      topoListFarms().forEach(f=>{
-        const ago=f.savedAt? Math.max(0,Date.now()-f.savedAt):0; const mins=Math.floor(ago/60000);
-        saves.push({ key:'ARCHIVE:'+f.id, label:'📦 '+f.label, size:f.cols+'×'+f.rows, day:f.day, pop:f.pop,
-                     when: mins<1?'seconds ago': mins<60? mins+' min ago' : mins<1440? Math.floor(mins/60)+'h ago' : new Date(f.savedAt).toLocaleString('en-US') });
-      });
-      saves.forEach(s=>{
-        const div=document.createElement('div');
-        div.style.cssText='background:#000;border:2px solid #000;padding:8px;display:flex;flex-direction:column;gap:6px';
-        div.innerHTML=`<div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#ffcc00">${s.label} · ${s.size}</div><div style="font-family:'VT323',monospace;font-size:13px;color:#c9b896">Day ${s.day} · ${s.pop} ants · saved ${s.when}</div><div style="display:flex;gap:6px"><button class="pixel-btn small" data-load="${s.key}" style="flex:1">▶ LOAD</button><button class="pixel-btn small" data-del="${s.key}" style="background:#1a0f00;color:#8a7a5a">🗑</button></div>`;
-        list.appendChild(div);
-      });
-      setTimeout(()=>{
-        list.querySelectorAll('[data-load]').forEach(b=>{
-          b.onclick=()=>{
-            let k=b.getAttribute('data-load');
-            b.textContent='⏳ LOADING...';
-            try{
-              if(k && k.indexOf('ARCHIVE:')===0){
-                const id=k.slice(8);
-                if(!topoRestoreFarm(id)){ b.textContent='✕ CORRUPTED ARCHIVE'; b.disabled=true; return; }
-                k=SAVE_KEY;
-              }
-              if(k && k!==SAVE_KEY){
-                const raw2=localStorage.getItem(k);
-                if(raw2){ const d=JSON.parse(raw2); if(d && d.workers) localStorage.setItem(SAVE_KEY, JSON.stringify(d)); }
-              }
-            }catch(e){}
-            const ok = topoResumeGame({silent:false});
-            if(!ok){ b.textContent='✕ CORRUPTED — CREATE ONE'; b.disabled=true; console.warn('[TOPO] load failed', k); }
-          };
-        });
-        list.querySelectorAll('[data-del]').forEach(b=>{
-          b.onclick=()=>{
-            const k=b.getAttribute('data-del');
-            try{
-              if(k.indexOf('ARCHIVE:')===0){ topoDeleteFarm(k.slice(8)); }
-              else { localStorage.removeItem(k); localStorage.removeItem('antfarm_worldAlive'); localStorage.removeItem('antfarm_inGame'); localStorage.removeItem('antfarm_lastReal'); localStorage.removeItem('antfarm_time'); }
-            }catch(e){}
-            b.closest('div').style.opacity='0.3';
-            try{ topoRefreshContinueBtn(); }catch(e){}
-          };
-        });
-      }, 60);
-    }
-    show(loadSc);
-  };
-  function renderSettingsFarms(){
-    const box=document.getElementById('settingsFarms'); if(!box) return;
-    box.innerHTML='';
-    const cur=(typeof topoHasSave==='function')? topoHasSave():null;
-    const head=document.createElement('div');
-    head.style.cssText="font-family:'Press Start 2P',monospace;font-size:7px;color:#ffcc00";
-    head.textContent='ACTIVE FARM';
-    box.appendChild(head);
-    const a=document.createElement('div');
-    a.style.cssText="font-family:'VT323',monospace;font-size:13px;color:#c9b896";
-    a.textContent = cur? ('Day '+cur.day+' · '+cur.pop+' ants · '+cur.cols+'×'+cur.rows) : 'none yet';
-    box.appendChild(a);
-    const list=(typeof topoListFarms==='function')? topoListFarms():[];
-    if(list.length){
-      const h2=document.createElement('div');
-      h2.style.cssText="font-family:'Press Start 2P',monospace;font-size:7px;color:#ffcc00;margin-top:6px";
-      h2.textContent='ARCHIVED ('+list.length+')';
-      box.appendChild(h2);
-      list.forEach(f=>{
-        const row=document.createElement('div');
-        row.style.cssText='display:flex;gap:6px;align-items:center';
-        row.innerHTML=`<span style="flex:1;font-family:'VT323',monospace;font-size:12px;color:#8a7a5a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.label}</span>`;
-        const lb=document.createElement('button'); lb.className='pixel-btn small'; lb.textContent='▶'; lb.title='Switch to this farm';
-        lb.onclick=()=>{ if(topoRestoreFarm(f.id)) topoResumeGame({silent:false}); };
-        const db=document.createElement('button'); db.className='pixel-btn small'; db.textContent='🗑'; db.style.cssText='background:#1a0f00;color:#8a7a5a'; db.title='Delete from archive';
-        db.onclick=()=>{ topoDeleteFarm(f.id); renderSettingsFarms(); };
-        row.appendChild(lb); row.appendChild(db); box.appendChild(row);
-      });
-    }
-    const w=document.getElementById('btnWipeSave');
-    if(w) w.onclick=()=>{ gameConfirm('Delete everything?', 'The active farm and the entire archive will be erased. This cannot be undone.', ()=>{ try{ localStorage.removeItem(FARMS_KEY); }catch(e){} try{ if(window._clearSave) window._clearSave(); }catch(e){} try{ renderSettingsFarms(); }catch(e){} }); };
+  function friendlySaveTime(ts){
+    if(!ts) return 'unknown time';
+    const mins=Math.floor(Math.max(0,Date.now()-ts)/60000);
+    return mins<1?'seconds ago':mins<60?mins+' min ago':mins<1440?Math.floor(mins/60)+'h ago':new Date(ts).toLocaleString('en-US');
   }
-  if(btnSettings) btnSettings.onclick=()=>{ show(settingsSc); try{ renderSettingsFarms(); }catch(e){} };
-  if(btnCredits) btnCredits.onclick=()=> show(creditsSc);
+  function collectLoadEntries(){
+    const saves=[];
+    try{
+      const meta=(typeof topoHasSave==='function')?topoHasSave():null;
+      if(meta) saves.push({key:SAVE_KEY,label:'ACTIVE FARM',size:meta.cols+'×'+meta.rows,day:meta.day,pop:meta.pop,savedAt:meta.savedAt,kind:'active'});
+      for(const k of ['antfarm_save_v4','antfarm_save_v3','antfarm_save_v2','antfarm_save']){
+        const raw=localStorage.getItem(k); if(!raw) continue;
+        try{ const d=JSON.parse(raw); if(!d||!Array.isArray(d.workers)||!d.workers.length) continue;
+          saves.push({key:k,label:'LEGACY FARM',size:(d.COLS||64)+'×'+(d.ROWS||36),day:d.day||1,pop:d.workers.length,savedAt:d.savedAt||0,kind:'legacy'});
+        }catch(e){}
+      }
+      topoListFarms().forEach(f=>saves.push({key:'ARCHIVE:'+f.id,label:f.label||'ARCHIVED FARM',size:f.cols+'×'+f.rows,day:f.day,pop:f.pop,savedAt:f.savedAt,kind:'archive'}));
+    }catch(e){ console.warn('loadList',e); }
+    return saves;
+  }
+  function renderLoadList(){
+    const list=document.getElementById('loadList'); if(!list) return;
+    list.innerHTML=''; const saves=collectLoadEntries();
+    if(!saves.length){
+      const empty=document.createElement('div'); empty.className='topo-empty-save';
+      const title=document.createElement('strong'); title.textContent='NO SAVED FARMS YET';
+      const copy=document.createElement('p'); copy.textContent='There are no saved farms yet. Create a world and its autosave will appear here.';
+      const make=document.createElement('button'); make.type='button'; make.className='topo-action-button'; make.textContent='CREATE NEW FARM'; make.onclick=()=>show(createSc);
+      empty.append(title,copy,make); list.appendChild(empty); return;
+    }
+    saves.forEach(entry=>{
+      const card=document.createElement('article'); card.className='topo-save-card'; card.dataset.saveKind=entry.kind;
+      const preview=document.createElement('div'); preview.className='topo-save-preview'; preview.setAttribute('aria-hidden','true');
+      const info=document.createElement('div'); info.className='topo-save-info';
+      const title=document.createElement('strong'); title.textContent=entry.label+' · '+entry.size;
+      const detail=document.createElement('p'); detail.textContent='Day '+entry.day+' · '+entry.pop+' ants';
+      const when=document.createElement('small'); when.textContent='Saved '+friendlySaveTime(entry.savedAt);
+      info.append(title,detail,when);
+      const actions=document.createElement('div'); actions.className='topo-save-actions';
+      const load=document.createElement('button'); load.type='button'; load.className='load'; load.textContent='LOAD'; load.setAttribute('aria-label','Load '+entry.label);
+      const del=document.createElement('button'); del.type='button'; del.className='delete'; del.textContent='DELETE'; del.setAttribute('aria-label','Delete '+entry.label);
+      load.onclick=()=>{
+        let key=entry.key; load.textContent='LOADING'; load.disabled=true;
+        try{
+          if(key.indexOf('ARCHIVE:')===0){ if(!topoRestoreFarm(key.slice(8))) throw new Error('archive'); key=SAVE_KEY; }
+          if(key!==SAVE_KEY){ const raw=localStorage.getItem(key); if(raw){ const d=JSON.parse(raw); if(d&&d.workers) localStorage.setItem(SAVE_KEY,JSON.stringify(d)); } }
+        }catch(e){ load.textContent='CORRUPTED'; return; }
+        if(!topoResumeGame({silent:false})){ load.textContent='CORRUPTED'; load.disabled=true; }
+      };
+      del.onclick=()=>gameConfirm('Delete this farm?','“'+entry.label+'” will be removed. This cannot be undone.',()=>{
+        try{
+          if(entry.key.indexOf('ARCHIVE:')===0) topoDeleteFarm(entry.key.slice(8));
+          else { localStorage.removeItem(entry.key); if(entry.key===SAVE_KEY){ localStorage.removeItem(LS_ALIVE); localStorage.removeItem(LS_INGAME); localStorage.removeItem('antfarm_lastReal'); localStorage.removeItem('antfarm_time'); _topoHasWorld=false; } }
+        }catch(e){}
+        renderLoadList(); try{ topoRefreshContinueBtn(); }catch(e){}
+      });
+      actions.append(load,del); card.append(preview,info,actions); list.appendChild(card);
+    });
+  }
+  if(btnLoad) btnLoad.onclick=()=>{ show(loadSc); renderLoadList(); };
+  function farmSummaryRow(label,detail,kind,actions){
+    const row=document.createElement('div'); row.className='topo-farm-summary';
+    const dot=document.createElement('span'); dot.className='topo-farm-dot'+(kind==='archive'?' archive':''); dot.setAttribute('aria-hidden','true');
+    const copy=document.createElement('div'); copy.className='topo-farm-copy';
+    const strong=document.createElement('strong'); strong.textContent=label;
+    const small=document.createElement('small'); small.textContent=detail;
+    copy.append(strong,small); row.append(dot,copy);
+    (actions||[]).forEach(a=>row.appendChild(a)); return row;
+  }
+  function tinyDataButton(text,label,fn){ const b=document.createElement('button'); b.type='button'; b.textContent=text; b.title=label; b.setAttribute('aria-label',label); b.onclick=fn; return b; }
+  function renderSettingsFarms(){
+    const box=document.getElementById('settingsFarms'); if(!box) return; box.innerHTML='';
+    const cur=(typeof topoHasSave==='function')?topoHasSave():null;
+    if(cur) box.appendChild(farmSummaryRow('ACTIVE FARM','Day '+cur.day+' · '+cur.pop+' ants · '+cur.cols+'×'+cur.rows,'active'));
+    else box.appendChild(farmSummaryRow('NO ACTIVE FARM','Create or import a farm to begin.','active'));
+    const farms=(typeof topoListFarms==='function')?topoListFarms():[];
+    const deleteActiveButton=document.getElementById('btnDeleteActive'); if(deleteActiveButton) deleteActiveButton.disabled=!cur;
+    const wipeButton=document.getElementById('btnWipeSave'); if(wipeButton) wipeButton.disabled=!cur&&!farms.length;
+    farms.forEach(f=>{
+      const load=tinyDataButton('▶','Load '+f.label,()=>{ if(topoRestoreFarm(f.id)) topoResumeGame({silent:false}); });
+      const del=tinyDataButton('×','Delete '+f.label,()=>gameConfirm('Delete archived farm?','“'+f.label+'” will be erased.',()=>{ topoDeleteFarm(f.id); renderSettingsFarms(); }));
+      box.appendChild(farmSummaryRow(f.label,'Day '+f.day+' · '+f.pop+' ants · '+f.cols+'×'+f.rows,'archive',[load,del]));
+    });
+  }
+  function renderMenuSettings(){
+    document.querySelectorAll('[data-setting-motion]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.settingMotion===menuSettings.motion)));
+    document.querySelectorAll('[data-setting-ui]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.settingUi===menuSettings.ui)));
+    const amb=document.getElementById('settingAmbience'); if(amb){ amb.setAttribute('aria-checked',String(!!menuSettings.ambience)); const t=amb.querySelector('b'); if(t) t.textContent=menuSettings.ambience?'ON':'OFF'; }
+    const con=document.getElementById('settingContrast'); if(con){ con.setAttribute('aria-checked',String(!!menuSettings.contrast)); const t=con.querySelector('b'); if(t) t.textContent=menuSettings.contrast?'ON':'OFF'; }
+    const fs=document.getElementById('btnFullscreen'); if(fs) fs.textContent=document.fullscreenElement?'EXIT FULLSCREEN':'ENTER FULLSCREEN';
+  }
+  document.querySelectorAll('[data-setting-motion]').forEach(b=>b.onclick=()=>saveMenuSettings({motion:b.dataset.settingMotion}));
+  document.querySelectorAll('[data-setting-ui]').forEach(b=>b.onclick=()=>saveMenuSettings({ui:b.dataset.settingUi}));
+  const ambBtn=document.getElementById('settingAmbience'); if(ambBtn) ambBtn.onclick=()=>saveMenuSettings({ambience:!menuSettings.ambience});
+  const contrastBtn=document.getElementById('settingContrast'); if(contrastBtn) contrastBtn.onclick=()=>saveMenuSettings({contrast:!menuSettings.contrast});
+  const resetBtn=document.getElementById('btnResetMenuSettings'); if(resetBtn) resetBtn.onclick=()=>window.topoResetMenuSettings();
+  const fullscreenBtn=document.getElementById('btnFullscreen');
+  if(fullscreenBtn) fullscreenBtn.onclick=async()=>{ try{ if(document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); }catch(e){ gameAlert('Fullscreen unavailable','This browser or embedded preview did not allow fullscreen.'); } renderMenuSettings(); };
+  document.addEventListener('fullscreenchange',renderMenuSettings);
+
+  function exportFarmBackup(){
+    const data={};
+    try{ for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k!==MENU_SETTINGS_KEY&&(/^(antfarm_|antFarm_)/.test(k))) data[k]=localStorage.getItem(k); } }catch(e){}
+    if(!Object.keys(data).length){ gameAlert('Nothing to export','Create or import a farm before making a backup.'); return; }
+    const payload={format:'ANT_FARM_BACKUP',version:1,exportedAt:new Date().toISOString(),data};
+    try{
+      const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+      a.href=url; a.download='ant-farm-backup-'+new Date().toISOString().slice(0,10)+'.json'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),500);
+      const st=document.getElementById('settingsStatus'); if(st) st.textContent='BACKUP EXPORTED';
+    }catch(e){ gameAlert('Export failed',e&&e.message?e.message:'The browser could not create the file.'); }
+  }
+  function purgeFarmStorage(){
+    const keys=[];
+    try{ for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k!==MENU_SETTINGS_KEY&&/^(antfarm_|antFarm_)/.test(k)) keys.push(k); } keys.forEach(k=>localStorage.removeItem(k)); }catch(e){}
+  }
+  function importFarmBackup(file){
+    if(!file) return; const reader=new FileReader();
+    reader.onload=()=>{
+      let parsed=null,data=null;
+      try{ parsed=JSON.parse(String(reader.result||'')); data=parsed&&parsed.format==='ANT_FARM_BACKUP'?parsed.data:parsed; }catch(e){}
+      if(!data||typeof data!=='object'||!Object.keys(data).some(k=>/^(antfarm_|antFarm_)/.test(k))){ gameAlert('Invalid backup','Choose an ANT FARM JSON backup.'); return; }
+      gameConfirm('Import this backup?','Current farm data will be replaced. Your display and accessibility settings will stay unchanged.',()=>{
+        try{
+          const hadWorld=_topoHasWorld; _topoHasWorld=false;
+          try{
+            purgeFarmStorage();
+            Object.keys(data).filter(k=>k!==MENU_SETTINGS_KEY&&/^(antfarm_|antFarm_)/.test(k)).forEach(k=>localStorage.setItem(k,String(data[k])));
+            location.reload();
+          }catch(e){ _topoHasWorld=hadWorld; throw e; }
+        }catch(e){ gameAlert('Import failed',e&&e.message?e.message:'The backup could not be stored.'); }
+      });
+    };
+    reader.onerror=()=>gameAlert('Import failed','The backup file could not be read.'); reader.readAsText(file);
+  }
+  const exportBtn=document.getElementById('btnExportSave'); if(exportBtn) exportBtn.onclick=exportFarmBackup;
+  const importBtn=document.getElementById('btnImportSave'),importInput=document.getElementById('inputImportSave');
+  if(importBtn&&importInput){ importBtn.onclick=()=>{ importInput.value=''; importInput.click(); }; importInput.onchange=()=>importFarmBackup(importInput.files&&importInput.files[0]); }
+  const deleteActive=document.getElementById('btnDeleteActive'); if(deleteActive) deleteActive.onclick=()=>gameConfirm('Delete active farm?','The active farm will be erased. Archived farms will remain.',()=>{ try{ window.topoDropCurrent(); _topoHasWorld=false; location.reload(); }catch(e){} });
+  const wipe=document.getElementById('btnWipeSave'); if(wipe) wipe.onclick=()=>gameConfirm('Delete everything?','The active farm and the entire archive will be erased. This cannot be undone.',()=>{ try{ purgeFarmStorage(); _topoHasWorld=false; location.reload(); }catch(e){} });
+
+  if(btnSettings) btnSettings.onclick=()=>{ show(settingsSc); renderMenuSettings(); renderSettingsFarms(); };
+  if(btnCredits) btnCredits.onclick=()=>show(creditsSc);
+  const creditsReplay=document.getElementById('btnCreditsReplay'); if(creditsReplay) creditsReplay.onclick=()=>{ hideMenuScreens(); if(typeof window.topoReplayIntro==='function') window.topoReplayIntro(); };
+  renderMenuSettings();
   // Every sub-screen returns to the title menu. CONTINUE is the explicit way back to the farm.
   document.querySelectorAll('[data-close]').forEach(b=>{
     b.onclick=()=>topoShowMainMenu();
@@ -9945,7 +10031,7 @@ setTimeout(_updateBothAntCounts, 1800);
   function topoGenFail(msg){
     _topoCreating=false;
     try{ const g=topoGenScreenEls(); if(g.sc) g.sc.style.display='none'; }catch(e){}
-    gameAlert('⚠ LA SIEMBRA SE ATASCÓ', (msg||'motivo desconocido')+'\n\nReintenta desde CREAR NUEVA GRANJA. Si se repite, recarga (Ctrl+Shift+R): la colonia se guarda sola cada pocos segundos.',
+    gameAlert('WORLD GENERATION STOPPED', (msg||'Unknown reason')+'\n\nReturn to NEW FARM and try again. If it repeats, reload the page; ANT FARM autosaves every few seconds.',
       ()=>{ try{ topoShowMainMenu(); }catch(e){} });
   }
   function topoBeginCreate(sizeKey, s){
@@ -9957,28 +10043,28 @@ setTimeout(_updateBothAntCounts, 1800);
       localStorage.setItem('antfarm_worldSize_rows', s.rows);
       localStorage.setItem('antfarm_createdAt', new Date().toISOString());
     }catch(e){ console.warn('ls fail',e); }
-    try{ hideAll(); }catch(e){}
+    try{ show(worldGenSc); }catch(e){}
     const g=topoGenScreenEls();
     const done=()=>{ _topoCreating=false; };
     if(!g.sc){ // sin pantalla de carga: sembrar ya
       try{ topoCreateFreshWorld(s.cols, s.rows); }catch(e){ console.error('[TOPO] create', e); topoGenFail(e && e.message); return; }
-      done(); try{ if(onboarding) onboarding.style.display='flex'; }catch(e){} return;
+      done(); try{ show(onboarding); }catch(e){} return;
     }
-    if(g.size) g.size.textContent = String(sizeKey).toUpperCase() + ' ' + s.cols + 'x' + s.rows + ' • ' + (s.cols*s.rows) + ' celdas';
-    if(g.seed) g.seed.textContent = 'Seed: ' + Math.floor(Math.random()*999999999).toString(36).toUpperCase() + '  |  ' + new Date().toLocaleString('es-PE');
+    if(g.size) g.size.textContent = String(sizeKey).toUpperCase() + ' ' + s.cols + '×' + s.rows + ' · ' + (s.cols*s.rows) + ' cells';
+    if(g.seed) g.seed.textContent = 'SEED ' + Math.floor(Math.random()*999999999).toString(36).toUpperCase() + ' · ' + new Date().toLocaleString('en-US');
     g.sc.style.display='flex';
     if(g.bar) g.bar.style.width='0%';
     if(g.txt) g.txt.textContent='0%';
-    if(g.st) g.st.textContent='Tallando terreno...';
+    if(g.st) g.st.textContent='CARVING SOIL...';
     // el tiempo de siembra va con las celdas reales: un 48x28 no espera lo mismo que un 96x48
     const _cells=s.cols*s.rows;
     const stepMs=Math.max(120, Math.min(430, Math.round(_cells/9)));
     const steps=[
-      {p:16, msg:'Tallando terreno...', sub:_cells+' celdas en capas'},
-      {p:40, msg:'Sembrando plantas...', sub:'Pradera fértil en expansión'},
-      {p:64, msg:'Escondiendo tesoros...', sub:'Cofres según quepa en el terreno'},
-      {p:86, msg:'Llamando a la fundadora...', sub:'Reina + obreras listas'},
-      {p:100, msg:'¡Mundo listo!', sub:'Pulsa para entrar'}
+      {p:16, msg:'CARVING SOIL...', sub:_cells+' cells across natural layers'},
+      {p:40, msg:'PLANTING THE MEADOW...', sub:'Roots, grass and wild growth'},
+      {p:64, msg:'BURYING OLD THINGS...', sub:'Minerals and traces under the soil'},
+      {p:86, msg:'CALLING THE FOUNDER...', sub:'Queen and workers at the entrance'},
+      {p:100, msg:'WORLD READY', sub:'Opening the first chamber'}
     ];
     let idx=0, finished=false, iv=0, wd=0;
     const t0=Date.now();
@@ -9993,10 +10079,10 @@ setTimeout(_updateBothAntCounts, 1800);
         // Topo: la colonia se guarda YA, antes del onboarding: si el navegador se cierra o recarga
         // sin pulsar EMPEZAR, la granja no se pierde (antes quedaba solo en memoria).
         try{ if(typeof serializeSave==='function') serializeSave(true); }catch(e){ console.warn('save post-crear', e.message); }
-        try{ if(typeof topoArchiveCurrent==='function') topoArchiveCurrent('Granja Día '+day+' · '+COLS+'×'+ROWS); }catch(e){}
+        try{ if(typeof topoArchiveCurrent==='function') topoArchiveCurrent('Farm · Day '+day+' · '+COLS+'×'+ROWS); }catch(e){}
         try{ if(typeof topoRefreshContinueBtn==='function') topoRefreshContinueBtn(); }catch(e){}
-        try{ if(onboarding) onboarding.style.display='flex'; }catch(e){}
-        try{ if(typeof pushToast==='function') pushToast( (typeof W!=='undefined'?W/2:200), 100, 'Mundo '+sizeKey+' generado', '#2de67a'); }catch(e){}
+        try{ show(onboarding); }catch(e){}
+        try{ if(typeof pushToast==='function') pushToast((typeof W!=='undefined'?W/2:200),100,String(sizeKey).toUpperCase()+' world ready','#2de67a'); }catch(e){}
       }, 240);
     }
     iv=setInterval(()=>{
@@ -10015,7 +10101,7 @@ setTimeout(_updateBothAntCounts, 1800);
     }, stepMs);
     // vigilante: si por lo que sea el intervalo se corta (pestaña en segundo plano, error ajeno),
     // la pantalla de carga no se queda para siempre
-    wd=setInterval(()=>{ if(finished) return; const max=steps.length*stepMs+12000; if(Date.now()-t0>max) finish(new Error('tiempo de siembra agotado')); }, 1500);
+    wd=setInterval(()=>{ if(finished) return; const max=steps.length*stepMs+12000; if(Date.now()-t0>max) finish(new Error('world generation timed out')); }, 1500);
   }
   function handleSizeChoice(sizeKey){
     if(_topoCreating){ tlog('[TOPO] siembra en curso - click ignorado'); return; }
@@ -10024,10 +10110,10 @@ setTimeout(_updateBothAntCounts, 1800);
     try{ meta=(typeof topoHasSave==='function')? topoHasSave():null; }catch(e){ console.warn('estado de guardado', e.message); }
     if(meta){
       // Topo: confirmacion dentro del juego (el confirm() nativo no existe en iframes sandboxeados)
-      gameConfirm('¿Sobrescribir tu granja actual?',
-        'Día '+meta.day+' · '+meta.pop+' hormigas · '+meta.cols+'×'+meta.rows+'\n\nAl crear otra, la actual pasa a «Archivadas» y podrás recuperarla desde CARGAR.',
+      gameConfirm('Create a different farm?',
+        'Day '+meta.day+' · '+meta.pop+' ants · '+meta.cols+'×'+meta.rows+'\n\nYour current farm will move to the archive and remain available from LOAD FARM.',
         ()=>{
-          try{ topoArchiveCurrent('Granja Día '+meta.day+' · '+meta.cols+'×'+meta.rows); }catch(e){ console.warn('archivar', e.message); }
+          try{ topoArchiveCurrent('Farm · Day '+meta.day+' · '+meta.cols+'×'+meta.rows); }catch(e){ console.warn('archive', e.message); }
           try{ localStorage.removeItem(SAVE_KEY); localStorage.removeItem('antfarm_worldAlive'); localStorage.removeItem('antfarm_time'); localStorage.removeItem('antfarm_lastReal'); }catch(e){}
           _topoHasWorld=false;
           topoBeginCreate(sizeKey, s);
@@ -10046,7 +10132,7 @@ setTimeout(_updateBothAntCounts, 1800);
     const t=e.target.closest && e.target.closest('#createSizeScreen [data-size]');
     if(t){ e.preventDefault(); e.stopPropagation(); handleSizeChoice(t.dataset.size); }
     const c=e.target.closest && e.target.closest('#mainMenu #btnMainCreate');
-    if(c){ e.preventDefault(); e.stopPropagation(); try{ hideAll(); const cs=document.getElementById('createSizeScreen'); if(cs) cs.style.display='flex'; }catch(_){ } }
+    if(c){ e.preventDefault(); e.stopPropagation(); try{ show(createSc); }catch(_){ } }
   });
   // log attach
   window._topoFlowReady = true;

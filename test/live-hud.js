@@ -49,7 +49,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ok   ' + m); } else { fai
   await sleep(400);
   await page.click('#createSizeScreen [data-size="small"]');
   await sleep(400);
-  await page.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (!h) return; const b = [...h.querySelectorAll('button')].find(x => x.textContent.trim() === 'SÍ'); if (b) b.click(); });
+  await page.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (!h) return; const b = [...h.querySelectorAll('button')].find(x => /^(SÍ|YES)$/i.test(x.textContent.trim())); if (b) b.click(); });
   try { await page.waitForFunction('window.COLS===48 && window.ROWS===28', { timeout: 40000 }); } catch (e) { console.log('  (el mundo no acabo de crearse)'); }
   // el onboarding sale DESPUES de sembrar el mundo: hay que terminarlo como usuario (y si sigue
   // encima, el boton del HUD estaria tapado por el modal, que no es un fallo del HUD)

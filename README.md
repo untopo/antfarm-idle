@@ -44,7 +44,7 @@ no arranca — una comprobación que se salta en silencio no es una comprobació
 | dónde está el remoto | anotado en `ant-farm-rpg/docs/PUBLICAR.md` (y en `.gitidentity`) |
 
 Lo que hay dentro de `ant-farm-rpg/docs/` son las notas del taller: cómo funciona el mundo, los
-incidentes con sus números medidos y qué quedó pendiente. Están en español porque el juego también.
+incidentes con sus números medidos y qué quedó pendiente. Las notas siguen en español; la interfaz pública del juego está en inglés.
 
 ## Cosas que este proyecto no hace
 

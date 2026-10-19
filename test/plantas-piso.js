@@ -63,7 +63,7 @@ const FOTO = `(()=>plants.map(p=>({c:p.c, x:Math.round(p.x), r:p.rr, cr:p.cr, ca
   await sleep(400);
   await page.click('#createSizeScreen [data-size="small"]');
   await sleep(400);
-  await page.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (!h) return; const b = [...h.querySelectorAll('button')].find(x => x.textContent.trim() === 'SÍ'); if (b) b.click(); });
+  await page.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (!h) return; const b = [...h.querySelectorAll('button')].find(x => /^(SÍ|YES)$/i.test(x.textContent.trim())); if (b) b.click(); });
   for (let i = 0; i < 16; i++) {
     const abierto = await page.evaluate(() => {
       const m = document.getElementById('onboardingModal');

@@ -15,7 +15,7 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));let pass=0,fail=0;const ok=(c,m
   ok(/There are no saved farms yet/i.test(await page.$eval('#loadList',e=>e.textContent)),'LOAD FARM explains the empty state');
   await page.click('#loadScreen [data-close]');
   for(const [id,screen] of [['btnMainCreate','createSizeScreen'],['btnMainSettings','settingsScreen'],['btnMainCredits','creditsScreen']]){await page.click('#'+id);await sleep(80);ok(await page.$eval('#'+screen,e=>getComputedStyle(e).display)==='flex',id.replace('btnMain','').toUpperCase()+' opens its real screen');await page.click('#'+screen+' [data-close]');await sleep(60)}
-  const credits=await page.evaluate(()=>{btnMainCredits.click();return creditsScreen.textContent.replace(/\s+/g,' ').trim()});ok(/ANT FARM · TOPO STUDIOS/.test(credits),'credits identify ANT FARM and Topo Studios');await page.click('#creditsScreen [data-close]');
+  const credits=await page.evaluate(()=>{btnMainCredits.click();return creditsScreen.textContent.replace(/\s+/g,' ').trim()});ok(/CREATED BY TOPO STUDIOS/.test(credits)&&!/UNTOP|PERSONAL NAME/i.test(credits),'credits are signed only by TOPO STUDIOS');await page.click('#creditsScreen [data-close]');
 
   console.log('\n· touch layout');
   await page.setViewport({width:390,height:844});await sleep(180);const mobile=await page.evaluate(()=>({overflow:document.documentElement.scrollWidth-document.documentElement.clientWidth,buttons:[...document.querySelectorAll('.topo-menu-option')].filter(b=>getComputedStyle(b).display!=='none').map(b=>Math.round(b.getBoundingClientRect().height)),canvas:[mainMenuCanvas.width,mainMenuCanvas.height]}));

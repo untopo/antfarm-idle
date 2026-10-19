@@ -97,7 +97,7 @@ async function leePanel(page, id) {
   await page.waitForFunction("!document.getElementById('splashScreen') || document.getElementById('splashScreen').style.display==='none'", { timeout: 20000 }).catch(() => { });
   await page.click('#btnMainCreate'); await sleep(350);
   await page.click('#createSizeScreen [data-size="small"]'); await sleep(350);
-  await page.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (!h) return; const b = [...h.querySelectorAll('button')].find(x => x.textContent.trim() === 'SÍ'); if (b) b.click(); });
+  await page.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (!h) return; const b = [...h.querySelectorAll('button')].find(x => /^(SÍ|YES)$/i.test(x.textContent.trim())); if (b) b.click(); });
   for (let i = 0; i < 16; i++) {
     const abierto = await page.evaluate(() => {
       const m = document.getElementById('onboardingModal');

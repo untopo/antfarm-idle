@@ -7,8 +7,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ANT FARM</title>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache">
-<link rel="stylesheet" href="css/style.css?v=20261019a">
-<link rel="stylesheet" href="css/startup.css?v=20261019a">
+<link rel="stylesheet" href="css/style.css?v=20261019b">
+<link rel="stylesheet" href="css/startup.css?v=20261019b">
 
 <style id="topoHideUntilStart">
   #appRoot{display:none !important}
@@ -26,6 +26,7 @@
   <div class="topo-startup-stage">
     <canvas id="splashTopo" width="640" height="360" aria-label="Animated Topo Studios voxel intro"></canvas>
   </div>
+  <canvas id="topoMenuReveal" class="topo-menu-reveal" aria-hidden="true"></canvas>
   <button type="button" id="topoIntroSkip" class="topo-intro-skip" aria-label="Skip the Topo Studios intro">SKIP <span>ENTER</span></button>
 </div>
 
@@ -52,85 +53,179 @@
   <button type="button" id="btnMainReplayIntro" class="topo-replay-intro">REPLAY INTRO <span>R</span></button>
 </div>
 
-<div id="createSizeScreen" style="position:fixed;inset:0;z-index:9998;background: linear-gradient(rgba(0,0,0,0.58), rgba(0,0,0,0.66)), url('assets/menu-bg.png') center/cover no-repeat;backdrop-filter:blur(2px);display:none;align-items:center;justify-content:center;padding:20px;box-sizing:border-box">
-  <div style="width:560px;max-width:100%;background:#1a140f;border:4px solid #000;box-shadow:8px 8px 0 #000;padding:20px;display:flex;flex-direction:column;gap:14px">
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00">CHOOSE WORLD SIZE</div>
-      <button class="pixel-btn small" data-close style="background:#1a0f00;color:#8a7a5a">← BACK</button>
+<section id="createSizeScreen" class="topo-subscreen" role="dialog" aria-modal="true" aria-labelledby="createTitle" aria-hidden="true">
+  <div class="topo-panel topo-panel-worlds" style="--topo-panel-width:960px">
+    <header class="topo-panel-header">
+      <div>
+        <span class="topo-panel-kicker">NEW FARM</span>
+        <h2 id="createTitle">CHOOSE YOUR WORLD</h2>
+        <p>Every world grows by the same rules. Choose how much earth your colony can inherit.</p>
+      </div>
+      <button type="button" class="topo-back-button" data-close><span>BACK</span><kbd>ESC</kbd></button>
+    </header>
+    <div class="topo-panel-body">
+      <div class="topo-world-grid" role="list" aria-label="World sizes">
+        <button type="button" class="topo-world-card" data-size="small" role="listitem">
+          <span class="topo-choice-ant" aria-hidden="true"></span>
+          <span class="topo-world-tag">QUICK COLONY</span>
+          <strong>SMALL</strong>
+          <span class="topo-world-size">48×28</span>
+          <span class="topo-world-art topo-world-art-small" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="topo-world-copy">Lightweight and close-knit. Best for phones and shorter colonies.</span>
+          <span class="topo-world-facts"><b>1,344 CELLS</b><b>FAST START</b></span>
+        </button>
+        <button type="button" class="topo-world-card is-recommended" data-size="medium" role="listitem">
+          <span class="topo-choice-ant" aria-hidden="true"></span>
+          <span class="topo-world-tag">RECOMMENDED</span>
+          <strong>MEDIUM</strong>
+          <span class="topo-world-size">64×36</span>
+          <span class="topo-world-art topo-world-art-medium" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="topo-world-copy">Balanced depth, population and performance for most devices.</span>
+          <span class="topo-world-facts"><b>2,304 CELLS</b><b>BALANCED</b></span>
+        </button>
+        <button type="button" class="topo-world-card" data-size="big" role="listitem">
+          <span class="topo-choice-ant" aria-hidden="true"></span>
+          <span class="topo-world-tag">LONG COLONY</span>
+          <strong>BIG</strong>
+          <span class="topo-world-size">96×48</span>
+          <span class="topo-world-art topo-world-art-big" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="topo-world-copy">More strata, buried history and room for a lasting civilization.</span>
+          <span class="topo-world-facts"><b>4,608 CELLS</b><b>FAST PC</b></span>
+        </button>
+      </div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
-      <button class="pixel-btn" data-size="small" style="padding:14px 8px;flex-direction:column;gap:6px;align-items:center;justify-content:center;background:#2a2012;color:#fff8dc"><span style="font-size:10px;color:#2de67a">SMALL</span><span style="font-size:7px;color:#8a7a5a">48×28 • 1,344 cells</span><span style="font-size:6px;color:#2de67a">Mobile or modest PC · short colony</span></button>
-      <button class="pixel-btn" data-size="medium" style="padding:14px 8px;flex-direction:column;gap:6px;align-items:center;justify-content:center;background:var(--amber);color:#000;border-color:#000"><span style="font-size:10px">MEDIUM</span><span style="font-size:7px;color:#000">64×36 • Recommended</span><span style="font-size:6px;color:#1a140f">Balanced</span></button>
-      <button class="pixel-btn" data-size="big" style="padding:14px 8px;flex-direction:column;gap:6px;align-items:center;justify-content:center;background:#2a2012;color:#fff8dc"><span style="font-size:10px;color:#ff8c00">BIG</span><span style="font-size:7px;color:#8a7a5a">96×48 • 4,608 cells</span><span style="font-size:6px;color:#ff8c00">Fast PC · long colony</span></button>
-    </div>
-    <div style="background:#000;border:2px solid #000;padding:8px;font-family:'VT323',monospace;font-size:13px;color:#8a7a5a;line-height:1.3">Each size has its own balance: more land, buried chests, pantry jars, and mouths to feed. Work scales with the terrain: <b style="color:#c9b896">SMALL</b> runs lightly, <b style="color:#ff8c00">BIG</b> supports a longer colony, and <b style="color:#ffcc00">MEDIUM</b> is balanced. You can create several farms and load them later.</div>
-    <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#5a4a3a;text-align:center">Choose a size to create → a quick guide follows</div>
+    <footer class="topo-panel-footer"><span>Several farms can coexist in your archive.</span><span>SELECT A WORLD TO BEGIN</span></footer>
   </div>
-</div>
+</section>
 
-<div id="loadScreen" style="position:fixed;inset:0;z-index:9998;background: linear-gradient(rgba(0,0,0,0.58), rgba(0,0,0,0.66)), url('assets/menu-bg.png') center/cover no-repeat;backdrop-filter:blur(2px);display:none;align-items:center;justify-content:center;padding:20px;box-sizing:border-box">
-  <div style="width:560px;max-width:100%;max-height:86vh;background:#1a140f;border:4px solid #000;box-shadow:8px 8px 0 #000;display:flex;flex-direction:column;overflow:hidden">
-    <div style="background:#000;border-bottom:4px solid #000;padding:12px;display:flex;justify-content:space-between;align-items:center">
-      <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00">LOAD FARM</div>
-      <button class="pixel-btn small" data-close style="background:#1a0f00;color:#8a7a5a">← BACK</button>
-    </div>
-    <div id="loadList" style="flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:10px;background:#0f0a05"></div>
-    <div style="background:#000;border-top:3px solid #000;padding:8px;font-family:'VT323',monospace;font-size:12px;color:#8a7a5a;text-align:center">If you close the tab, your farm keeps living at normal speed and will be waiting here.</div>
+<section id="loadScreen" class="topo-subscreen" role="dialog" aria-modal="true" aria-labelledby="loadTitle" aria-hidden="true">
+  <div class="topo-panel" style="--topo-panel-width:780px">
+    <header class="topo-panel-header">
+      <div>
+        <span class="topo-panel-kicker">BURROW ARCHIVE</span>
+        <h2 id="loadTitle">LOAD FARM</h2>
+        <p>Return to an active colony or uncover one preserved in the archive.</p>
+      </div>
+      <button type="button" class="topo-back-button" data-close><span>BACK</span><kbd>ESC</kbd></button>
+    </header>
+    <div id="loadList" class="topo-panel-body topo-save-list" aria-live="polite"></div>
+    <footer class="topo-panel-footer"><span>AUTOSAVE · EVERY 4 SECONDS</span><span>OFFLINE TIME RUNS AT NORMAL SPEED</span></footer>
   </div>
-</div>
+</section>
 
-<div id="settingsScreen" style="position:fixed;inset:0;z-index:9998;background: linear-gradient(rgba(0,0,0,0.58), rgba(0,0,0,0.66)), url('assets/menu-bg.png') center/cover no-repeat;backdrop-filter:blur(2px);display:none;align-items:center;justify-content:center;padding:20px;box-sizing:border-box">
-  <div style="width:420px;max-width:100%;background:#1a140f;border:4px solid #000;box-shadow:8px 8px 0 #000;padding:20px;display:flex;flex-direction:column;gap:12px;text-align:center">
-    <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00">SETTINGS</div>
-    <div style="font-family:'VT323',monospace;font-size:14px;color:#8a7a5a">Your farm saves itself every 4 seconds.<br><span style="color:#5a4a3a">ESC opens this menu during play.</span></div>
-    <div id="settingsFarms" style="display:flex;flex-direction:column;gap:6px;max-height:180px;overflow:auto;background:#0f0a05;border:2px solid #000;padding:8px"></div>
-    <div style="display:flex;gap:8px"><button class="pixel-btn small" id="btnWipeSave" style="flex:1;justify-content:center;background:#1a0f00;color:#ff6b6b">DELETE FARM</button><button class="pixel-btn" data-close style="flex:1;justify-content:center">← BACK</button></div>
+<section id="settingsScreen" class="topo-subscreen" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" aria-hidden="true">
+  <div class="topo-panel topo-panel-settings" style="--topo-panel-width:900px">
+    <header class="topo-panel-header">
+      <div>
+        <span class="topo-panel-kicker">SYSTEM & ACCESSIBILITY</span>
+        <h2 id="settingsTitle">SETTINGS</h2>
+        <p>Shape the presentation without changing the rules of the colony.</p>
+      </div>
+      <button type="button" class="topo-back-button" data-close><span>BACK</span><kbd>ESC</kbd></button>
+    </header>
+    <div class="topo-panel-body topo-settings-body">
+      <section class="topo-settings-section" aria-labelledby="settingsDisplayTitle">
+        <div class="topo-section-heading"><span class="topo-section-rune" aria-hidden="true">▦</span><div><h3 id="settingsDisplayTitle">DISPLAY</h3><p>Motion, readability and screen presentation.</p></div></div>
+        <div class="topo-setting-row">
+          <div><strong>MOTION</strong><small>Controls intro and living-menu animation.</small></div>
+          <div class="topo-segmented" role="group" aria-label="Motion preference">
+            <button type="button" data-setting-motion="system">SYSTEM</button><button type="button" data-setting-motion="full">FULL</button><button type="button" data-setting-motion="reduced">REDUCED</button>
+          </div>
+        </div>
+        <div class="topo-setting-row">
+          <div><strong>LIVING BACKGROUNDS</strong><small>Daylight, clouds, grass and submenu ants.</small></div>
+          <button type="button" class="topo-switch" id="settingAmbience" role="switch" aria-checked="true"><span></span><b>ON</b></button>
+        </div>
+        <div class="topo-setting-row">
+          <div><strong>HIGH CONTRAST</strong><small>Brighter text and stronger panel borders.</small></div>
+          <button type="button" class="topo-switch" id="settingContrast" role="switch" aria-checked="false"><span></span><b>OFF</b></button>
+        </div>
+        <div class="topo-setting-row">
+          <div><strong>MENU SCALE</strong><small>Adjust menu density on larger screens.</small></div>
+          <div class="topo-segmented" role="group" aria-label="Menu scale">
+            <button type="button" data-setting-ui="compact">90%</button><button type="button" data-setting-ui="default">100%</button><button type="button" data-setting-ui="large">110%</button>
+          </div>
+        </div>
+        <div class="topo-setting-row">
+          <div><strong>FULLSCREEN</strong><small>Use the entire display when the browser allows it.</small></div>
+          <button type="button" class="topo-action-button" id="btnFullscreen">ENTER FULLSCREEN</button>
+        </div>
+      </section>
+
+      <section class="topo-settings-section" aria-labelledby="settingsDataTitle">
+        <div class="topo-section-heading"><span class="topo-section-rune" aria-hidden="true">▤</span><div><h3 id="settingsDataTitle">FARMS & DATA</h3><p>Portable backups and deliberate deletion.</p></div></div>
+        <div id="settingsFarms" class="topo-settings-farms" aria-live="polite"></div>
+        <div class="topo-data-actions">
+          <button type="button" class="topo-action-button" id="btnExportSave">EXPORT BACKUP</button>
+          <button type="button" class="topo-action-button" id="btnImportSave">IMPORT BACKUP</button>
+          <input id="inputImportSave" type="file" accept="application/json,.json" hidden>
+          <button type="button" class="topo-action-button topo-danger-soft" id="btnDeleteActive">DELETE ACTIVE</button>
+          <button type="button" class="topo-action-button topo-danger" id="btnWipeSave">DELETE EVERYTHING</button>
+        </div>
+      </section>
+    </div>
+    <footer class="topo-panel-footer"><button type="button" id="btnResetMenuSettings" class="topo-footer-button">RESET SETTINGS</button><span id="settingsStatus" role="status">SETTINGS SAVE AUTOMATICALLY</span></footer>
   </div>
-</div>
+</section>
 
-<div id="creditsScreen" style="position:fixed;inset:0;z-index:9998;background: linear-gradient(rgba(0,0,0,0.58), rgba(0,0,0,0.66)), url('assets/menu-bg.png') center/cover no-repeat;backdrop-filter:blur(2px);display:none;align-items:center;justify-content:center;padding:20px;box-sizing:border-box">
-  <div style="width:420px;max-width:100%;background:#1a140f;border:4px solid #000;box-shadow:8px 8px 0 #000;padding:20px;display:flex;flex-direction:column;gap:12px;text-align:center">
-    <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00">CREDITS</div>
-    <div style="font-family:'VT323',monospace;font-size:16px;color:#c9b896;line-height:1.4">ANT FARM · TOPO STUDIOS<br><span style="color:#8a7a5a">Voxel art · Custom engine</span></div>
-    <button class="pixel-btn" data-close style="justify-content:center">← BACK</button>
+<section id="creditsScreen" class="topo-subscreen" role="dialog" aria-modal="true" aria-labelledby="creditsTitle" aria-hidden="true">
+  <div class="topo-panel topo-panel-credits" style="--topo-panel-width:720px">
+    <header class="topo-panel-header">
+      <div>
+        <span class="topo-panel-kicker">THE BURROW BEHIND THE BURROW</span>
+        <h2 id="creditsTitle">CREDITS</h2>
+        <p>A small living world, built one voxel and one ant at a time.</p>
+      </div>
+      <button type="button" class="topo-back-button" data-close><span>BACK</span><kbd>ESC</kbd></button>
+    </header>
+    <div class="topo-panel-body topo-credits-body">
+      <div class="topo-credit-mark" aria-label="Topo Studios"><span class="topo-credit-helmet" aria-hidden="true"></span><strong>TOPO</strong><b>STUDIOS</b></div>
+      <div class="topo-credit-lead">CREATED BY <strong>TOPO STUDIOS</strong></div>
+      <div class="topo-credit-grid">
+        <div><span>WORLD</span><b>Original colony simulation</b></div>
+        <div><span>CRAFT</span><b>Voxel art · interface · animation</b></div>
+        <div><span>ENGINE</span><b>HTML5 Canvas · JavaScript · CSS</b></div>
+        <div><span>TYPE</span><b>Press Start 2P · VT323</b></div>
+      </div>
+      <p class="topo-credit-thanks">Thank you for looking after the colony. Every tunnel remembers.</p>
+      <div class="topo-build-stamp">ANT FARM · BUILD 20261019B</div>
+    </div>
+    <footer class="topo-panel-footer"><button type="button" id="btnCreditsReplay" class="topo-footer-button">REPLAY INTRO</button><span>MADE BELOW THE SURFACE</span></footer>
   </div>
-</div>
+</section>
 
-<div id="onboardingModal" style="position:fixed;inset:0;z-index:9997;background:rgba(0,0,0,0.58);backdrop-filter:blur(2px);display:none;align-items:center;justify-content:center;padding:20px;box-sizing:border-box">
-  <div style="width:min(640px,92vw);background:#1a140f;border:4px solid #000;box-shadow:8px 8px 0 #000;overflow:hidden">
-    <div style="background:#000;border-bottom:4px solid #000;padding:12px 14px;display:flex;justify-content:space-between;align-items:center">
-      <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00">DAY 0 — NEW WORLD</div>
-      <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#8a7a5a">ANT FARM</div>
+<section id="onboardingModal" class="topo-subscreen" role="dialog" aria-modal="true" aria-labelledby="onboardingTitle" aria-hidden="true">
+  <div class="topo-panel topo-panel-onboarding" style="--topo-panel-width:720px">
+    <header class="topo-panel-header">
+      <div><span class="topo-panel-kicker">DAY 0</span><h2 id="onboardingTitle">YOUR FARM IS READY</h2><p>Three gestures are enough to begin.</p></div>
+      <span class="topo-ready-light">WORLD ALIVE</span>
+    </header>
+    <div class="topo-panel-body topo-first-steps">
+      <article><span class="topo-step-number">01</span><div class="topo-step-icon topo-honey-icon" aria-hidden="true"></div><div><strong>DROP HONEY</strong><p>Tap the green meadow above to feed the first workers.</p></div></article>
+      <article><span class="topo-step-number">02</span><div class="topo-step-icon topo-dig-icon" aria-hidden="true"></div><div><strong>DIG</strong><p>Hold <b>SHIFT</b> and click underground to order a tunnel.</p></div></article>
+      <article><span class="topo-step-number">03</span><div class="topo-step-icon topo-watch-icon" aria-hidden="true"></div><div><strong>WATCH THEM</strong><p>Tap an ant to open her profile and follow her decisions.</p></div></article>
     </div>
-    <div style="padding:18px 16px;display:flex;flex-direction:column;gap:14px">
-      <div style="display:flex;gap:12px;align-items:center"><div style="width:52px;height:52px;background:#ffcc00;border:3px solid #000;display:grid;place-items:center;font-size:24px;box-shadow:3px 3px 0 #000">🍯</div><div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#ffcc00">1 — DROP HONEY</div><div style="font-family:'VT323',monospace;font-size:16px;color:#fff8dc;margin-top:4px">Tap the green meadow above to drop honey.</div></div></div>
-      <div style="display:flex;gap:12px;align-items:center"><div style="width:52px;height:52px;background:#ff3b30;border:3px solid #000;display:grid;place-items:center;font-size:20px;box-shadow:3px 3px 0 #000">⛏</div><div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#ff3b30">2 — DIG</div><div style="font-family:'VT323',monospace;font-size:16px;color:#fff8dc;margin-top:4px">Hold <b style="color:#ffcc00">SHIFT + click</b> underground to dig tunnels.</div></div></div>
-      <div style="display:flex;gap:12px;align-items:center"><div style="width:52px;height:52px;background:#000;border:3px solid #000;display:grid;place-items:center;font-size:20px;box-shadow:3px 3px 0 #000">👁</div><div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#2de67a">3 — WATCH THEM</div><div style="font-family:'VT323',monospace;font-size:16px;color:#fff8dc;margin-top:4px">Tap an ant to open her profile. Your live <b style="color:#ffcc00">economy</b> is shown above.</div></div></div>
-    </div>
-    <div style="background:#000;border-top:4px solid #000;padding:10px 12px;display:flex;justify-content:flex-end">
-      <button id="btnOnboardingStart" style="font-family:'Press Start 2P',monospace;font-size:9px;padding:12px 18px;background:#2de67a;border:3px solid #000;color:#000;box-shadow:4px 4px 0 #000;cursor:pointer">PLAY! →</button>
-    </div>
+    <footer class="topo-panel-footer topo-onboarding-footer"><span>THE COLONY SAVES ITSELF</span><button type="button" id="btnOnboardingStart" class="topo-enter-farm">ENTER THE FARM</button></footer>
   </div>
-</div>
+</section>
 
-
-<!-- PANTALLA CARGA MUNDO - generacion propia -->
-<div id="worldGenScreen" style="position:fixed;inset:0;z-index:9996;background: linear-gradient(rgba(26,20,15,0.72), rgba(0,0,0,0.78)), url('assets/menu-bg.png') center/cover no-repeat;display:none;align-items:center;justify-content:center;padding:20px;box-sizing:border-box">
-  <div style="width:520px;max-width:100%;background:#000;border:4px solid #000;box-shadow:8px 8px 0 #000;padding:20px;display:flex;flex-direction:column;gap:14px;image-rendering:pixelated">
-    <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00;text-align:center;letter-spacing:1px">⛏ GENERATING WORLD...</div>
-    <div id="genSizeLabel" style="font-family:'Press Start 2P',monospace;font-size:8px;color:#8a7a5a;text-align:center">MEDIUM 64×36</div>
-    <div id="genSeedLabel" style="font-family:'VT323',monospace;font-size:13px;color:#5a4a3a;text-align:center">Seed: -</div>
-    <div style="height:18px;background:#1a140f;border:3px solid #000;position:relative;overflow:hidden;box-shadow:inset 0 0 0 2px #000">
-      <div id="genBar" style="position:absolute;left:0;top:0;bottom:0;width:0%;background:linear-gradient(90deg,#2de67a 0%, #ffcc00 100%);transition:width 0.15s linear;box-shadow:2px 0 0 #000"></div>
-      <div id="genBarText" style="position:absolute;inset:0;display:grid;place-items:center;font-family:'Press Start 2P',monospace;font-size:7px;color:#fff;text-shadow:1px 1px 0 #000">0%</div>
+<section id="worldGenScreen" class="topo-subscreen" role="dialog" aria-modal="true" aria-labelledby="worldGenTitle" aria-hidden="true">
+  <div class="topo-panel topo-panel-generation" style="--topo-panel-width:650px">
+    <header class="topo-panel-header topo-generation-header">
+      <div><span class="topo-panel-kicker">NEW FARM</span><h2 id="worldGenTitle">GENERATING WORLD</h2></div>
+      <span class="topo-generation-pulse" aria-hidden="true"></span>
+    </header>
+    <div class="topo-panel-body topo-generation-body">
+      <div class="topo-generation-meta"><span id="genSizeLabel">MEDIUM 64×36</span><span id="genSeedLabel">SEED —</span></div>
+      <div class="topo-generation-window" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+      <div class="topo-progress-track"><div id="genBar"></div><div id="genBarText">0%</div></div>
+      <div id="genStatus" class="topo-generation-status">Carving terrain...</div>
+      <div id="genSub" class="topo-generation-sub">Every block shapes your home</div>
+      <div class="topo-generation-legend"><span><i class="soil"></i>SOIL</span><span><i class="plants"></i>PLANTS</span><span><i class="treasures"></i>TREASURES</span></div>
     </div>
-    <div id="genStatus" style="font-family:'VT323',monospace;font-size:16px;color:#c9b896;text-align:center;min-height:20px">Carving terrain...</div>
-    <div id="genSub" style="font-family:'VT323',monospace;font-size:12px;color:#8a7a5a;text-align:center">Every block shapes your home</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;font-family:'Press Start 2P',monospace;font-size:6px;color:#5a4a3a">
-      <span>⬛ Soil</span><span>🌿 Plants</span><span>💎 Treasures</span>
-    </div>
+    <footer class="topo-panel-footer"><span>PLEASE KEEP THIS BURROW OPEN</span><span>THE WORLD IS SEEDED ONLY ONCE</span></footer>
   </div>
-</div>
+</section>
 
 <div class="app" id="appRoot" style="display:none">
   <header>
@@ -809,14 +904,14 @@
   <!-- Motor del juego — núcleo profesional modular -->
   
 
-<script src="core/bandas.js?v=20261019a"></script>
-<script src="core/mundo.js?v=20261019a"></script>
-<script src="core/tesoros.js?v=20261019a"></script>
-<script src="core/economia.js?v=20261019a"></script>
-<script src="core/agua.js?v=20261019a"></script>
-<script src="js/i18n-en.js?v=20261019a"></script>
-<script src="js/app.js?v=20261019a"></script>
-<script src="js/splash-topo.js?v=20261019a"></script>
+<script src="core/bandas.js?v=20261019b"></script>
+<script src="core/mundo.js?v=20261019b"></script>
+<script src="core/tesoros.js?v=20261019b"></script>
+<script src="core/economia.js?v=20261019b"></script>
+<script src="core/agua.js?v=20261019b"></script>
+<script src="js/i18n-en.js?v=20261019b"></script>
+<script src="js/app.js?v=20261019b"></script>
+<script src="js/splash-topo.js?v=20261019b"></script>
 <script>
 // Vigia del arranque: si js/app.js no termino de cargar, decirlo en pantalla en vez de dejar
 // botones sordos. Es lo unico que vive en el HTML; el juego entero esta en js/app.js.

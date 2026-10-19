@@ -1,206 +1,235 @@
-/* ANT FARM startup — approved Topo Studios intro and the functional main menu. */
-.topo-startup-screen,
-.topo-main-menu{
-  position:fixed;
-  inset:0;
-  overflow:hidden;
-  background:#030201;
-  color:#fff8dc;
+/* ANT FARM startup and front-door menus — one responsive voxel system. */
+:root{
+  --topo-ink:#080503;
+  --topo-night:#111a31;
+  --topo-earth:#7b4c2d;
+  --topo-earth-dark:#2a180f;
+  --topo-panel:#1a120d;
+  --topo-panel-2:#24170f;
+  --topo-cream:#fff0c8;
+  --topo-muted:#aa9775;
+  --topo-gold:#ffcc33;
+  --topo-green:#2f9b55;
+  --topo-green-bright:#9af0a8;
+  --topo-red:#d94b43;
+  --topo-cyan:#70d9df;
+}
+*{box-sizing:border-box}
+.topo-startup-screen,.topo-main-menu{
+  position:fixed;inset:0;overflow:hidden;background:#030201;color:var(--topo-cream);
   image-rendering:pixelated;
 }
-.topo-startup-screen{
-  z-index:11000;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-}
-.topo-startup-stage{
-  position:relative;
-  width:min(100vw,177.7778vh);
-  aspect-ratio:16/9;
-  flex:none;
-}
-#splashTopo{
-  display:block;
-  width:100%;
-  height:100%;
-  border:0;
-  background:#030201;
-  image-rendering:pixelated;
-  image-rendering:crisp-edges;
-}
-.topo-intro-skip,
-.topo-replay-intro{
-  position:fixed;
-  z-index:3;
-  border:2px solid #4f432d;
-  background:#080704dc;
-  color:#dbcda9;
-  box-shadow:3px 3px 0 #000;
-  font-family:'Press Start 2P',monospace;
-  font-size:clamp(7px,.64vw,10px);
-  line-height:1;
-  letter-spacing:.05em;
-  padding:9px 11px;
-  cursor:pointer;
+.topo-startup-screen{z-index:11000;display:flex;align-items:center;justify-content:center}
+.topo-startup-stage{position:relative;width:min(100vw,177.7778vh);aspect-ratio:16/9;flex:none}
+#splashTopo{display:block;width:100%;height:100%;border:0;background:#030201;image-rendering:pixelated;image-rendering:crisp-edges}
+.topo-menu-reveal{display:none;position:fixed;inset:0;width:100%;height:100%;z-index:2;pointer-events:none;image-rendering:pixelated;image-rendering:crisp-edges}
+.topo-startup-screen.is-revealing{background:transparent}
+.topo-startup-screen.is-revealing .topo-startup-stage{visibility:hidden}
+.topo-startup-screen.is-revealing .topo-menu-reveal{display:block}
+
+.topo-intro-skip,.topo-replay-intro{
+  position:fixed;z-index:3;border:2px solid #4f432d;background:#080704dc;color:#dbcda9;
+  box-shadow:3px 3px 0 #000;font-family:'Press Start 2P',monospace;font-size:clamp(7px,.64vw,10px);
+  line-height:1;letter-spacing:.05em;padding:9px 11px;cursor:pointer;
 }
 .topo-intro-skip{right:clamp(10px,2.2vw,30px);bottom:clamp(10px,2.2vw,28px)}
 .topo-intro-skip span,.topo-replay-intro span{color:#927b4c;margin-left:5px;font-size:.8em}
 .topo-intro-skip:hover,.topo-intro-skip:focus-visible,.topo-replay-intro:hover,.topo-replay-intro:focus-visible{
-  outline:0;
-  color:#ffe98d;
-  border-color:#ffcc33;
-  transform:translate(1px,1px);
-  box-shadow:1px 1px 0 #000;
+  outline:0;color:#ffe98d;border-color:var(--topo-gold);transform:translate(1px,1px);box-shadow:1px 1px 0 #000
 }
 
-.topo-main-menu{
-  z-index:10000;
-  align-items:stretch;
-  justify-content:stretch;
-  isolation:isolate;
-}
-#mainMenuCanvas{
-  position:absolute;
-  inset:0;
-  z-index:0;
-  width:100%;
-  height:100%;
-  display:block;
-  pointer-events:none;
-  image-rendering:pixelated;
-  image-rendering:crisp-edges;
-}
+/* Main title menu. */
+.topo-main-menu{z-index:10000;align-items:stretch;justify-content:stretch;isolation:isolate}
+#mainMenuCanvas{position:absolute;inset:0;z-index:0;width:100%;height:100%;display:block;pointer-events:none;image-rendering:pixelated;image-rendering:crisp-edges}
 .topo-main-options{
-  position:absolute;
-  z-index:2;
-  left:50%;
-  top:36.65%;
-  width:min(38.2vw,500px);
-  min-width:285px;
-  transform:translateX(-50%);
-  display:flex;
-  flex-direction:column;
-  gap:min(.84vw,1.48vh);
+  position:absolute;z-index:2;left:50%;top:36.65%;width:min(38.2vw,500px);min-width:285px;
+  transform:translateX(-50%);display:flex;flex-direction:column;gap:min(.84vw,1.48vh)
 }
 .topo-menu-option{
-  position:relative;
-  width:100%;
-  height:clamp(38px,6.05vh,54px);
-  min-height:38px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  border:0;
-  border-left:clamp(5px,.55vw,8px) solid #6c513c;
-  border-top:2px solid #573d2c;
-  border-bottom:3px solid #090503;
-  background:#21160f;
-  color:#fff0c8;
-  box-shadow:3px 3px 0 #080503;
-  font-family:'Press Start 2P',monospace;
-  font-size:clamp(8px,1.03vw,15px);
-  line-height:1;
-  text-align:center;
-  text-shadow:2px 2px 0 #000;
-  cursor:pointer;
-  letter-spacing:.01em;
+  position:relative;width:100%;height:clamp(38px,6.05vh,54px);min-height:38px;display:flex;align-items:center;justify-content:center;
+  border:0;border-left:clamp(5px,.55vw,8px) solid #6c513c;border-top:2px solid #573d2c;border-bottom:3px solid #090503;
+  background:#21160f;color:var(--topo-cream);box-shadow:3px 3px 0 #080503;
+  font-family:'Press Start 2P',monospace;font-size:clamp(8px,1.03vw,15px);line-height:1;text-align:center;text-shadow:2px 2px 0 #000;
+  cursor:pointer;letter-spacing:.01em
 }
-.topo-menu-option:hover,
-.topo-menu-option:focus-visible,
-.topo-menu-option.is-selected{
-  outline:0;
-  background:#2f9b55;
-  border-left-color:#9af0a8;
-  border-top-color:#58bf76;
-  border-bottom-color:#176034;
-  color:#efffcf;
-  transform:translateX(1px);
+.topo-menu-option:hover,.topo-menu-option:focus-visible,.topo-menu-option.is-selected{
+  outline:0;background:var(--topo-green);border-left-color:var(--topo-green-bright);border-top-color:#58bf76;border-bottom-color:#176034;
+  color:#efffcf;transform:translateX(1px)
 }
 .topo-menu-option:active{transform:translate(2px,2px);box-shadow:1px 1px 0 #080503}
 .topo-menu-option[hidden]{display:none!important}
-.topo-menu-ant{
-  display:none;
-  position:absolute;
-  left:clamp(-45px,-3.45vw,-30px);
-  top:50%;
-  width:9px;
-  height:7px;
-  transform:translateY(-50%);
-  background:#e3ad08;
-  border-top:1px solid #ffdb43;
-  border-bottom:1px solid #8e5a00;
-  box-shadow:11px 1px 0 -1px #8e5a00,20px 0 0 #e3ad08,20px -1px 0 #ffdb43;
-  filter:drop-shadow(1px 1px 0 #24150a);
+.topo-menu-ant,.topo-choice-ant{
+  display:none;position:absolute;left:clamp(-45px,-3.45vw,-30px);top:50%;width:9px;height:7px;transform:translateY(-50%);
+  background:#e3ad08;border-top:1px solid #ffdb43;border-bottom:1px solid #8e5a00;
+  box-shadow:11px 1px 0 -1px #8e5a00,20px 0 0 #e3ad08,20px -1px 0 #ffdb43;filter:drop-shadow(1px 1px 0 #24150a)
 }
-.topo-menu-ant::before{
-  content:'';
-  position:absolute;
-  left:3px;
-  top:6px;
-  width:2px;
-  height:5px;
-  background:#24150a;
-  box-shadow:7px -1px 0 #24150a,14px 0 0 #24150a,20px -1px 0 #24150a;
-}
-.topo-menu-ant::after{
-  content:'';
-  position:absolute;
-  left:22px;
-  top:-5px;
-  width:2px;
-  height:5px;
-  background:#24150a;
-  box-shadow:4px -2px 0 -0.5px #ffdb43;
-}
-.topo-menu-option:hover .topo-menu-ant,
-.topo-menu-option:focus-visible .topo-menu-ant,
-.topo-menu-option.is-selected .topo-menu-ant{display:block}
+.topo-menu-ant::before,.topo-choice-ant::before{content:'';position:absolute;left:3px;top:6px;width:2px;height:5px;background:#24150a;box-shadow:7px -1px 0 #24150a,14px 0 0 #24150a,20px -1px 0 #24150a}
+.topo-menu-ant::after,.topo-choice-ant::after{content:'';position:absolute;left:22px;top:-5px;width:2px;height:5px;background:#24150a;box-shadow:4px -2px 0 -.5px #ffdb43}
+.topo-menu-option:hover .topo-menu-ant,.topo-menu-option:focus-visible .topo-menu-ant,.topo-menu-option.is-selected .topo-menu-ant{display:block}
 .topo-replay-intro{left:clamp(10px,2vw,28px);bottom:clamp(10px,2vw,26px)}
-.topo-sr-only{
-  position:absolute!important;
-  width:1px!important;
-  height:1px!important;
-  padding:0!important;
-  margin:-1px!important;
-  overflow:hidden!important;
-  clip:rect(0,0,0,0)!important;
-  white-space:nowrap!important;
-  border:0!important;
-}
+.topo-main-menu.is-subscreen #mainMenuOptions,.topo-main-menu.is-subscreen .topo-replay-intro{opacity:0;visibility:hidden;pointer-events:none}
+.topo-main-menu.is-subscreen{pointer-events:none}
+.topo-sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
 
-/* The existing functional sub-screens stay above the game and remain reachable on small displays. */
-#createSizeScreen,#loadScreen,#settingsScreen,#creditsScreen,#worldGenScreen,#onboardingModal{
-  overflow:auto;
-  overscroll-behavior:contain;
+/* Shared front-door panel system. */
+.topo-subscreen{
+  position:fixed;inset:0;z-index:10020;display:none;align-items:center;justify-content:center;padding:clamp(10px,2.6vw,34px);
+  overflow:auto;overscroll-behavior:contain;background:linear-gradient(180deg,rgba(5,8,13,.28),rgba(8,4,2,.56));
+  color:var(--topo-cream);isolation:isolate
 }
+.topo-subscreen::before{
+  content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:radial-gradient(circle at 50% 43%,transparent 0 24%,rgba(3,2,1,.22) 66%,rgba(3,2,1,.52) 100%)
+}
+.topo-panel{
+  --topo-panel-width:760px;position:relative;width:min(var(--topo-panel-width),calc(100vw - 2 * clamp(10px,2.6vw,34px)));
+  max-height:calc(100vh - 2 * clamp(10px,2.6vw,34px));display:flex;flex-direction:column;overflow:hidden;
+  background:
+    linear-gradient(90deg,rgba(255,255,255,.018) 50%,transparent 50%) 0 0/16px 16px,
+    linear-gradient(rgba(255,255,255,.014) 50%,transparent 50%) 0 0/16px 16px,
+    var(--topo-panel);
+  border:4px solid #090503;outline:2px solid #6b472d;box-shadow:10px 10px 0 rgba(0,0,0,.72),inset 0 0 0 2px #2f2016;
+  image-rendering:pixelated
+}
+.topo-panel::after{content:'';position:absolute;inset:5px;pointer-events:none;border:1px solid rgba(255,218,139,.08);z-index:5}
+.topo-panel-header{
+  flex:0 0 auto;display:flex;align-items:flex-start;justify-content:space-between;gap:22px;padding:clamp(15px,2.2vw,25px);
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.045),transparent 45%),
+    repeating-linear-gradient(90deg,#21140c 0 31px,#2a190f 31px 32px);
+  border-bottom:4px solid #080503;box-shadow:inset 0 -2px 0 #5b3924
+}
+.topo-panel-header>div{min-width:0}
+.topo-panel-kicker{display:block;margin-bottom:7px;font-family:'Press Start 2P',monospace;font-size:clamp(6px,.65vw,8px);line-height:1.4;color:#79bd43;letter-spacing:.12em}
+.topo-panel-header h2{margin:0;color:var(--topo-gold);font-family:'Press Start 2P',monospace;font-size:clamp(13px,1.45vw,21px);line-height:1.35;text-shadow:3px 3px 0 #000;letter-spacing:.025em}
+.topo-panel-header p{max-width:650px;margin:9px 0 0;color:#bfae8d;font-family:'VT323',monospace;font-size:clamp(15px,1.45vw,20px);line-height:1.1}
+.topo-back-button,.topo-action-button,.topo-footer-button,.topo-enter-farm{
+  border:2px solid #735239;border-bottom-width:4px;background:#160e09;color:#e6d5ad;box-shadow:3px 3px 0 #050302;
+  font-family:'Press Start 2P',monospace;cursor:pointer;text-shadow:1px 1px 0 #000
+}
+.topo-back-button{flex:none;display:flex;align-items:center;gap:9px;padding:9px 10px;font-size:7px}
+.topo-back-button kbd{padding:3px 4px;border:1px solid #6f5a3c;background:#090604;color:#a9956c;font:6px 'Press Start 2P',monospace}
+.topo-back-button:hover,.topo-back-button:focus-visible,.topo-action-button:hover,.topo-action-button:focus-visible,.topo-footer-button:hover,.topo-footer-button:focus-visible,.topo-enter-farm:hover,.topo-enter-farm:focus-visible{
+  outline:2px solid var(--topo-gold);outline-offset:2px;color:#fff6d9;border-color:#b8843f;transform:translate(1px,1px);box-shadow:1px 1px 0 #050302
+}
+.topo-panel-body{position:relative;flex:1 1 auto;min-height:0;padding:clamp(14px,2.2vw,24px);overflow:auto;scrollbar-color:#765033 #0a0705;scrollbar-width:thin}
+.topo-panel-footer{
+  flex:0 0 auto;min-height:42px;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:9px clamp(14px,2vw,22px);
+  border-top:3px solid #090503;background:#0d0906;color:#7f7158;font-family:'Press Start 2P',monospace;font-size:clamp(5px,.56vw,7px);line-height:1.5;letter-spacing:.025em
+}
+.topo-panel-footer>span:last-child{color:#b69955;text-align:right}
 
-@media (orientation:portrait), (max-width:700px){
-  .topo-main-options{
-    top:29%;
-    width:min(82vw,430px);
-    min-width:0;
-    gap:8px;
-  }
-  .topo-menu-option{
-    height:clamp(44px,6.4vh,54px);
-    min-height:44px;
-    font-size:clamp(9px,3vw,13px);
-  }
+/* NEW FARM. */
+.topo-world-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(10px,1.4vw,16px)}
+.topo-world-card{
+  position:relative;min-width:0;min-height:330px;display:flex;flex-direction:column;align-items:center;gap:9px;padding:16px 14px 14px;
+  border:3px solid #090503;border-top-color:#79543a;border-left-color:#60402c;background:linear-gradient(180deg,#281a11,#170f0a);
+  box-shadow:5px 5px 0 #080503;color:var(--topo-cream);text-align:center;cursor:pointer
+}
+.topo-world-card:hover,.topo-world-card:focus-visible,.topo-world-card.is-selected{outline:0;border-color:#79bd43;background:linear-gradient(180deg,#2d2412,#17200d);transform:translateY(-2px);box-shadow:5px 7px 0 #080503}
+.topo-world-card:hover .topo-choice-ant,.topo-world-card:focus-visible .topo-choice-ant,.topo-world-card.is-selected .topo-choice-ant{display:block}
+.topo-choice-ant{left:-22px;top:31px;transform:scale(.72);transform-origin:right center}
+.topo-world-tag{align-self:stretch;padding:6px 5px;background:#0c0805;border:1px solid #4e3826;color:#8d7958;font:6px/1.2 'Press Start 2P',monospace;letter-spacing:.06em}
+.topo-world-card.is-recommended .topo-world-tag{background:#2f6f39;color:#d9ffcf;border-color:#79bd43}
+.topo-world-card>strong{margin-top:3px;color:var(--topo-gold);font:clamp(12px,1vw,15px)/1 'Press Start 2P',monospace;text-shadow:2px 2px 0 #000}
+.topo-world-size{color:#fff4d7;font:clamp(18px,2vw,27px)/1 'VT323',monospace;letter-spacing:.05em}
+.topo-world-art{position:relative;width:100%;height:105px;overflow:hidden;border:2px solid #080503;background:linear-gradient(#243c5d 0 35%,#5b8437 35% 43%,#8c5932 43% 68%,#b47b48 68%);box-shadow:inset 0 0 0 2px rgba(255,255,255,.04)}
+.topo-world-art::before{content:'';position:absolute;left:47%;top:42%;width:9%;height:58%;background:#160c08;box-shadow:-14px 17px 0 #160c08,14px 36px 0 #160c08}
+.topo-world-art::after{content:'';position:absolute;left:0;right:0;top:35%;height:8%;background:repeating-linear-gradient(90deg,#4f852e 0 13px,#3e7226 13px 26px)}
+.topo-world-art i{position:absolute;z-index:2;width:7px;height:5px;background:#20120c;border-radius:0;box-shadow:7px 1px 0 -1px #6d431d,12px 0 0 #20120c}
+.topo-world-art i:nth-child(1){left:18%;top:26%}.topo-world-art i:nth-child(2){right:21%;top:29%}.topo-world-art i:nth-child(3){left:63%;top:70%}
+.topo-world-art-small{width:78%}.topo-world-art-medium{width:90%}.topo-world-art-big{width:100%}
+.topo-world-copy{min-height:52px;color:#b9a989;font:16px/1.05 'VT323',monospace}
+.topo-world-facts{width:100%;margin-top:auto;display:flex;justify-content:space-between;gap:6px;color:#796b54;font:5px/1.4 'Press Start 2P',monospace}
+.topo-world-facts b:last-child{color:#74b857}
+
+/* LOAD FARM. */
+.topo-save-list{display:flex;flex-direction:column;gap:12px}
+.topo-save-card{display:grid;grid-template-columns:150px minmax(0,1fr) auto;gap:14px;align-items:center;padding:11px;border:3px solid #080503;background:linear-gradient(90deg,#22160f,#160e09);box-shadow:4px 4px 0 #090503}
+.topo-save-card:hover,.topo-save-card:focus-within{border-color:#6f8f45}
+.topo-save-preview{position:relative;height:80px;overflow:hidden;border:2px solid #080503;background:linear-gradient(#203554 0 38%,#487b2e 38% 48%,#8d5b35 48% 72%,#b17a48 72%);image-rendering:pixelated}
+.topo-save-preview::before{content:'';position:absolute;left:47%;top:46%;width:12px;height:54%;background:#160c08;box-shadow:-17px 17px 0 #160c08,17px 31px 0 #160c08}
+.topo-save-preview::after{content:'';position:absolute;left:12px;right:12px;top:12px;height:2px;background:rgba(255,255,255,.28);box-shadow:31px 11px 0 -1px #ffe08b,83px 5px 0 -1px #fff}
+.topo-save-info{min-width:0}.topo-save-info strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--topo-gold);font:8px/1.45 'Press Start 2P',monospace}.topo-save-info p{margin:5px 0 0;color:#c7b797;font:17px/1 'VT323',monospace}.topo-save-info small{display:block;margin-top:6px;color:#74654f;font:12px/1 'VT323',monospace}
+.topo-save-actions{display:flex;gap:7px}.topo-save-actions button{min-height:39px;padding:8px 10px;border:2px solid #60432d;border-bottom-width:3px;background:#17100b;color:#e8d9b7;font:7px 'Press Start 2P',monospace;cursor:pointer}.topo-save-actions .load{background:#2b7f46;border-color:#68b979;color:#f1ffe9}.topo-save-actions .delete{color:#c38a7d}.topo-save-actions button:hover,.topo-save-actions button:focus-visible{outline:2px solid var(--topo-gold);outline-offset:1px}
+.topo-empty-save{padding:30px 18px;text-align:center;border:3px dashed #4c3828;background:#110b08}.topo-empty-save strong{display:block;color:var(--topo-gold);font:10px 'Press Start 2P',monospace}.topo-empty-save p{margin:11px 0 18px;color:#9e8c6e;font:18px 'VT323',monospace}.topo-empty-save button{min-height:44px}
+
+/* SETTINGS. */
+.topo-settings-body{display:grid;grid-template-columns:1.05fr .95fr;gap:15px;align-items:start}
+.topo-settings-section{min-width:0;border:3px solid #080503;background:#130d09;box-shadow:inset 0 0 0 1px #3c291c}
+.topo-section-heading{display:flex;align-items:center;gap:10px;padding:12px;border-bottom:2px solid #080503;background:#21150e}.topo-section-rune{display:grid;place-items:center;width:34px;height:34px;flex:none;background:#314d27;border:2px solid #080503;color:#a8e66f;font:17px monospace}.topo-section-heading h3{margin:0;color:var(--topo-gold);font:8px/1.4 'Press Start 2P',monospace}.topo-section-heading p{margin:3px 0 0;color:#83745c;font:14px/1 'VT323',monospace}
+.topo-setting-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:62px;padding:10px 11px;border-bottom:1px solid #38271c}.topo-setting-row:last-child{border-bottom:0}.topo-setting-row>div:first-child{min-width:0}.topo-setting-row strong{display:block;color:#ddcfad;font:6px/1.35 'Press Start 2P',monospace}.topo-setting-row small{display:block;margin-top:4px;color:#7f7058;font:13px/1 'VT323',monospace}
+.topo-segmented{display:flex;flex:none;border:2px solid #080503;background:#080503}.topo-segmented button{min-height:34px;padding:7px 8px;border:0;border-right:1px solid #38271c;background:#17100b;color:#8f8067;font:5px 'Press Start 2P',monospace;cursor:pointer}.topo-segmented button:last-child{border-right:0}.topo-segmented button[aria-pressed=true]{background:#2f7f46;color:#efffe7;box-shadow:inset 0 -3px 0 #173f24}.topo-segmented button:focus-visible{outline:2px solid var(--topo-gold);outline-offset:-2px}
+.topo-switch{position:relative;flex:none;width:76px;height:34px;padding:0 8px 0 36px;border:2px solid #080503;background:#28140f;color:#bf8378;font:6px 'Press Start 2P',monospace;cursor:pointer}.topo-switch span{position:absolute;left:5px;top:5px;width:20px;height:20px;background:#7b3f35;border:2px solid #080503}.topo-switch[aria-checked=true]{padding:0 34px 0 7px;background:#214d2e;color:#b9edbd}.topo-switch[aria-checked=true] span{left:49px;background:#64b56f}.topo-switch:focus-visible{outline:2px solid var(--topo-gold);outline-offset:2px}
+.topo-action-button{min-height:38px;padding:8px 10px;font-size:6px;line-height:1.25}.topo-danger-soft{color:#e4a88f!important}.topo-danger{background:#32120f!important;border-color:#873b31!important;color:#ffd0c6!important}
+.topo-settings-farms{padding:10px;border-bottom:2px solid #080503}.topo-farm-summary{display:flex;align-items:center;gap:10px;padding:8px;background:#0c0806;border:1px solid #39281d}.topo-farm-summary+.topo-farm-summary{margin-top:7px}.topo-farm-dot{width:10px;height:10px;flex:none;background:#2de67a;box-shadow:0 0 0 2px #081009}.topo-farm-dot.archive{background:#b58a4a}.topo-farm-copy{min-width:0;flex:1}.topo-farm-copy strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#dacaab;font:6px/1.3 'Press Start 2P',monospace}.topo-farm-copy small{display:block;margin-top:3px;color:#7e7059;font:13px 'VT323',monospace}.topo-farm-summary button{width:31px;height:31px;padding:0;border:2px solid #513829;background:#160e09;color:#b99d6c;cursor:pointer}.topo-farm-summary button:focus-visible{outline:2px solid var(--topo-gold)}
+.topo-data-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px}.topo-footer-button{min-height:28px;padding:6px 8px;font-size:5px}
+
+/* CREDITS. */
+.topo-credits-body{text-align:center}.topo-credit-mark{position:relative;display:inline-flex;flex-direction:column;align-items:center;margin:4px auto 13px;padding-top:48px;color:var(--topo-gold);font-family:'Press Start 2P',monospace}.topo-credit-mark strong{font-size:clamp(18px,2.5vw,30px);text-shadow:3px 3px 0 #000}.topo-credit-mark b{margin-top:7px;color:#eadcb9;font-size:clamp(7px,.8vw,10px);letter-spacing:.24em}.topo-credit-helmet{position:absolute;top:5px;width:62px;height:24px;background:#efb900;border:3px solid #080503;box-shadow:inset 0 4px 0 #ffe36a,0 6px 0 -1px #a86c00}.topo-credit-helmet::before{content:'';position:absolute;left:-13px;right:-13px;bottom:-7px;height:9px;background:#d99c00;border:3px solid #080503}.topo-credit-helmet::after{content:'';position:absolute;left:24px;top:-11px;width:9px;height:13px;background:#ffe36a;border:3px solid #080503;border-bottom:0}
+.topo-credit-lead{margin:4px 0 16px;color:#89795f;font:7px 'Press Start 2P',monospace}.topo-credit-lead strong{color:#d7c492}.topo-credit-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;text-align:left}.topo-credit-grid div{padding:10px;border:2px solid #080503;background:#100a07}.topo-credit-grid span{display:block;color:#79bd43;font:6px 'Press Start 2P',monospace}.topo-credit-grid b{display:block;margin-top:7px;color:#c9b99b;font:15px/1.05 'VT323',monospace;font-weight:400}.topo-credit-thanks{margin:16px 0 10px;color:#bba989;font:18px/1.15 'VT323',monospace}.topo-build-stamp{display:inline-block;padding:7px 9px;border:1px solid #4a3625;color:#73664f;background:#0d0906;font:5px 'Press Start 2P',monospace}
+
+/* First steps and world generation. */
+.topo-ready-light{align-self:center;padding:7px 9px;border:2px solid #245633;background:#173622;color:#9be8a5;font:6px 'Press Start 2P',monospace;box-shadow:0 0 12px rgba(66,214,100,.2)}
+.topo-first-steps{display:flex;flex-direction:column;gap:10px}.topo-first-steps article{display:grid;grid-template-columns:38px 52px 1fr;align-items:center;gap:12px;padding:10px;border:2px solid #080503;background:#130d09}.topo-step-number{color:#5e513e;font:7px 'Press Start 2P',monospace}.topo-first-steps strong{color:var(--topo-gold);font:8px 'Press Start 2P',monospace}.topo-first-steps p{margin:5px 0 0;color:#ad9b7d;font:16px/1 'VT323',monospace}.topo-first-steps p b{color:#fff1c7}.topo-step-icon{position:relative;width:46px;height:46px;border:3px solid #080503;background:#21150e}.topo-honey-icon::before{content:'';position:absolute;left:13px;top:12px;width:15px;height:19px;background:#f5ba13;border:3px solid #080503;box-shadow:inset 3px 3px 0 #ffe571}.topo-honey-icon::after{content:'';position:absolute;left:17px;top:6px;width:7px;height:8px;background:#f5ba13;border:3px solid #080503}.topo-dig-icon::before{content:'';position:absolute;left:20px;top:5px;width:5px;height:33px;background:#a66d3d;transform:rotate(-34deg);box-shadow:2px 0 0 #080503}.topo-dig-icon::after{content:'';position:absolute;left:7px;top:6px;width:28px;height:6px;background:#c9c3b8;border:2px solid #080503;transform:rotate(-12deg)}.topo-watch-icon::before{content:'';position:absolute;left:7px;top:14px;width:27px;height:14px;background:#eee1bb;border:3px solid #080503}.topo-watch-icon::after{content:'';position:absolute;left:18px;top:17px;width:7px;height:7px;background:#182438;border:2px solid #080503}.topo-onboarding-footer{min-height:54px}.topo-enter-farm{min-height:36px;padding:9px 13px;background:#286f3d;border-color:#5fb873;color:#efffe8;font-size:7px}
+.topo-generation-header{align-items:center}.topo-generation-pulse{width:18px;height:18px;background:#79bd43;border:3px solid #080503;box-shadow:0 0 0 4px #23411e}.topo-generation-body{text-align:center}.topo-generation-meta{display:flex;justify-content:space-between;gap:12px;color:#85765e;font:6px 'Press Start 2P',monospace}.topo-generation-window{position:relative;height:116px;margin:15px 0;border:3px solid #080503;overflow:hidden;background:linear-gradient(#243b5c 0 34%,#4d812f 34% 43%,#8a5732 43% 62%,#b27b48 62%);box-shadow:inset 0 0 0 2px rgba(255,255,255,.04)}.topo-generation-window::before{content:'';position:absolute;left:48%;top:41%;width:16px;height:62%;background:#160c08;box-shadow:-20px 18px 0 #160c08,20px 38px 0 #160c08}.topo-generation-window span{position:absolute;width:8px;height:8px;background:#cd9634;border:2px solid #080503;animation:topoSeedDrop 1.4s steps(5,end) infinite}.topo-generation-window span:nth-child(1){left:18%;top:50%;animation-delay:-.2s}.topo-generation-window span:nth-child(2){left:34%;top:65%;animation-delay:-.6s}.topo-generation-window span:nth-child(3){left:61%;top:54%;animation-delay:-1s}.topo-generation-window span:nth-child(4){left:76%;top:71%;animation-delay:-.35s}.topo-generation-window span:nth-child(5){left:53%;top:77%;animation-delay:-.8s}@keyframes topoSeedDrop{50%{transform:translateY(8px);opacity:.55}}
+.topo-progress-track{position:relative;height:25px;border:3px solid #080503;background:#0c0806;overflow:hidden}.topo-progress-track #genBar{position:absolute;inset:0 auto 0 0;width:0;background:repeating-linear-gradient(90deg,#2f9b55 0 18px,#3dae61 18px 36px);transition:width .15s linear;box-shadow:inset 0 3px 0 #83d38e}.topo-progress-track #genBarText{position:absolute;inset:0;display:grid;place-items:center;color:#fff7da;text-shadow:2px 2px 0 #000;font:7px 'Press Start 2P',monospace}.topo-generation-status{margin-top:14px;color:var(--topo-gold);font:9px 'Press Start 2P',monospace}.topo-generation-sub{margin-top:7px;color:#9c8b6d;font:16px 'VT323',monospace}.topo-generation-legend{display:flex;justify-content:center;gap:18px;margin-top:15px;color:#75664f;font:5px 'Press Start 2P',monospace}.topo-generation-legend span{display:flex;align-items:center;gap:5px}.topo-generation-legend i{width:9px;height:9px;border:1px solid #080503}.topo-generation-legend .soil{background:#9a6037}.topo-generation-legend .plants{background:#5d9d38}.topo-generation-legend .treasures{background:#d6a82f}
+
+/* Settings state. */
+html[data-topo-ui=compact] .topo-panel{zoom:.9}
+html[data-topo-ui=large] .topo-panel{zoom:1.1}
+html[data-topo-contrast=true] .topo-panel{outline-color:#ffd95c;background:#090604;box-shadow:10px 10px 0 #000,inset 0 0 0 2px #8c673a}
+html[data-topo-contrast=true] .topo-panel-header p,html[data-topo-contrast=true] .topo-world-copy,html[data-topo-contrast=true] .topo-setting-row small,html[data-topo-contrast=true] .topo-credit-grid b{color:#f1e4c4}
+html[data-topo-contrast=true] .topo-panel-footer{color:#d2bf94}
+
+@media (orientation:portrait),(max-width:700px){
+  .topo-main-options{top:29%;width:min(82vw,430px);min-width:0;gap:8px}
+  .topo-menu-option{height:clamp(44px,6.4vh,54px);min-height:44px;font-size:clamp(9px,3vw,13px)}
   .topo-menu-ant{left:-31px;transform:translateY(-50%) scale(.82);transform-origin:right center}
   .topo-intro-skip,.topo-replay-intro{font-size:7px;padding:8px}
-  #createSizeScreen>div{margin:auto}
-  #createSizeScreen>div>div:nth-child(2){grid-template-columns:1fr!important}
+  .topo-subscreen{padding:10px;align-items:flex-start}
+  .topo-panel{width:calc(100vw - 20px);max-height:calc(100vh - 20px);margin:auto;zoom:1!important}
+  .topo-panel-header{padding:14px;gap:10px}.topo-panel-header h2{font-size:13px}.topo-panel-header p{font-size:15px}.topo-panel-kicker{font-size:6px}
+  .topo-back-button{padding:8px;min-height:44px}.topo-back-button kbd{display:none}
+  .topo-panel-body{padding:12px}.topo-panel-footer{min-height:44px;flex-wrap:wrap;font-size:5px}.topo-panel-footer>span:last-child{text-align:left}
+  .topo-world-grid{grid-template-columns:1fr;gap:10px}.topo-world-card{min-height:236px;padding:12px}.topo-world-art{height:69px;max-width:302px}.topo-world-copy{min-height:0}.topo-choice-ant{left:-13px}
+  .topo-save-card{grid-template-columns:96px minmax(0,1fr);gap:9px}.topo-save-preview{height:70px}.topo-save-actions{grid-column:1/-1}.topo-save-actions button{flex:1;min-height:44px}
+  .topo-settings-body{grid-template-columns:1fr}.topo-setting-row{align-items:flex-start;flex-direction:column}.topo-segmented,.topo-switch,.topo-action-button{width:100%}.topo-segmented button{flex:1;min-height:44px}.topo-switch{height:44px}.topo-switch span{top:9px}.topo-switch[aria-checked=true] span{left:calc(100% - 27px)}.topo-action-button{min-height:44px}.topo-data-actions{grid-template-columns:1fr}
+  .topo-credit-grid{grid-template-columns:1fr}.topo-credit-mark{padding-top:43px}.topo-first-steps article{grid-template-columns:30px 45px 1fr;gap:8px}.topo-first-steps p{font-size:14px}.topo-step-icon{width:42px;height:42px}.topo-ready-light{display:none}.topo-onboarding-footer{align-items:stretch}.topo-enter-farm{width:100%;min-height:44px}
 }
 @media (max-height:570px) and (orientation:landscape){
-  .topo-main-options{top:30%;gap:4px;width:min(39vw,430px)}
-  .topo-menu-option{height:44px;min-height:44px;font-size:8px}
-  .topo-replay-intro{top:10px;bottom:auto}
+  .topo-main-options{top:30%;gap:4px;width:min(39vw,430px)}.topo-menu-option{height:44px;min-height:44px;font-size:8px}.topo-replay-intro{top:10px;bottom:auto}
+  .topo-subscreen{padding:9px}.topo-panel{max-height:calc(100vh - 18px);zoom:1!important}.topo-panel-header{padding:9px 13px}.topo-panel-header p{display:none}.topo-panel-header h2{font-size:11px}.topo-panel-kicker{margin-bottom:3px}.topo-back-button{min-height:44px}.topo-panel-body{padding:10px}.topo-panel-footer{min-height:30px;padding:5px 12px}
+  .topo-world-card{min-height:230px}.topo-settings-body{grid-template-columns:1fr 1fr}.topo-credit-mark{margin-top:0}
 }
-@media (max-height:340px) and (orientation:landscape){
-  .topo-main-options{top:26%;gap:3px}
-  .topo-menu-option{height:38px;min-height:38px}
+@media (max-height:340px) and (orientation:landscape){.topo-main-options{top:26%;gap:3px}.topo-menu-option{height:38px;min-height:38px}.topo-panel-footer{display:none}}
+@media (prefers-reduced-motion:reduce){.topo-menu-option,.topo-intro-skip,.topo-replay-intro,.topo-world-card,.topo-back-button,.topo-action-button,.topo-footer-button,.topo-enter-farm{transition:none!important}.topo-generation-window span{animation:none!important}}
+html[data-topo-motion=reduced] .topo-menu-option,html[data-topo-motion=reduced] .topo-intro-skip,html[data-topo-motion=reduced] .topo-replay-intro,html[data-topo-motion=reduced] .topo-world-card,html[data-topo-motion=reduced] .topo-generation-window span{animation:none!important;transition:none!important}
+
+/* The studio card yields to the viewport-sized reveal canvas; no fixed 640×360 title copy is shown. */
+#splashScreen.is-menu-reveal .topo-startup-stage{opacity:0;visibility:hidden}
+#splashScreen.is-menu-reveal .topo-intro-skip{opacity:0;pointer-events:none}
+#splashScreen.is-menu-reveal{box-shadow:none}
+
+/* CSS zoom is deliberately constrained before a scaled panel could exceed the viewport. */
+@media (min-width:701px) and (max-width:1100px){
+  html[data-topo-ui="large"] .topo-panel,html[data-topo-ui="large"] .topo-onboarding-card,html[data-topo-ui="large"] .topo-gen-card{zoom:1.04}
+  html[data-topo-ui="compact"] .topo-panel,html[data-topo-ui="compact"] .topo-onboarding-card,html[data-topo-ui="compact"] .topo-gen-card{zoom:.94}
 }
-@media (prefers-reduced-motion:reduce){
-  .topo-menu-option,.topo-intro-skip,.topo-replay-intro{transition:none!important}
+
+/* style.css intentionally hides the in-game HUD header; menu-dialog headers are a separate surface. */
+header.topo-panel-header{display:flex!important;height:auto!important}
+@media (orientation:portrait),(max-width:700px){
+  header.topo-panel-header{display:grid!important;grid-template-columns:minmax(0,1fr) auto;align-items:start;flex-wrap:nowrap}
+  .topo-panel-header>.topo-back-button{grid-column:2;grid-row:1;align-self:start}
+}
+.topo-action-button:disabled,.topo-data-actions button:disabled{opacity:.38;cursor:not-allowed;filter:saturate(.35);box-shadow:none}
+/* Scale remains real on small screens: compensate the layout box so enlarged UI never clips. */
+@media (max-width:700px){
+  html[data-topo-ui="large"] .topo-panel,html[data-topo-ui="large"] .topo-onboarding-card,html[data-topo-ui="large"] .topo-gen-card{zoom:1.04!important;width:min(calc((100vw - 20px)/1.04),var(--topo-panel-width,900px));max-height:calc((100vh - 20px)/1.04)}
+  html[data-topo-ui="compact"] .topo-panel,html[data-topo-ui="compact"] .topo-onboarding-card,html[data-topo-ui="compact"] .topo-gen-card{zoom:.94!important}
+}
+@media (min-width:701px) and (max-width:1100px){
+  html[data-topo-ui="large"] .topo-panel,html[data-topo-ui="large"] .topo-onboarding-card,html[data-topo-ui="large"] .topo-gen-card{zoom:1.04!important;width:min(calc((100vw - 36px)/1.04),var(--topo-panel-width,900px));max-height:calc((100vh - 36px)/1.04)}
+  html[data-topo-ui="compact"] .topo-panel,html[data-topo-ui="compact"] .topo-onboarding-card,html[data-topo-ui="compact"] .topo-gen-card{zoom:.94!important}
 }
