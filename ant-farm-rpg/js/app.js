@@ -181,7 +181,12 @@ function getMinZoom(){
   // Alejarse tampoco debe convertir la niebla en un enorme pozo negro. El zoom mínimo se abre junto
   // con el frente conocido y conserva unas cuatro celdas de respiración por delante.
   const unlocked=Math.max(VIEW_H/1.38,exploredBottomY()+CELL*4);
-  return clamp(VIEW_H/unlocked,.6,1.38);
+  const fitDepth=clamp(VIEW_H/unlocked,.6,1.38);
+  // A narrow/deep world used to shrink into the middle of the frame at 0.60 zoom, revealing hundreds
+  // of pixels of canvas-wrap background on both sides. Keep the logical viewport covered horizontally:
+  // getPanBounds can then crop real world pixels, but can never centre the world inside non-world gutters.
+  const fitWidth=VIEW_W/Math.max(CELL,W);
+  return Math.max(fitDepth,fitWidth);
 }
 function getPanBounds(){
   const vw=VIEW_W/view.zoom,vh=VIEW_H/view.zoom;
@@ -1023,31 +1028,38 @@ function updateSoilPhysics(dt){ updateFallingSand(dt); }
 
 // === RULER ADAPTATIVO A CÁMARA - Terraria Depth Meter ===
 
-    // Click/drag en la regla como scrollbar de página
+    // The existing ruler is also the scrollbar: click, drag, wheel and keyboard all move the same camera.
+    // Pointer capture keeps a drag alive outside the narrow rail without adding a duplicate control.
     (function(){
       const ruler=document.querySelector('.depth-ruler');
       if(!ruler || ruler._hasDrag) return;
       ruler._hasDrag=true;
-      let dragging=false;
+      let pointerId=null;
       function yToWorld(clientY){
-        // misma escala que las marcas: 0 arriba del todo de la barra = el piso (SURFACE_Y), abajo = el
-        // fondo del mapa. Si se reparte el mundo entero, pinchar en el numero 10 no llevaba al 10.
         const rect=ruler.getBoundingClientRect();
         const pct=Math.max(0, Math.min(1, (clientY-rect.top)/Math.max(1,rect.height)));
         const _pisos=Math.max(2, ROWS-SURFACE_ROW);
         const worldY=SURFACE_Y + pct*_pisos*CELL;
         return worldY-VIEW_H/(view.zoom||1)/2;
       }
-      ruler.addEventListener('mousedown',e=>{ dragging=true; view.y=yToWorld(e.clientY); clampView(); updateDepthRuler(); e.preventDefault(); });
-      window.addEventListener('mousemove',e=>{ if(dragging){ view.y=yToWorld(e.clientY); clampView(); updateDepthRuler(); }});
-      window.addEventListener('mouseup',()=>{ dragging=false; });
-      ruler.addEventListener('click',e=>{
-        if(e.target.closest&&e.target.closest('.depth-mark'))return; // ya manejado
-        view.y=yToWorld(e.clientY); clampView(); updateDepthRuler();
+      const travel=clientY=>{view.y=yToWorld(clientY);clampView();_rulerSig='';updateDepthRuler();};
+      ruler.addEventListener('pointerdown',e=>{
+        pointerId=e.pointerId;travel(e.clientY);ruler.focus({preventScroll:true});
+        try{ruler.setPointerCapture(e.pointerId);}catch(_){} e.preventDefault();e.stopPropagation();
       });
+      ruler.addEventListener('pointermove',e=>{if(pointerId===e.pointerId){travel(e.clientY);e.preventDefault();}});
+      const stop=e=>{if(pointerId===e.pointerId){pointerId=null;try{ruler.releasePointerCapture(e.pointerId);}catch(_){}}};
+      ruler.addEventListener('pointerup',stop);ruler.addEventListener('pointercancel',stop);
       ruler.addEventListener('wheel',e=>{
-        view.y += e.deltaY*1.4/(view.zoom||1); clampView(); updateDepthRuler(); e.preventDefault();
+        view.y += e.deltaY*1.4/(view.zoom||1);clampView();_rulerSig='';updateDepthRuler();e.preventDefault();e.stopPropagation();
       }, {passive:false});
+      ruler.addEventListener('keydown',e=>{
+        const b=getPanBounds(),page=VIEW_H/(view.zoom||1)*.82,step=CELL*2;let y=view.y;
+        if(e.key==='ArrowUp')y-=step;else if(e.key==='ArrowDown')y+=step;
+        else if(e.key==='PageUp')y-=page;else if(e.key==='PageDown')y+=page;
+        else if(e.key==='Home')y=b.minY;else if(e.key==='End')y=b.maxY;else return;
+        view.y=clamp(y,b.minY,b.maxY);_rulerSig='';updateDepthRuler();e.preventDefault();e.stopPropagation();
+      });
     })();
 
 let _rulerEl=null, _rulerSig='';
@@ -1059,17 +1071,26 @@ function updateDepthRuler(){
     // Topo: leer/limpiar estilos cada frame provocaba relayout 60 veces por segundo.
     // Las marcas solo se mueven si se mueve la camara, el zoom o el tamano del mundo.
     refreshExploration();
-    const _sig=(view.y|0)+'|'+((view.zoom||1)*100|0)+'|'+ROWS+'|'+_exploredDeepest+'|'+(typeof window!=='undefined'?window.innerWidth:0);
+    const _sig=(view.y|0)+'|'+((view.zoom||1)*100|0)+'|'+ROWS+'|'+_exploredDeepest+'|'+(typeof window!=='undefined'?(window.innerWidth+'x'+window.innerHeight):'0');
     if(_rulerSig===_sig) return;
     _rulerSig=_sig;
+    const _wrap=document.getElementById('canvasWrap');
+    if(_wrap)ruler.style.setProperty('--depth-frame-width',Math.round(_wrap.clientWidth)+'px');
     // LOS NUMEROS CUENTAN DESDE EL PISO. La hilera del cesped es la 0 y hacia abajo 5, 10, 15...; arriba
     // del piso no hay profundidad que medir, hay cielo, y por eso antes el «0» colgaba en el aire y el
     // reparto de la barra se comia las tres filas del prado. Los materiales salen del mapa de verdad (y
     // siguen valiendo cuando el mundo crece), no de una lista fija que se quedo corta al expandir.
     const _pisos = Math.max(2, ROWS - SURFACE_ROW);
+    ruler.setAttribute('aria-valuemax',String(_pisos-1));
     const _paso = _pisos>96? 25 : _pisos>60? 15 : _pisos>34? 10 : 5;
     const levels=[]; for(let dv=0; dv<_pisos; dv+=_paso) levels.push(dv);
     if(levels[levels.length-1] < _pisos-2) levels.push(_pisos-1);
+    for(const stale of ruler.querySelectorAll('.depth-mark')){
+      const m=String(stale.className).match(/depth-mark-(\d+)/);if(m&&+m[1]>=levels.length)stale.remove();
+    }
+    for(const stale of ruler.querySelectorAll('.depth-line')){
+      const m=String(stale.className).match(/depth-line-(\d+)/);if(m&&+m[1]>=levels.length)stale.remove();
+    }
     // LA BARRA TAMBIEN DICE HASTA DONDE SE PUEDE BAILAR. Con el mundo pequeno (448 px de mapa) y una pantalla
     // de 576, la camara no puede centrar nada por debajo de la fila 4: pinchar «15» se quedaba en el borde y
     // el numero parecia mentir (medido en Chrome: el piso decia 336 y la camara paraba en 288). Los pisos que
@@ -1145,8 +1166,13 @@ function updateDepthRuler(){
     const bPct = Math.max(0, Math.min(1, (viewTop+viewH)/totalH2));
     const rulerH2 = ruler.clientHeight||720;
     vp.style.top = (tPct*rulerH2)+'px';
-    vp.style.height = Math.max(14, (bPct-tPct)*rulerH2)+'px';
-    vp.style.opacity='0.55';
+    vp.style.height = Math.max(18, (bPct-tPct)*rulerH2)+'px';
+    vp.style.opacity='1';
+    const current=Math.max(0,Math.min(_pisos-1,Math.floor((view.y+viewH/2-SURFACE_Y)/CELL)));
+    ruler.setAttribute('aria-valuenow',String(current));
+    ruler.setAttribute('aria-valuetext',current?('Depth '+current):'Surface');
+    const cur=document.getElementById('depthCursor'),val=document.getElementById('depthCursorVal');
+    if(cur)cur.style.top=((tPct+bPct)*.5*rulerH2)+'px';if(val)val.textContent=String(current);
   }catch(e){}
 }
 
@@ -1757,7 +1783,15 @@ function drawStructures(ctx,W,H,isMini){
       ctx.save();
       ctx.beginPath(); ctx.rect(x, y + h*(1-prog), w, h*prog); ctx.clip();
     }
-    if(s.type==='store'){
+    const _storeFull=s.type==='store'&&economyLedger.food>=capacidadAlmacen()*.72;
+    const _craftedNames=s.type==='store'&&(s.level||1)>1
+      ?['structure.granary',_storeFull?'structure.store_full':'structure.store']
+      :s.type==='store'&&_storeFull?['structure.store_full','structure.store']:['structure.'+s.type];
+    const _crafted=typeof colonyTexturePack!=='undefined'&&colonyTexturePack.drawFirst(ctx,_craftedNames,x,y,w,h);
+    if(_crafted){
+      // Every ant-built legacy structure is now selected by a stable atlas name. The code fallback below
+      // remains only for the image-loading frame or a decode failure, never as a second visual system.
+    }else if(s.type==='store'){
       // Passable larder: posts, lintel, shelves and clay bins around open tunnel cells. The room remains
       // traversable; unlike the old granary, its target is not replaced by a solid rectangle.
       ctx.fillStyle='#2a190b'; ctx.fillRect(x,y,w,3); ctx.fillRect(x,y+h-3,w,3);
@@ -1825,13 +1859,16 @@ function drawColonyProjectSites(g,isMini){
     if(p.type==='clay_jars'){
       const store=storageStructure(true),sa=_storeAnchor(store);if(!sa)continue;
       const idx=completed.filter(q=>q.type==='clay_jars').findIndex(q=>q.id===p.id),jx=Math.round(sa.x-24+idx*17),jy=Math.round(sa.y+9);
-      if(!atlas(economyLedger.food>=capacidadAlmacen()*.72?'project.clay_jars_full':'project.clay_jars',jx-10,jy-17,22,22)){
+      const jarFill=capacidadAlmacen()?economyLedger.food/capacidadAlmacen():0;
+      const jarSprite=jarFill>=.72?'project.clay_jars_full':jarFill<.18?'project.clay_jars_empty':'project.clay_jars';
+      if(!atlas(jarSprite,jx-10,jy-17,22,22)){
         g.fillStyle='#24130a';g.fillRect(jx-4,jy-8,8,8);g.fillStyle='#b96f49';g.fillRect(jx-3,jy-7,6,6);g.fillStyle='#e0a176';g.fillRect(jx-2,jy-7,4,1);g.fillStyle='#2a160c';g.fillRect(jx-2,jy-10,4,3);
       }
     }else if(p.type==='forward_cache'){
       const left=p.site.c*CELL,top=p.site.r*CELL,w=(p.site.w||2)*CELL,h=(p.site.h||1)*CELL;
       const flooded=_projectSiteCells(p).some(q=>waterAtCell(q.c,q.r)>=WATER_AVOID_LEVEL),operational=_projectSiteOperational(p);
-      const sprite=operational?'project.forward_cache':flooded?'state.cache_flooded':'state.cache_disabled';
+      const stocked=operational&&_protectedLotTotal(p.id)>=3;
+      const sprite=operational?(stocked?'project.forward_cache_full':'project.forward_cache'):flooded?'state.cache_flooded':'state.cache_disabled';
       if(!atlas(sprite,left,top-8,w,h+8)){
         g.fillStyle='#2c180b';g.fillRect(left+1,top+3,w-2,3);g.fillRect(left+2,top+h-4,w-4,3);g.fillRect(left+2,top+3,3,h-5);g.fillRect(left+w-5,top+3,3,h-5);
         g.fillStyle='#8c5a28';g.fillRect(left+6,top+h-11,10,7);g.fillRect(left+w-16,top+h-11,10,7);g.fillStyle='#c58b42';g.fillRect(left+7,top+h-10,8,2);g.fillRect(left+w-15,top+h-10,8,2);
@@ -1839,7 +1876,8 @@ function drawColonyProjectSites(g,isMini){
       }
     }else if(p.type==='tunnel_braces'){
       const left=(p.site.c-2)*CELL,top=(p.site.r-1)*CELL,w=CELL*5,h=CELL*3;
-      if(!atlas('project.tunnel_braces',left,top,w,h)){
+      const braceSprite=p.reinforced?'project.tunnel_braces_reinforced':'project.tunnel_braces';
+      if(!atlas(braceSprite,left,top,w,h)){
         // Primitive fallback survives the one loading frame and a failed image decode.
         for(const dc of [-2,0,2]){
           const cc=p.site.c+dc;if(cc<0||cc>=COLS)continue;const bx=cc*CELL+7,bt=(p.site.r-1)*CELL+2,bh=CELL*3-4;
@@ -1848,7 +1886,8 @@ function drawColonyProjectSites(g,isMini){
         g.fillStyle='#43250f';g.fillRect(left+5,top+3,w+6,4);g.fillStyle='#b78347';g.fillRect(left+6,top+3,w+4,1);
       }
     }else if(p.type==='fungus_bed'){
-      const garden=fungusGardens.find(f=>f.projectId===p.id),sprite=garden&&garden.health<.48?'state.fungus_dry':'project.fungus_bed';
+      const garden=fungusGardens.find(f=>f.projectId===p.id);
+      const sprite=garden&&garden.health<.48?'crop.fungus_dry':garden&&garden.size<1.1?'crop.fungus_seedling':'crop.fungus_bed';
       if(!atlas(sprite,p.site.c*CELL-3,p.site.r*CELL-8,22,24)){
         g.fillStyle='#3c2518';g.fillRect(p.site.c*CELL+2,p.site.r*CELL+10,12,5);g.fillStyle='#b76f4c';g.fillRect(p.site.c*CELL+3,p.site.r*CELL+10,10,2);g.fillStyle='#6f8d42';g.fillRect(p.site.c*CELL+5,p.site.r*CELL+8,6,3);
       }
@@ -1858,12 +1897,13 @@ function drawColonyProjectSites(g,isMini){
   const def=projectDefinition(p.type),left=p.site.c*CELL,top=p.site.r*CELL,w=(p.site.w||1)*CELL,h=(p.site.h||1)*CELL,a=colonyProjectAnchor(p);
   if(!isExploredPixel(a.x,a.y))return;
   g.save();g.globalAlpha=.94;
-  const _worksite=atlas('project.worksite',left-1,top-Math.max(4,Math.round(h*.35)),w+2,h+Math.max(4,Math.round(h*.35)));
+  const _deliveredPreview=Object.values(p.delivered||{}).reduce((s,v)=>s+v,0);
+  const _worksite=atlas(_deliveredPreview>0?'project.worksite_foundation':'project.worksite',left-1,top-Math.max(4,Math.round(h*.35)),w+2,h+Math.max(4,Math.round(h*.35)));
   if(!_worksite){g.fillStyle='#120b06';g.fillRect(left-2,top-5,w+4,4);g.fillStyle='#4e3924';g.fillRect(left-1,top-4,w+2,2);g.strokeStyle=def.color;g.lineWidth=1;g.strokeRect(left+.5,top+.5,w-1,h-1);}
   const delivered=Object.values(p.delivered||{}).reduce((s,v)=>s+v,0),total=Object.values(p.cost||{}).reduce((s,v)=>s+v,0),build=p.workNeeded?Math.min(1,p.work/p.workNeeded):0;
   const progress=total?Math.min(.55,delivered/total*.55)+build*.45:build;
   g.fillStyle='#120b06';g.fillRect(left-2,top-6,w+4,4);g.fillStyle='#ffcc33';g.fillRect(left-1,top-5,Math.floor((w+2)*progress),2);
-  const cargoSprites={clay:'cargo.clay_brick',fiber:'material.fiber',wood:'cargo.beam',stone:'material.stone'};
+  const cargoSprites={clay:'cargo.clay_brick',fiber:'cargo.fiber_bundle',wood:'cargo.beam',stone:'cargo.stone_block'};
   const cols={clay:'#c47a52',fiber:'#8fbf5f',wood:'#a97a44',stone:'#8d8f91'};let n=0;
   for(const k of Object.keys(p.delivered||{}))for(let i=0;i<p.delivered[k];i++){
     const per=Math.max(1,Math.floor((w-3)/7)),px=left+1+(n%per)*7,py=top+h-7-Math.floor(n/per)*6;
@@ -4673,7 +4713,8 @@ function closeAntProfile(immediate=false){
 }
 function showAntProfile(ant){
   if(!ant||!isExploredPixel(ant.x,ant.y))return false;
-  try{cerrarInventario();}catch(e){} // uno u otro: la hoja del perfil y el inventario no se apilan
+  try{cerrarInventario(true);}catch(e){}
+  try{cerrarRoster(true);}catch(e){} // one right curtain: profiles never overlap another sheet
   const modal=document.getElementById('antProfile');
   const facCol=society.factions.find(f=>f.id===ant.faction)?.color || '#ffcc00';
   hudText('profileTitle', `${antDisplayName(ant)} [${ant.role}] F${ant.faction}`); document.getElementById('profileTitle').title=ant.nameMeaning||ant.id;
@@ -4800,20 +4841,9 @@ function showAntProfile(ant){
     modal.style.display='none';
     modal.removeAttribute('data-open');
   }
-  const calEl=document.getElementById('calendarWidget');
-  const calH = calEl ? calEl.offsetHeight : 180;
-  const calW = calEl ? calEl.offsetWidth : 168;
-  // dropdown exacto bajo calendario - mismo ancho dimensional (14px offset del widget + calH + gap 4)
-  const calTop = calEl ? calEl.getBoundingClientRect().top : 14;
-  // si getBoundingClientRect da 0 en headless, fallback a 14
-  const _topOff = (calTop && calTop>2 && calTop<100) ? Math.round(calTop) : 14;
-  modal.style.top = (_topOff + calH + 4) + 'px';
-  modal.style.right = '14px';
-  modal.style.left = 'auto';
-  modal.style.width = '326px';
-  modal.style.maxWidth = 'calc(100vw - 28px)';
-  modal.style.height = '';
-  modal.style.maxHeight = `calc(100vh - ${(_topOff + calH + 28)}px)`;
+  // One measured right-column geometry owns profiles, roster and stores.
+  _asentarBajoCalendario(modal);
+  modal.style.height='';
   modal.style.border = '4px solid #000';
   modal.style.borderTop = 'none';
   modal.style.boxShadow = '6px 6px 0 #000';
@@ -6462,6 +6492,15 @@ function _bloque(g,x,y,w,h,col,k){
 //   s    = tamano del caste (1 = media). Todo se redondea a entero: medio pixel de vaiven no
 //          se ve, solo cuesta relleno y saca borde borroso.
 //   mini = mapa de bolsillo: silueta de tres bloques y nada mas, que a ese tamano no hay patas.
+const _CARGO_TEXTURE={clay:'cargo.clay_brick',fiber:'cargo.fiber_bundle',wood:'cargo.beam',stone:'cargo.stone_block'};
+function _carriedTexture(ant){
+  if(ant&&ant.projectCargo)return _CARGO_TEXTURE[ant.projectCargo.kind]||'cargo.supply_crate';
+  if(ant&&ant.food&&!ant.food.isSoil){const k=foodKind(ant.food);return 'food.'+(k==='grassSeed'?'grain':k);}
+  return null;
+}
+function _drawCarriedTexture(g,ant,x,y,w,h){
+  const name=_carriedTexture(ant);return !!(name&&typeof colonyTexturePack!=='undefined'&&colonyTexturePack.draw(g,name,x,y,w,h));
+}
 function _hormigaVoxel(g, ant, s, mini, idx){
   const Q = v => Math.round(v*s);
   const st = ant.state, caste = ant.caste||'media', rol = ant.role||'FORRAJEADORA';
@@ -6501,7 +6540,10 @@ function _hormigaVoxel(g, ant, s, mini, idx){
     _bloque(g, Q(-3), Q(-2)+oy, Q(5), Q(4), base);
     _bloque(g, Q(2), Q(-3)+oy, Q(5), Q(5), _tilde16(base, 14));
     g.fillStyle=tinte; g.fillRect(Q(-2), Q(-2)+oy, Q(3), 1);
-    if(ant.projectCargo){const pc={clay:'#c47a52',fiber:'#8fbf5f',wood:'#a97a44',stone:'#9a9a9a'}[ant.projectCargo.kind]||'#f1c27d';g.fillStyle=pc;g.fillRect(Q(7),Q(-2)+oy,2,2);}
+    if(ant.projectCargo){
+      const pc={clay:'#c47a52',fiber:'#8fbf5f',wood:'#a97a44',stone:'#9a9a9a'}[ant.projectCargo.kind]||'#f1c27d';
+      if(!_drawCarriedTexture(g,ant,Q(6),Q(-4)+oy,5,5)){g.fillStyle=pc;g.fillRect(Q(7),Q(-2)+oy,2,2);}
+    }
     return;
   }
 
@@ -6519,7 +6561,10 @@ function _hormigaVoxel(g, ant, s, mini, idx){
     g.fillStyle='#2e1a0a'; g.fillRect(Q(6), Q(-2)+_brazo+oy, 3, 3); g.fillRect(Q(-9), Q(-2)-_brazo+oy, 3, 3);
     g.fillStyle=tinte; g.fillRect(Q(-5), Q(-4)+oy, Q(10), 1);
     if(ant.isQueen){ _bloque(g, Q(-4), Q(-16)+oy, Q(9), Q(4), '#ffcc00'); }
-    if(ant.projectCargo){const pc={clay:'#c47a52',fiber:'#8fbf5f',wood:'#a97a44',stone:'#9a9a9a'}[ant.projectCargo.kind]||'#f1c27d';_bloque(g,Q(8),Q(-4)+oy,Q(6),Q(6),pc);}
+    if(ant.projectCargo){
+      const pc={clay:'#c47a52',fiber:'#8fbf5f',wood:'#a97a44',stone:'#9a9a9a'}[ant.projectCargo.kind]||'#f1c27d';
+      if(!_drawCarriedTexture(g,ant,Q(6),Q(-8)+oy,Q(12),Q(12)))_bloque(g,Q(8),Q(-4)+oy,Q(6),Q(6),pc);
+    }
     return;
   }
 
@@ -6574,13 +6619,14 @@ function _hormigaVoxel(g, ant, s, mini, idx){
       g.fillStyle='#8b5a2b'; g.fillRect(Q(16)+_w, hy, 2, 1);
     } else {
       const _fd=foodDef(ant.food),_col=_fd.color;
-      _bloque(g,Q(15)+_w,hy-Q(2),Q(7),Q(8),_col);
-      g.fillStyle=_fd.cap;g.fillRect(Q(16)+_w,hy-Q(1),1,2);
+      if(!_drawCarriedTexture(g,ant,Q(13)+_w,hy-Q(7),Q(14),Q(14))){
+        _bloque(g,Q(15)+_w,hy-Q(2),Q(7),Q(8),_col);g.fillStyle=_fd.cap;g.fillRect(Q(16)+_w,hy-Q(1),1,2);
+      }
       // la cantidad NO se escribe: en grupo eran veinte numeritos flotando
     }
   } else if(ant.projectCargo){
     const _w=Math.round(Math.sin(_bp*1.4+i)*1.2),_col={clay:'#c47a52',fiber:'#8fbf5f',wood:'#a97a44',stone:'#9a9a9a'}[ant.projectCargo.kind]||'#f1c27d';
-    _bloque(g,Q(15)+_w,hy-Q(1),Q(7),Q(6),_col);g.fillStyle='#fff1ca';g.fillRect(Q(16)+_w,hy,2,1);
+    if(!_drawCarriedTexture(g,ant,Q(13)+_w,hy-Q(7),Q(14),Q(14))){_bloque(g,Q(15)+_w,hy-Q(1),Q(7),Q(6),_col);g.fillStyle='#fff1ca';g.fillRect(Q(16)+_w,hy,2,1);}
   } else if(mini && ant.isQueen){
     g.fillStyle='#ffcc00'; g.fillRect(Q(1), Q(-6)+oy, 2, 2);
   }
@@ -7116,7 +7162,12 @@ function drawFarm(ctx,W,H,isMini=false){
   const _cvx=useZoom?Math.floor(view.x):0,_cvy=useZoom?Math.floor(view.y):0;
   const _cvw=Math.ceil(useZoom?VIEW_W/view.zoom:W)+2,_cvh=Math.ceil(useZoom?VIEW_H/view.zoom:H)+2;
   if(useZoom){
-    ctx.save();ctx.scale(W/VIEW_W,H/VIEW_H);ctx.scale(view.zoom,view.zoom);
+    ctx.save();ctx.scale(W/VIEW_W,H/VIEW_H);
+    // A second, explicit aperture contains every transformed world/background/auxiliary pass in the
+    // logical 960×576 game frame. The backing bitmap also clips, but this keeps the contract local to
+    // the camera even after a deep-world resize changes its physical height.
+    ctx.beginPath();ctx.rect(0,0,VIEW_W,VIEW_H);ctx.clip();
+    ctx.scale(view.zoom,view.zoom);
     ctx.translate(Math.floor(-view.x),Math.floor(-view.y));ctx.imageSmoothingEnabled=false;
   }
   ctx.imageSmoothingEnabled=false;
@@ -7671,18 +7722,18 @@ function drawFarm(ctx,W,H,isMini=false){
   // fungus gardens pixel - atlas 08
   if(!isMini){
     for(let f of fungusGardens){
-      const fx=Math.floor(f.x), fy=Math.floor(f.y);
-
-      const sz=Math.floor(7+f.size*2.2);
-      const pulseF = Math.sin(time*0.012 + fx*0.05)*0.5;
-      ctx.fillStyle= f.health>0.58 ? '#e8dcc6' : f.health>0.32 ? '#d4c2a3' : '#a89078';
-      ctx.fillRect(fx-sz/2 + pulseF, fy-sz/2, sz, sz);
-      if(f.health>0.48){
-        ctx.fillStyle='#fff8dc'; for(let i=0;i<3;i++) ctx.fillRect(fx-3+(i*3), fy-2, 2,2);
-        ctx.fillStyle='#e8d5a3'; ctx.fillRect(fx-1,fy+1,2,2);
+      // Project beds were already drawn with their completed-project record; autonomous beds use the
+      // same named crop family here, so cultivated objects never fall back to an unrelated white block.
+      if(f.projectId)continue;
+      const fx=Math.floor(f.x),fy=Math.floor(f.y),sz=Math.max(18,Math.min(29,Math.floor(17+f.size*3)));
+      const sprite=f.health<.48?'crop.fungus_dry':f.size<1.1?'crop.fungus_seedling':'crop.fungus_bed';
+      const atlasGarden=typeof colonyTexturePack!=='undefined'&&colonyTexturePack.draw(ctx,sprite,fx-sz/2,fy-sz*.68,sz,sz);
+      if(!atlasGarden){
+        const pulseF=Math.sin(time*.012+fx*.05)*.5;
+        ctx.fillStyle=f.health>.58?'#e8dcc6':f.health>.32?'#d4c2a3':'#a89078';ctx.fillRect(fx-sz/2+pulseF,fy-sz/2,sz,sz);
+        if(f.health>.48){ctx.fillStyle='#fff8dc';for(let i=0;i<3;i++)ctx.fillRect(fx-3+i*3,fy-2,2,2);}
       }
-      ctx.fillStyle='rgba(60,38,12,0.34)'; ctx.fillRect(Math.floor(fx-sz/2), Math.floor(fy+sz/2)-1, sz, 1); ctx.fillRect(Math.floor(fx+sz/2)-1, Math.floor(fy-sz/2), 1, sz);   // el canto del bulto, a la manera del terreno: un borde duro, no un trazo
-      if(f.health<0.62){ ctx.fillStyle='#000'; ctx.fillRect(fx-8,fy-sz/2-5,16,2); ctx.fillStyle= f.health>0.32 ? '#ffcc00' : '#ff3b30'; ctx.fillRect(fx-7,fy-sz/2-4, Math.floor(f.health*14),1); }
+      if(f.health<.62){ctx.fillStyle='#000';ctx.fillRect(fx-8,fy-sz/2-5,16,2);ctx.fillStyle=f.health>.32?'#ffcc00':'#ff3b30';ctx.fillRect(fx-7,fy-sz/2-4,Math.floor(f.health*14),1);}
     }
     // waste piles - montón marrón oscuro separado
     for(let w of wastePiles){
@@ -7720,13 +7771,17 @@ function drawFarm(ctx,W,H,isMini=false){
       }
     }
   }
-  // mound pixel
+  // Excavated spoil is an ant-made mound, selected from the same reusable crafted-object sheet.
   for(let m of mound){
-    const mx=Math.floor(m.x), my=SURFACE_Y;
-    ctx.fillStyle='#6b3a1f'; ctx.fillRect(mx-8, my-m.h,16,m.h);
-    ctx.fillStyle='#8b5a2b'; ctx.fillRect(mx-6, my-m.h,12,4);
-    ctx.fillStyle='#fff8dc'; ctx.fillRect(mx-6, my-m.h+2,8,2);
-    ctx.fillStyle='#3d1f00'; ctx.fillRect(mx-8, my-2,16,2);
+    const mx=Math.floor(m.x),my=SURFACE_Y;
+    const mw=Math.max(18,Math.min(29,Math.round(18+(m.h||4)))),mh=Math.max(12,Math.min(19,Math.round(10+(m.h||4))));
+    const moundAtlas=typeof colonyTexturePack!=='undefined'&&colonyTexturePack.draw(ctx,'structure.mound',mx-Math.round(mw/2),my-mh,mw,mh);
+    if(!moundAtlas){
+      ctx.fillStyle='#6b3a1f';ctx.fillRect(mx-8,my-m.h,16,m.h);
+      ctx.fillStyle='#8b5a2b';ctx.fillRect(mx-6,my-m.h,12,4);
+      ctx.fillStyle='#fff8dc';ctx.fillRect(mx-6,my-m.h+2,8,2);
+      ctx.fillStyle='#3d1f00';ctx.fillRect(mx-8,my-2,16,2);
+    }
   }
   // entrance pixel
   {
@@ -8037,14 +8092,15 @@ function drawFarm(ctx,W,H,isMini=false){
     // herramienta equipada: madera y metal con su cara de luz, sin contorno negro de 3 px
     if(ant.tool && !isMini){
       const _tx=Math.floor(ant.x)+(ant._climbing?9:10), _ty=Math.floor(ant.y)-16;
-      if(ant.tool==='pick'){
+      const _toolAtlas=typeof colonyTexturePack!=='undefined'&&colonyTexturePack.draw(ctx,'tool.'+ant.tool,_tx-2,_ty-4,19,19);
+      if(!_toolAtlas&&ant.tool==='pick'){
         _bloque(ctx,_tx,_ty+4,11,3,'#6b3a1f');
         _bloque(ctx,_tx+9,_ty+1,6,5,'#8b9bb4');
-      } else if(ant.tool==='basket'){
+      } else if(!_toolAtlas&&ant.tool==='basket'){
         _bloque(ctx,_tx,_ty+2,10,7,'#c2a080');
         ctx.fillStyle='#8b5a2b'; ctx.fillRect(_tx+1,_ty+5,8,1);
         ctx.fillStyle='#fff8dc'; ctx.fillRect(_tx+2,_ty+3,1,1);
-      } else if(ant.tool==='trowel'){
+      } else if(!_toolAtlas&&ant.tool==='trowel'){
         _bloque(ctx,_tx,_ty+4,7,3,'#6b3a1f');
         _bloque(ctx,_tx+6,_ty+1,5,6,'#7a7a7a');
       }
@@ -9316,7 +9372,7 @@ function pintarRoster(){
 }
 function abrirRoster(){
   const sh = document.getElementById('rosterSheet'); if(!sh) return;
-  try{ cerrarInventario(); }catch(e){}
+  try{ cerrarInventario(true); }catch(e){}
   // una hoja a la vez, tambien con los perfiles: si no, la lista se monta encima del perfil abierto y en la
   // pantalla quedan dos cabeceras de la misma columna (medido en la captura: el perfil asomaba por debajo).
   try{ closeAntProfile(true); }catch(e){}
@@ -9327,12 +9383,13 @@ function abrirRoster(){
   const b = document.getElementById('btnRoster'); if(b) b.setAttribute('data-abierto','1');
   requestAnimationFrame(() => { sh.style.transform='translateY(0) scaleY(1)'; sh.style.opacity='1'; asentarHoja(sh); });
 }
-function cerrarRoster(){
+function cerrarRoster(immediate=false){
   const sh = document.getElementById('rosterSheet'); if(!sh) return;
   _rosterAbierto = false; sh.removeAttribute('data-open');
-  sh.style.transform = 'translateY(-12px) scaleY(0)'; sh.style.opacity = '0';
-  const b = document.getElementById('btnRoster'); if(b) b.removeAttribute('data-abierto');
-  setTimeout(() => { if(!_rosterAbierto) sh.style.display = 'none'; }, 240);
+  sh.style.transform='translateY(-12px) scaleY(0)';sh.style.opacity='0';
+  const b=document.getElementById('btnRoster');if(b)b.removeAttribute('data-abierto');
+  const finish=()=>{if(!_rosterAbierto)sh.style.display='none';};
+  if(immediate)finish();else setTimeout(finish,240);
 }
 function alternarRoster(){ if(_rosterAbierto) cerrarRoster(); else abrirRoster(); }
 function cerrarHojasDerecha(){ try{ cerrarRoster(); }catch(e){} }
@@ -9914,6 +9971,8 @@ function closeQueenProfile(immediate=false){
 function showQueenProfile(q){
   if(!q)q=queens[selectedQueenIndex]||queens[0];
   if(!q||!isExploredPixel(q.x,q.y))return false;
+  try{cerrarInventario(true);}catch(e){}
+  try{cerrarRoster(true);}catch(e){}
   ensureQueenMeta(q);
   const modal=document.getElementById('queenProfile');
   if(!modal){ console.warn('queenProfile missing'); return; }
@@ -10087,17 +10146,8 @@ function showQueenProfile(q){
     modal.style.display='none';
     modal.removeAttribute('data-open');
   }
-  const calEl=document.getElementById('calendarWidget');
-  const calH = calEl ? calEl.offsetHeight : 180;
-    const _qTop = calEl ? (calEl.getBoundingClientRect().top||14) : 14;
-  const _qOff = (_qTop && _qTop>2 && _qTop<100) ? Math.round(_qTop):14;
-  modal.style.top = (_qOff + calH + 4) + 'px';
-  modal.style.right = '14px';
-  modal.style.left = 'auto';
-  modal.style.width = '326px';
-  modal.style.maxWidth = 'calc(100vw - 28px)';
-  modal.style.height = '';
-  modal.style.maxHeight = `calc(100vh - ${(_qOff + calH + 28)}px)`;
+  _asentarBajoCalendario(modal);
+  modal.style.height='';
   modal.style.border = '4px solid #000';
   modal.style.borderTop = 'none';
   modal.style.boxShadow = '6px 6px 0 #000';
@@ -10658,7 +10708,7 @@ if(_topoHasWorld){
 
 // === SAVE PERSISTENTE - la granja sobrevive a recargar ===
 const SAVE_KEY='antFarm_fullSave_v2';
-const SAVE_VER='20261020h';
+const SAVE_VER='20261020i';
 const LS_ALIVE='antfarm_worldAlive';
 const LS_INGAME='antfarm_inGame';
 // grids a string de digitos: 8x menos bytes que JSON de arrays (BIG 96x48 entra en localStorage)
@@ -11467,11 +11517,11 @@ function _filaInv(def, valor){
   return '<article class="inv-resource-card" data-material="'+def.k+'">'
     + '<span class="inv-resource-icon" style="--mat-main:'+def.col+';--mat-dark:'+def.col2+'" aria-hidden="true"><i></i></span>'
     + '<span class="inv-resource-copy"><b class="inv-resource-name">'+def.n+'</b>'
-    + '<span class="inv-resource-note">'+def.sirve+'</span>'
+    + '<span class="inv-resource-note">'+def.sirve+'</span></span>'
+    + '<b class="inv-resource-count" aria-label="'+valor+' '+def.n.toLowerCase()+'">'+valor+'</b>'
     + '<span class="inv-reserve-control"><span class="inv-reserve-label">KEEP <b>'+keep+'</b></span>'
     + '<button type="button" data-reserve-kind="'+def.k+'" data-reserve-delta="-1" aria-label="Keep one less '+def.n.toLowerCase()+'">−</button>'
-    + '<button type="button" data-reserve-kind="'+def.k+'" data-reserve-delta="1" aria-label="Keep one more '+def.n.toLowerCase()+'">+</button></span></span>'
-    + '<b class="inv-resource-count" aria-label="'+valor+' '+def.n.toLowerCase()+'">'+valor+'</b></article>';
+    + '<button type="button" data-reserve-kind="'+def.k+'" data-reserve-delta="1" aria-label="Keep one more '+def.n.toLowerCase()+'">+</button></span></article>';
 }
 function _projectCostHtml(cost){return Object.entries(cost||{}).map(([k,v])=>'<span><b>'+v+'</b> '+k.toUpperCase()+'</span>').join('');}
 function _colonyProjectsHtml(){
@@ -11565,24 +11615,24 @@ function _asentarBajoCalendario(el){
   try{
     const cal=document.getElementById('calendarWidget');
     const bar=document.getElementById('velAntBar');
-    const r=cal? cal.getBoundingClientRect() : null;
-    const bajo=r && r.bottom>0 ? Math.round(r.bottom+6) : (bar? Math.round(bar.getBoundingClientRect().bottom+6) : 76);
-    el.style.top = bajo + 'px';
+    const r=cal?cal.getBoundingClientRect():null;
+    // The curtain takes its geometry from the rendered clock — expanded, collapsed or responsive.
+    // CSS reads these variables with !important, so old per-panel inline widths cannot drift again.
+    if(r&&r.width>0){
+      el.style.setProperty('--curtain-runtime-width',Math.round(r.width)+'px');
+      el.style.setProperty('--curtain-runtime-right',Math.max(0,Math.round((window.innerWidth||r.right)-r.right))+'px');
+    }
+    const bajo=r&&r.bottom>0?Math.round(r.bottom):(bar?Math.round(bar.getBoundingClientRect().bottom):76);
+    el.style.top=bajo+'px';el.style.left='auto';
     return bajo;
   }catch(e){ return 0; }
 }
 function _asentarInventario(el){
   if(!el) return 0;
   try{
-    // On narrow or short screens the drawer becomes a self-contained overlay. Keeping it below the
-    // calendar there would leave less than one touch target of usable height in landscape.
     const compacto=(window.innerWidth||1280)<=700 || (window.innerHeight||800)<=650;
-    if(compacto){
-      el.setAttribute('data-compact-layout','1');
-      el.style.top='8px';
-      return 8;
-    }
-    el.removeAttribute('data-compact-layout');
+    if(compacto)el.setAttribute('data-compact-layout','1');else el.removeAttribute('data-compact-layout');
+    // Compact changes internal density only. It must never move this one curtain over the clock.
     return _asentarBajoCalendario(el);
   }catch(e){ return _asentarBajoCalendario(el); }
 }
@@ -11595,9 +11645,10 @@ function asentarHoja(el){
     const st=parseFloat(getComputedStyle(el).top);
     const top=isFinite(st)&&st>0? st : Math.round(el.getBoundingClientRect().top);
     if(!(top>0)) return 0;
-    const alto=Math.max(180, (window.innerHeight||800) - top - 10);
-    // ...y con `!important`, porque algunas hojas declaran su max-height asi.
-    el.style.setProperty('max-height', alto+'px', 'important');
+    // Never manufacture a 180 px drawer when only 110 px remain: that was the short-landscape
+    // overflow. The clock has its own mini responsive form, and the curtain uses exactly what is left.
+    const alto=Math.max(48,(window.innerHeight||800)-top-8);
+    el.style.setProperty('max-height',alto+'px','important');
     if(el.id==='invSheet'){
       // The redesigned drawer owns a fixed header and footer; only its body scrolls.
       el.style.setProperty('overflow','hidden');
@@ -11614,8 +11665,9 @@ function asentarHoja(el){
 let _invUltimoFoco=null;
 function abrirInventario(){
   const sh=document.getElementById('invSheet'); if(!sh) return;
-  try{ closeAntProfile(); }catch(e){}
-  try{ closeQueenProfile(); }catch(e){}
+  try{ cerrarRoster(true); }catch(e){}
+  try{ closeAntProfile(true); }catch(e){}
+  try{ closeQueenProfile(true); }catch(e){}
   _invUltimoFoco=document.activeElement;
   _invAbierto=true; sh.setAttribute('data-open','1'); sh.setAttribute('aria-hidden','false'); sh.style.display='flex';
   const puerta=document.getElementById('btnInventory');
@@ -11627,19 +11679,20 @@ function abrirInventario(){
     const cerrar=document.getElementById('btnCloseInv'); if(cerrar) cerrar.focus({preventScroll:true});
   });
 }
-function cerrarInventario(){
+function cerrarInventario(immediate=false){
   const sh=document.getElementById('invSheet'); if(!sh) return;
   const devolver=sh.contains(document.activeElement);
   _invAbierto=false; sh.removeAttribute('data-open'); sh.setAttribute('aria-hidden','true');
   const puerta=document.getElementById('btnInventory');
   if(puerta){ puerta.setAttribute('aria-expanded','false'); puerta.setAttribute('aria-label','Open nest inventory'); }
-  sh.style.transform='translate3d(18px,0,0) scale(.985)'; sh.style.opacity='0';
-  setTimeout(()=>{
+  sh.style.transform='translateY(-12px) scaleY(0)';sh.style.opacity='0';
+  const finish=()=>{
     if(!_invAbierto){
       sh.style.display='none';
-      if(devolver){ const f=(_invUltimoFoco&&document.contains(_invUltimoFoco))?_invUltimoFoco:puerta; if(f&&f.focus) f.focus({preventScroll:true}); }
+      if(devolver){const f=(_invUltimoFoco&&document.contains(_invUltimoFoco))?_invUltimoFoco:puerta;if(f&&f.focus)f.focus({preventScroll:true});}
     }
-  }, 220);
+  };
+  if(immediate)finish();else setTimeout(finish,220);
 }
 window.abrirInventario=abrirInventario; window.cerrarInventario=cerrarInventario;
 // el calendario se pliega con — (y cambia de alto): las hojas abiertas se vuelven a sentar debajo
@@ -11672,9 +11725,14 @@ function initInventarioHud(){
     _invResizeCableado=true;
     let pendiente=0;
     const recolocar=()=>{
-      if(!_invAbierto) return;
       cancelAnimationFrame(pendiente);
-      pendiente=requestAnimationFrame(()=>{ const e=document.getElementById('invSheet'); _asentarInventario(e); asentarHoja(e); });
+      pendiente=requestAnimationFrame(()=>{
+        for(const id of ['invSheet','rosterSheet','antProfile','queenProfile']){
+          const e=document.getElementById(id);if(!e||getComputedStyle(e).display==='none')continue;
+          if(id==='invSheet')_asentarInventario(e);else _asentarBajoCalendario(e);asentarHoja(e);
+        }
+        _rulerSig='';updateDepthRuler();
+      });
     };
     window.addEventListener('resize', recolocar, {passive:true});
     try{ window.visualViewport && window.visualViewport.addEventListener('resize', recolocar, {passive:true}); }catch(e){}

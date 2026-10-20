@@ -1,13 +1,13 @@
 {
   "meta": {
     "name": "ANT FARM · COLONY OBJECTS",
-    "version": "20261020h",
+    "version": "20261020i",
     "image": "colony-atlas.png",
     "width": 256,
-    "height": 256,
+    "height": 320,
     "cell": 32,
     "columns": 8,
-    "rows": 8,
+    "rows": 10,
     "filtering": "nearest",
     "premultipliedAlpha": false,
     "generator": "scripts/generate-colony-atlas.py",
@@ -1037,6 +1037,262 @@
       },
       "category": "states",
       "note": "Reserved transparent slot for a compatible future sprite."
+    },
+    "structure.workshop": {
+      "x": 0,
+      "y": 256,
+      "w": 32,
+      "h": 32,
+      "pivot": {
+        "x": 16,
+        "y": 27
+      },
+      "native": {
+        "w": 32,
+        "h": 32
+      },
+      "category": "structures",
+      "note": "Ant-built timber workbench and simple metal tools."
+    },
+    "structure.granary": {
+      "x": 32,
+      "y": 256,
+      "w": 32,
+      "h": 32,
+      "pivot": {
+        "x": 16,
+        "y": 27
+      },
+      "native": {
+        "w": 32,
+        "h": 32
+      },
+      "category": "structures",
+      "note": "Dry three-bin granary."
+    },
+    "structure.bridge": {
+      "x": 64,
+      "y": 256,
+      "w": 32,
+      "h": 32,
+      "pivot": {
+        "x": 16,
+        "y": 27
+      },
+      "native": {
+        "w": 32,
+        "h": 32
+      },
+      "category": "structures",
+      "note": "Rope-bound timber bridge."
+    },
+    "structure.tower": {
+      "x": 96,
+      "y": 256,
+      "w": 32,
+      "h": 32,
+      "pivot": {
+        "x": 16,
+        "y": 27
+      },
+      "native": {
+        "w": 32,
+        "h": 32
+      },
+      "category": "structures",
+      "note": "Worked-stone lookout tower."
+    },
+    "structure.mound": {
+      "x": 128,
+      "y": 256,
+      "w": 32,
+      "h": 32,
+      "pivot": {
+        "x": 16,
+        "y": 27
+      },
+      "native": {
+        "w": 32,
+        "h": 32
+      },
+      "category": "structures",
+      "note": "Stepped spoil mound with a supported nest entrance."
+    },
+    "structure.store_full": {
+      "x": 160,
+      "y": 256,
+      "w": 32,
+      "h": 32,
+      "pivot": {
+        "x": 16,
+        "y": 27
+      },
+      "native": {
+        "w": 32,
+        "h": 32
+      },
+      "category": "structures",
+      "note": "Protected store shelf visibly stocked with jars and dry goods."
+    },
+    "crop.fungus_bed": {
+      "x": 192,
+      "y": 256,
+      "w": 32,
+      "h": 32,
+      "pivot": {
+        "x": 16,
+        "y": 27
+      },
+      "native": {
+        "w": 32,
+        "h": 32
+      },
+      "category": "crops",
+      "note": "Healthy cultivated fungus bed."
+    },
+    "crop.fungus_dry": {
+      "x": 224,
+      "y": 256,
+      "w": 32,
+      "h": 32,
+      "pivot": {
+        "x": 16,
+        "y": 27
+      },
+      "native": {
+        "w": 32,
+        "h": 32
+      },
+      "category": "crops",
+      "note": "Dry cultivated fungus bed."
+    },
+    "crop.fungus_seedling": {
+      "x": 0,
+      "y": 288,
+      "w": 32,
+      "h": 32,
+      "pivot": {
+        "x": 16,
+        "y": 27
+      },
+      "native": {
+        "w": 32,
+        "h": 32
+      },
+      "category": "crops",
+      "note": "Newly established fungus plugs in prepared substrate."
+    },
+    "cargo.fiber_bundle": {
+      "x": 32,
+      "y": 288,
+      "w": 32,
+      "h": 32,
+      "pivot": {
+        "x": 16,
+        "y": 27
+      },
+      "native": {
+        "w": 32,
+        "h": 32
+      },
+      "category": "cargo",
+      "note": "Bound fibre construction load."
+    },
+    "cargo.stone_block": {
+      "x": 64,
+      "y": 288,
+      "w": 32,
+      "h": 32,
+      "pivot": {
+        "x": 16,
+        "y": 27
+      },
+      "native": {
+        "w": 32,
+        "h": 32
+      },
+      "category": "cargo",
+      "note": "Worked stone construction load."
+    },
+    "cargo.supply_crate": {
+      "x": 96,
+      "y": 288,
+      "w": 32,
+      "h": 32,
+      "pivot": {
+        "x": 16,
+        "y": 27
+      },
+      "native": {
+        "w": 32,
+        "h": 32
+      },
+      "category": "cargo",
+      "note": "Reusable mixed construction crate."
+    },
+    "project.forward_cache_full": {
+      "x": 128,
+      "y": 288,
+      "w": 32,
+      "h": 32,
+      "pivot": {
+        "x": 16,
+        "y": 27
+      },
+      "native": {
+        "w": 32,
+        "h": 32
+      },
+      "category": "projects",
+      "note": "Operational cache with visible protected stock."
+    },
+    "project.tunnel_braces_reinforced": {
+      "x": 160,
+      "y": 288,
+      "w": 32,
+      "h": 32,
+      "pivot": {
+        "x": 16,
+        "y": 27
+      },
+      "native": {
+        "w": 32,
+        "h": 32
+      },
+      "category": "projects",
+      "note": "Timber support upgraded with metal joints."
+    },
+    "project.worksite_foundation": {
+      "x": 192,
+      "y": 288,
+      "w": 32,
+      "h": 32,
+      "pivot": {
+        "x": 16,
+        "y": 27
+      },
+      "native": {
+        "w": 32,
+        "h": 32
+      },
+      "category": "projects",
+      "note": "Surveyed worksite after its first foundation deliveries."
+    },
+    "project.clay_jars_empty": {
+      "x": 224,
+      "y": 288,
+      "w": 32,
+      "h": 32,
+      "pivot": {
+        "x": 16,
+        "y": 27
+      },
+      "native": {
+        "w": 32,
+        "h": 32
+      },
+      "category": "projects",
+      "note": "Sealed vessels waiting for the first protected rations."
     }
   }
 }

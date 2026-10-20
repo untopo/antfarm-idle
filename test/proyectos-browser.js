@@ -7,7 +7,7 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));let pass=0,fail=0;const ok=(c,m
 async function boot(page){
   await page.goto(`http://127.0.0.1:${PORT}/ant-farm-rpg/index.html`,{waitUntil:'load',timeout:30000});
   await page.waitForFunction('window._topoFlowReady===true',{timeout:20000});
-  await page.waitForFunction("window.colonyTexturePack&&colonyTexturePack.ready()&&colonyTexturePack.stats().sprites===64",{timeout:12000});
+  await page.waitForFunction("window.colonyTexturePack&&colonyTexturePack.ready()&&colonyTexturePack.stats().sprites===80",{timeout:12000});
   await page.waitForFunction("document.getElementById('splashScreen').style.display==='none'",{timeout:16000}).catch(()=>{});
   await page.click('#btnMainCreate');await sleep(300);await page.click('#createSizeScreen [data-size="small"]');await sleep(350);
   await page.evaluate(()=>{const h=document.querySelector('.topo-dialog-host');if(h){const b=[...h.querySelectorAll('button')].find(x=>/^(YES|SÍ)$/i.test(x.textContent.trim()));if(b)b.click();}});
@@ -69,13 +69,13 @@ try{
     drawColonyProjectSites(ctx,false);const stats=colonyTexturePack.stats(),pile=foods.find(f=>f.storedOverflow&&f.ftype==='berry');
     return{cap,delivered:{accepted:delivered.accepted,overflow:delivered.overflow},snapshot:storagePressureSnapshot(),pile:pile&&{node:pile.overflowNodeId,preserved:isFoodInStockpile(pile)},
       cardClass:card&&card.className,text:card&&card.textContent.replace(/\s+/g,' ').trim(),meterLabel:meter&&meter.getAttribute('aria-label'),overflowChips:document.querySelectorAll('.inv-overflow-readout').length,
-      atlas:{status:stats.status,sprites:stats.sprites,width:colonyTexturePack.state.image&&colonyTexturePack.state.image.naturalWidth,drawn:stats.draws>before}};
+      atlas:{status:stats.status,sprites:stats.sprites,width:colonyTexturePack.state.image&&colonyTexturePack.state.image.naturalWidth,height:colonyTexturePack.state.image&&colonyTexturePack.state.image.naturalHeight,drawn:stats.draws>before}};
   });await sleep(120);
   ok(pressure.delivered.accepted===0&&pressure.delivered.overflow===3&&pressure.snapshot.protected===pressure.cap&&pressure.snapshot.overflow===3,'full protected capacity keeps the complete typed delivery physical');
   ok(pressure.pile&&pressure.pile.node==='main'&&!pressure.pile.preserved,'the browser world places an unprotected pile at the unloading node');
   ok(pressure.overflowChips===1&&/STORAGE PRESSURE/.test(pressure.text)&&/PROTECTED RATIONS/.test(pressure.text.toUpperCase())&&/3 OVERFLOW/.test(pressure.text),'the original ration card and meter expose protected versus overflow once');
   ok(/physical overflow/.test(pressure.meterLabel)&&/has-overflow/.test(pressure.cardClass),'the existing meter carries the pressure state without another screen');
-  ok(pressure.atlas.status==='ready'&&pressure.atlas.sprites===64&&pressure.atlas.width===256&&pressure.atlas.drawn,'the 256px named atlas loaded and rendered a completed colony object');
+  ok(pressure.atlas.status==='ready'&&pressure.atlas.sprites===80&&pressure.atlas.width===256&&pressure.atlas.height===320&&pressure.atlas.drawn,'the expanded named atlas loaded and rendered a completed colony object');
   await page.screenshot({path:SHOTS+'/storage-pressure-desktop.png'});
 
   console.log('\n· portrait and short landscape: size check after the menu grew');
@@ -83,7 +83,8 @@ try{
   ok(m.rect.x>=7&&m.rect.right<=383&&m.rect.bottom<=844&&m.horizontal.length===0,'portrait drawer stays inside every edge',JSON.stringify(m.rect)+' · '+m.horizontal.slice(0,8).join(' | '));
   await page.screenshot({path:SHOTS+'/projects-portrait.png'});
   await page.setViewport({width:844,height:390});await page.evaluate(()=>{_asentarInventario(document.getElementById('invSheet'));asentarHoja(document.getElementById('invSheet'));});await sleep(180);m=await metrics(page);
-  ok(m.rect.y===8&&m.rect.bottom<=390&&m.scrollable>100&&m.horizontal.length===0,'short landscape keeps fixed chrome and a scrollable body',JSON.stringify(m.rect)+' · '+m.horizontal.slice(0,8).join(' | '));
+  const shortCalBottom=await page.evaluate(()=>Math.round(document.getElementById('calendarWidget').getBoundingClientRect().bottom));
+  ok(m.rect.y===shortCalBottom&&m.rect.bottom<=390&&m.scrollable>100&&m.horizontal.length===0,'short landscape keeps the curtain below the mini clock with a scrollable body',JSON.stringify(m.rect)+' · '+m.horizontal.slice(0,8).join(' | '));
   await page.screenshot({path:SHOTS+'/projects-landscape.png'});
   ok(errors.length===0,'zero JavaScript errors across project UI, approval, tool mode and resize',errors.slice(0,3).join(' | '));
 }finally{await browser.close();server.close();}

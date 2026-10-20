@@ -7,8 +7,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ANT FARM</title>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache">
-<link rel="stylesheet" href="css/style.css?v=20261020h">
-<link rel="stylesheet" href="css/startup.css?v=20261020h">
+<link rel="stylesheet" href="css/style.css?v=20261020i">
+<link rel="stylesheet" href="css/startup.css?v=20261020i">
 
 <style id="topoHideUntilStart">
   #appRoot{display:none !important}
@@ -188,7 +188,7 @@
         <div><span>TYPE</span><b>Press Start 2P · VT323</b></div>
       </div>
       <p class="topo-credit-thanks">Thank you for looking after the colony. Every tunnel remembers.</p>
-      <div class="topo-build-stamp">ANT FARM · BUILD 20261020H</div>
+      <div class="topo-build-stamp">ANT FARM · BUILD 20261020I</div>
     </div>
     <footer class="topo-panel-footer"><button type="button" id="btnCreditsReplay" class="topo-footer-button">REPLAY INTRO</button><span>MADE BELOW THE SURFACE</span></footer>
   </div>
@@ -317,7 +317,7 @@
         <div class="frame-label"><span>🔬 VIDRIO v4 REAL</span><span style="opacity:0.35">|</span><span id="frameInfo">PIXEL REAL · CAVADO ANIMADO</span><span style="opacity:0.35">|</span><span style="font-size:7px">ARRASTRA · RUEDA ZOOM · DOBLE CLICK CENTRA</span></div>
 
         
-        <div class="depth-ruler" id="depthRuler" title="Profundidad — click para saltar">
+        <div class="depth-ruler" id="depthRuler" role="scrollbar" tabindex="0" aria-label="Depth navigator" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="30" aria-valuenow="0" aria-valuetext="Surface" title="Depth — click, drag or use the arrow keys">
         <div class="depth-track"></div>
         <div class="depth-ticks" id="depthTicks">
           <div class="depth-tick major" style="top:0%"><span>0</span></div>
@@ -328,7 +328,7 @@
           <div class="depth-tick" style="top:83%"><span>25</span></div>
           <div class="depth-tick major" style="top:100%"><span>30</span></div>
         </div>
-        <div class="depth-viewport" id="depthViewport" style="top:0%;height:18%"></div>
+        <div class="depth-viewport" id="depthViewport" aria-hidden="true" title="Visible depth · drag to travel" style="top:0%;height:18%"></div>
         <div class="depth-cursor" id="depthCursor" style="top:9%"><span id="depthCursorVal">0</span></div>
       </div>
         <div class="narration" id="narration">
@@ -579,7 +579,7 @@
 <!-- LISTA DE HORMIGAS ACTIVAS — la puerta es el numero de la barra de arriba (Topo: «que al pinchar
      cuantas hormigas hay aparezca la lista»). Misma piel que las demas hojas: caja crema, marco negro,
      el cuerpo scrollea y el pie no se mueve. -->
-<div id="rosterSheet" style="display:none;flex-direction:column;position:fixed;top:76px;right:14px;width:330px;max-width:330px;max-height:calc(100vh - 92px);background:#fff8dc;border:4px solid #000;border-top:none;box-shadow:6px 6px 0 #000;z-index:91;overflow:hidden;transform:translateY(-12px) scaleY(0);opacity:0;transition:transform 0.22s cubic-bezier(.2,.8,.2,1), opacity 0.22s;transform-origin:top">
+<div id="rosterSheet" style="display:none;flex-direction:column;position:fixed;top:0;right:var(--topo-right-axis,14px);width:var(--topo-curtain-width,300px);max-width:calc(100vw - 28px);max-height:calc(100vh - 28px);background:#fff8dc;border:4px solid #000;border-top:none;box-shadow:6px 6px 0 #000;z-index:91;overflow:hidden;transform:translateY(-12px) scaleY(0);opacity:0;transition:transform 0.22s cubic-bezier(.2,.8,.2,1), opacity 0.22s;transform-origin:top">
   <div style="flex:1 1 auto;min-height:0;display:flex;flex-direction:column;background:#1a140f">
     <div style="background:#000;padding:9px 10px;display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:3px solid #000">
       <span style="font-family:'Press Start 2P',monospace;font-size:11px;color:#ffcc00;letter-spacing:0.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span id="rosterTitle">🐜 HORMIGAS ACTIVAS</span></span>
@@ -591,8 +591,8 @@
   </div>
 </div>
 
-<!-- PERFIL DE HORMIGA — compacto sin scroll, cabe completo 220x~420 -->
-<div id="antProfile" class="hoja-cuerpo" style="display:none;position:fixed;top:0;right:14px;width:326px;max-width:326px;max-height:calc(100vh - 240px);background:#fff8dc;border:4px solid #000;border-top:none;box-shadow:6px 6px 0 #000;z-index:90;overflow:hidden;transform:translateY(-12px) scaleY(0);opacity:0;transition:transform 0.22s cubic-bezier(.2,.8,.2,1), opacity 0.22s;transform-origin:top">
+<!-- PERFIL DE HORMIGA — usa la cortina común y deja el cuerpo recorrer en pantallas cortas -->
+<div id="antProfile" class="hoja-cuerpo" style="display:none;position:fixed;top:0;right:var(--topo-right-axis,14px);width:var(--topo-curtain-width,300px);max-width:calc(100vw - 28px);max-height:calc(100vh - 28px);background:#fff8dc;border:4px solid #000;border-top:none;box-shadow:6px 6px 0 #000;z-index:90;overflow:hidden;transform:translateY(-12px) scaleY(0);opacity:0;transition:transform 0.22s cubic-bezier(.2,.8,.2,1), opacity 0.22s;transform-origin:top">
   <div style="background:#1a140f;min-height:100%;display:flex;flex-direction:column">
     <div style="background:#000;padding:8px 10px;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #000">
       <span style="font-family:'Press Start 2P',monospace;font-size:12px;color:#ffcc00;letter-spacing:0.3px;line-height:1.25;overflow-wrap:break-word;max-width:230px" id="profileTitle">A3X9 [RECOLECTORA]</span>
@@ -675,8 +675,8 @@
 </div>
 
 
-<!-- PERFIL DE REINA — unificado visual con hormiga (220px, 64x64, tabs idénticos) -->
-<div id="queenProfile" class="hoja-cuerpo" style="display:none;position:fixed;top:0;right:14px;width:326px;max-width:326px;max-height:calc(100vh - 240px);background:#fff8dc;border:4px solid #000;border-top:none;box-shadow:6px 6px 0 #000;z-index:90;overflow:hidden;transform:translateY(-12px) scaleY(0);opacity:0;transition:transform 0.22s cubic-bezier(.2,.8,.2,1), opacity 0.22s;transform-origin:top">
+<!-- PERFIL DE REINA — unificado visual y geométricamente con la misma cortina -->
+<div id="queenProfile" class="hoja-cuerpo" style="display:none;position:fixed;top:0;right:var(--topo-right-axis,14px);width:var(--topo-curtain-width,300px);max-width:calc(100vw - 28px);max-height:calc(100vh - 28px);background:#fff8dc;border:4px solid #000;border-top:none;box-shadow:6px 6px 0 #000;z-index:90;overflow:hidden;transform:translateY(-12px) scaleY(0);opacity:0;transition:transform 0.22s cubic-bezier(.2,.8,.2,1), opacity 0.22s;transform-origin:top">
   <div style="background:#1a140f;min-height:100%;display:flex;flex-direction:column">
     <div style="background:#000;padding:8px 10px;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #000">
       <span style="font-family:'Press Start 2P',monospace;font-size:12px;color:#ffcc00;letter-spacing:0.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px" id="queenProfileTitle">ADA 👑 REINA F0</span>
@@ -913,17 +913,17 @@
   <!-- Motor del juego — núcleo profesional modular -->
   
 
-<script src="core/bandas.js?v=20261020h"></script>
-<script src="core/mundo.js?v=20261020h"></script>
-<script src="core/tesoros.js?v=20261020h"></script>
-<script src="core/economia.js?v=20261020h"></script>
-<script src="core/proyectos.js?v=20261020h"></script>
-<script src="core/agua.js?v=20261020h"></script>
-<script src="assets/textures/colony-atlas.manifest.js?v=20261020h"></script>
-<script src="js/texture-pack.js?v=20261020h"></script>
-<script src="js/i18n-en.js?v=20261020h"></script>
-<script src="js/app.js?v=20261020h"></script>
-<script src="js/splash-topo.js?v=20261020h"></script>
+<script src="core/bandas.js?v=20261020i"></script>
+<script src="core/mundo.js?v=20261020i"></script>
+<script src="core/tesoros.js?v=20261020i"></script>
+<script src="core/economia.js?v=20261020i"></script>
+<script src="core/proyectos.js?v=20261020i"></script>
+<script src="core/agua.js?v=20261020i"></script>
+<script src="assets/textures/colony-atlas.manifest.js?v=20261020i"></script>
+<script src="js/texture-pack.js?v=20261020i"></script>
+<script src="js/i18n-en.js?v=20261020i"></script>
+<script src="js/app.js?v=20261020i"></script>
+<script src="js/splash-topo.js?v=20261020i"></script>
 <script>
 // Vigia del arranque: si js/app.js no termino de cargar, decirlo en pantalla en vez de dejar
 // botones sordos. Es lo unico que vive en el HTML; el juego entero esta en js/app.js.

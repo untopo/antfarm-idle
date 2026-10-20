@@ -38,6 +38,22 @@
     const k=Number.isFinite(Number(scale))?Number(scale):1,n=s.native||{w:s.w,h:s.h},p=s.pivot||{x:n.w/2,y:n.h};
     return draw(ctx,name,Number(x)-p.x*k,Number(y)-p.y*k,n.w*k,n.h*k,options);
   }
+  // Stateful crafted families ask for preferred names in order. Future variants can be appended to the
+  // sheet and selected by name while old saves/builds fall back to their stable base tile.
+  function resolve(names){
+    const list=Array.isArray(names)?names:[names];
+    for(const name of list)if(sprite(name))return String(name);
+    return null;
+  }
+  function drawFirst(ctx,names,x,y,w,h,options){
+    const name=resolve(names);return name?draw(ctx,name,x,y,w,h,options):false;
+  }
+  function drawVariant(ctx,base,variant,x,y,w,h,options){
+    const v=String(variant||'').trim(),names=[];
+    if(v)names.push(String(base)+'_'+v);
+    names.push(String(base));
+    return drawFirst(ctx,names,x,y,w,h,options);
+  }
   const api={
     manifest,
     state,
@@ -46,6 +62,9 @@
     sprite:name=>{const s=sprite(name);return s?JSON.parse(JSON.stringify(s)):null;},
     draw,
     drawAt,
+    resolve,
+    drawFirst,
+    drawVariant,
     ready(){return state.status==='ready';},
     whenReady(fn){if(typeof fn!=='function')return api;if(state.status==='ready'||state.status==='error'||state.status==='missing-manifest')fn(api);else listeners.push(fn);return api;},
     stats(){return {status:state.status,draws:state.draws,misses:state.misses,sprites:manifest?Object.keys(manifest.sprites||{}).length:0};}

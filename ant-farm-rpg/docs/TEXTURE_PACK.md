@@ -1,12 +1,12 @@
 # ANT FARM colony texture pack
 
-> Build H · one deterministic, transparent, nearest-neighbour atlas for colony-made objects, physical storage overflow, cargo and reusable game motifs.
+> Build I · one deterministic, transparent, nearest-neighbour atlas for every current colony-made object, physical storage overflow, crops, carried loads and reusable future variants.
 
 ![Atlas sheet](../assets/textures/colony-atlas.png)
 
 ## Runtime contract
 
-- Production image: `assets/textures/colony-atlas.png` (`256 × 256`, 64 transparent `32 × 32` cells).
+- Production image: `assets/textures/colony-atlas.png` (`256 × 320`, 80 transparent `32 × 32` cells).
 - Machine-readable manifest: `assets/textures/colony-atlas.json`.
 - Browser manifest: `assets/textures/colony-atlas.manifest.js` (same data, loaded synchronously without `fetch`).
 - Canvas loader: `js/texture-pack.js`; it forces nearest-neighbour rendering and safely returns `false` until the PNG is ready.
@@ -23,6 +23,16 @@ colonyTexturePack.drawAt(ctx, 'cargo.clay_brick', worldX, worldY, 0.35);
 ```
 
 `draw()` receives a destination rectangle. `drawAt()` uses the manifest pivot and native dimensions. Both return a boolean so Canvas primitives can remain as a loading/error fallback.
+
+Stateful and future families use ordered name lookup rather than new coordinate code:
+
+```js
+colonyTexturePack.drawFirst(ctx,
+  ['project.forward_cache_full', 'project.forward_cache'], x, y, w, h);
+colonyTexturePack.drawVariant(ctx, 'project.tunnel_braces', 'reinforced', x, y, w, h);
+```
+
+`resolve()`, `drawFirst()` and `drawVariant()` always choose the first manifest key that exists. A future `<base>_<variant>` tile can therefore be appended without breaking older sheets or save data; the stable base is the fallback.
 
 ## Adding a texture
 
@@ -137,6 +147,34 @@ colonyTexturePack.drawAt(ctx, 'cargo.clay_brick', worldX, worldY, 0.35);
 | `state.fungus_healthy` | `160,224 32×32` | `16,27` |  |
 | `state.storage_pressure` | `192,224 32×32` | `16,27` |  |
 | `state.reserved` | `224,224 32×32` | `16,27` | Reserved transparent slot for a compatible future sprite. |
+
+### STRUCTURES AND CULTIVATION (BUILD I)
+
+| Stable name | Rect | Purpose |
+|---|---:|---|
+| `structure.workshop` | `0,256 32×32` | Ant-built timber workbench and tools. |
+| `structure.granary` | `32,256 32×32` | Dry three-bin granary. |
+| `structure.bridge` | `64,256 32×32` | Rope-bound timber bridge. |
+| `structure.tower` | `96,256 32×32` | Worked-stone lookout. |
+| `structure.mound` | `128,256 32×32` | Excavated spoil mound and supported entrance. |
+| `structure.store_full` | `160,256 32×32` | Stocked protected shelf variant. |
+| `crop.fungus_bed` | `192,256 32×32` | Healthy cultivated bed. |
+| `crop.fungus_dry` | `224,256 32×32` | Dry cultivated bed. |
+| `crop.fungus_seedling` | `0,288 32×32` | Newly established fungus plugs. |
+
+### CARRIED LOADS AND PROJECT VARIANTS (BUILD I)
+
+| Stable name | Rect | Purpose |
+|---|---:|---|
+| `cargo.fiber_bundle` | `32,288 32×32` | Bound fibre construction load. |
+| `cargo.stone_block` | `64,288 32×32` | Worked stone load. |
+| `cargo.supply_crate` | `96,288 32×32` | Generic reusable construction fallback. |
+| `project.forward_cache_full` | `128,288 32×32` | Cache with visible protected stock. |
+| `project.tunnel_braces_reinforced` | `160,288 32×32` | Timber support with metal joints. |
+| `project.worksite_foundation` | `192,288 32×32` | Worksite after first deliveries. |
+| `project.clay_jars_empty` | `224,288 32×32` | Empty sealed-vessel state. |
+
+Current render paths use the sheet for completed projects, all legacy built structures, autonomous fungus crops, equipped tools, carried food/project loads and spoil mounds. Primitive renderers remain only as the one-frame loading/error fallback.
 
 ## Rendering rules
 

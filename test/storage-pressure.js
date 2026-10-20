@@ -1,4 +1,4 @@
-/** storage-pressure.js — app.js real in VM: capacity, typed physical overflow, cache failure and H saves. */
+/** storage-pressure.js — app.js real in VM: capacity, typed physical overflow, cache failure and I saves. */
 const {ctx,vm}=require('./world-perf-proflib.js');
 const run=src=>vm.runInContext(src,ctx);
 let pass=0,fail=0;
@@ -79,7 +79,7 @@ ok(emergency.during.protected===5&&emergency.during.capacity===emergency.during.
 ok(emergency.during.overflow===4&&emergency.during.total===9,'todo lo demás sigue como excedente físico, sin borrarse');
 ok(emergency.after.protected===9&&emergency.after.overflow===0&&emergency.after.crop===0&&emergency.after.main===9,'al recuperar el almacén, buches y pila vuelven a estantes reales');
 
-console.log('\n· migración G y guardado H conservan cada unidad');
+console.log('\n· migración G y guardado I conservan cada unidad');
 const save=run(`(()=>{
   // Restore geometry, clear pressure fixtures, then emulate an old locationless G balance above capacity.
   const p=colonyProjects.completedRef()[0];for(const q of _projectSiteCells(p)){soil[q.r][q.c]=0;water[q.r][q.c]=0;}for(let c=p.site.c;c<p.site.c+(p.site.w||2);c++)soil[p.site.r+1][c]=1;markSoilDirty();refreshExploration(true);
@@ -91,8 +91,8 @@ const save=run(`(()=>{
 })()`);
 ok(save.before.protected===save.cap&&save.before.overflow===4&&save.before.total===save.legacy,'G migra al límite y conserva el resto como pila física');
 ok(save.before.types.every(t=>t==='honey'),'la reserva G recibe un tipo migratorio estable en vez de quedar sin tipo');
-ok(save.saved.v==='20261020h'&&save.saved.lots.length>=2&&save.saved.overflow.some(f=>f.storedOverflow&&f.overflowNodeId),'H guarda procedencia protegida y ubicación del excedente');
-ok(save.loaded&&save.after.protected===save.before.protected&&save.after.overflow===save.before.overflow&&save.after.total===save.before.total,'cargar H restaura protegido y excedente sin duplicar ni borrar');
+ok(save.saved.v==='20261020i'&&save.saved.lots.length>=2&&save.saved.overflow.some(f=>f.storedOverflow&&f.overflowNodeId),'I guarda procedencia protegida y ubicación del excedente');
+ok(save.loaded&&save.after.protected===save.before.protected&&save.after.overflow===save.before.overflow&&save.after.total===save.before.total,'cargar I restaura protegido y excedente sin duplicar ni borrar');
 ok(save.after.types.includes('honey')&&save.after.lots.every(l=>l.kind&&l.nodeId&&l.amount>0),'el round trip mantiene tipos y nodos legibles');
 
 console.log(`\nSTORAGE PRESSURE: ${pass} ok · ${fail} fallos`);if(fail)process.exit(1);

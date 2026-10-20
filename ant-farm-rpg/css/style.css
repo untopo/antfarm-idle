@@ -529,7 +529,7 @@ body{ font-size:19px; }
    Se sube la escala entera y se recalculan los huecos: el calendario es un tarjeta de 444×244 escalada, así
    que su letra crece con el `scale`, no tocando veinte reglas. Medido con test/paneles-scroll.js: nada se
    corta (scrollWidth<=clientWidth) y ningún texto baja del suelo de legibilidad. */
-:root{ --hoja-ancho:330px; --hoja-ancho-perfil:326px; }
+:root{ --hoja-ancho:var(--topo-curtain-width,300px); --hoja-ancho-perfil:var(--topo-curtain-width,300px); }
 #velAntBar{ height:54px !important; min-width:520px !important; }
 #calendarWidget{ width:300px !important; height:197px !important; top:74px !important; }
 #calendarWidget .rc-hud{ width:292px !important; height:161px !important; }
@@ -540,9 +540,8 @@ body{ font-size:19px; }
    widget contra 91 la hoja): el encabezado y las primeras filas quedaban under el reloj, que es justo
    como se perdia el principio de la lista del almacen. */
 #rosterSheet{ width:var(--hoja-ancho) !important; max-width:calc(100vw - 28px) !important; }
-/* la lista lleva dos lineas de texto por fila (nombre en PixeStart y rol+tarea en VT323): 34 px mas y la
-   tarea deja de irse con puntos. Medido: con 330 sobraban 7 px en las filas de obreras. */
-#rosterSheet{ width:364px !important; }
+/* La lista conserva el nombre completo dentro del ancho común; edad y salud se compactan más abajo. */
+#rosterSheet{ width:var(--topo-curtain-width,300px) !important; }
 #antProfile,#queenProfile{ width:var(--hoja-ancho-perfil) !important; max-width:calc(100vw - 28px) !important; }
 .pixel-btn{ font-size:11px !important; }
 #velAntBar .pixel-btn.small{ font-size:13px !important; }
@@ -588,7 +587,7 @@ body{ font-size:19px; }
 .inv-sheet{
   --inv-ink:#080503;--inv-panel:#1a120d;--inv-panel-2:#24170f;--inv-line:#5e402b;
   --inv-cream:#fff0c8;--inv-muted:#aa9775;--inv-gold:#ffcc33;--inv-green:#79bd43;
-  display:none;position:fixed;top:76px;right:14px;width:min(450px,calc(100vw - 28px));
+  display:none;position:fixed;top:76px;right:var(--topo-right-axis,14px);width:min(var(--topo-curtain-width,300px),calc(100vw - 28px));
   max-height:calc(100vh - 92px);max-height:calc(100dvh - 92px);z-index:1100;
   flex-direction:column;min-height:0;overflow:hidden;color:var(--inv-cream);
   background:
@@ -745,8 +744,8 @@ body{ font-size:19px; }
 .inv-sheet[data-compact-layout="1"] .inv-body{padding:10px;gap:11px}
 .inv-sheet[data-compact-layout="1"] .inv-footer{min-height:50px;padding:6px 9px}
 
-html[data-topo-ui="large"] .inv-sheet{width:min(470px,calc(100vw - 28px))}
-html[data-topo-ui="compact"] .inv-sheet{width:min(426px,calc(100vw - 28px))}
+html[data-topo-ui="large"] .inv-sheet{width:min(var(--topo-curtain-width,300px),calc(100vw - 28px))}
+html[data-topo-ui="compact"] .inv-sheet{width:min(var(--topo-curtain-width,300px),calc(100vw - 28px))}
 html[data-topo-contrast="true"] .inv-sheet{outline-color:#ffd95c;background:#090604;box-shadow:9px 9px 0 #000,inset 0 0 0 2px #8c673a}
 html[data-topo-contrast="true"] .inv-resource-note,html[data-topo-contrast="true"] .inv-cache-detail,html[data-topo-contrast="true"] .inv-heading p{color:#e9d9b8}
 
@@ -773,3 +772,154 @@ html[data-topo-contrast="true"] .inv-resource-note,html[data-topo-contrast="true
 }
 @media (prefers-reduced-motion:reduce){.inv-sheet,.inv-meter-fill{transition:none!important}}
 html[data-topo-motion="reduced"] .inv-sheet,html[data-topo-motion="reduced"] .inv-meter-fill{transition:none!important}
+
+/* === BUILD I · FRAME APERTURE, VOXEL DEPTH RAIL AND ONE RIGHT CURTAIN === */
+:root{
+  --topo-right-axis:14px;
+  --topo-curtain-width:300px;
+}
+.canvas-wrap{
+  overflow:hidden!important;
+  overflow:clip!important;
+  contain:paint;
+  isolation:isolate;
+  background:#070503!important;
+}
+#farmCanvas{clip-path:inset(0);}
+
+/* One existing depth control, rebuilt as a carved voxel rail. The horizontal guides end at the
+   measured canvas edge (`--depth-frame-width`) instead of running an arbitrary 1280 px. */
+.depth-ruler{
+  width:44px!important;
+  overflow:visible!important;
+  box-sizing:border-box!important;
+  border-right:4px solid #120b07!important;
+  outline:none;
+  opacity:1!important;
+  cursor:ns-resize!important;
+  touch-action:none;
+  background:
+    linear-gradient(90deg,rgba(255,255,255,.07) 0 2px,transparent 2px 100%),
+    repeating-linear-gradient(0deg,#3b281b 0 13px,#2a1b12 13px 15px,#503522 15px 28px,#21150f 28px 30px)!important;
+  box-shadow:inset -5px 0 0 #1b110b,inset 4px 0 0 #65442b,4px 0 0 rgba(0,0,0,.48)!important;
+}
+.depth-ruler::before{
+  content:"";position:absolute;z-index:0;left:29px;top:7px;bottom:7px;width:8px;
+  border:2px solid #0a0705;background:repeating-linear-gradient(0deg,#715036 0 8px,#9a7047 8px 11px,#422d20 11px 16px);
+  box-shadow:inset 2px 0 0 rgba(255,224,160,.18),2px 0 0 #000;pointer-events:none;
+}
+.depth-ruler::after{
+  content:"DEPTH";position:absolute;z-index:5;left:3px;top:6px;color:#d9be83;
+  font:5px/1 'Press Start 2P',monospace;letter-spacing:.03em;writing-mode:vertical-rl;
+  text-shadow:1px 1px 0 #000;pointer-events:none;
+}
+.depth-ruler:focus-visible{box-shadow:inset -5px 0 0 #1b110b,inset 4px 0 0 #8a6039,4px 0 0 #000,0 0 0 3px #ffcc00!important;}
+.depth-ruler .depth-track,.depth-ruler .depth-ticks{display:none!important;}
+.depth-ruler .depth-mark{
+  z-index:4!important;left:5px!important;right:auto!important;width:19px!important;height:18px!important;
+  box-sizing:border-box!important;padding:0!important;border:2px solid #0b0705!important;border-radius:0!important;
+  display:grid!important;place-items:center!important;transform-origin:left center!important;
+}
+.depth-ruler .depth-mark i{
+  width:100%!important;min-width:0!important;height:100%!important;box-sizing:border-box!important;
+  display:grid!important;place-items:center!important;padding:0!important;border:0!important;border-radius:0!important;
+  font:6px/1 'Press Start 2P',monospace!important;
+}
+.depth-ruler .depth-mark.fog-locked i{background:#33271f!important;color:#7b6a58!important;}
+.depth-ruler .depth-line{
+  left:39px!important;right:auto!important;
+  width:max(0px,calc(var(--depth-frame-width, 960px) - 39px))!important;height:2px!important;
+  box-sizing:border-box;border:0!important;
+  background:repeating-linear-gradient(90deg,rgba(232,194,107,.34) 0 8px,transparent 8px 16px)!important;
+  pointer-events:none!important;z-index:1!important;
+}
+.depth-ruler .depth-line:first-of-type{background:repeating-linear-gradient(90deg,rgba(126,200,227,.46) 0 10px,transparent 10px 18px)!important;}
+.depth-viewport{
+  display:block!important;z-index:6!important;left:27px!important;right:3px!important;min-height:18px!important;
+  box-sizing:border-box;border:2px solid #ffcc33!important;border-radius:0!important;
+  background:repeating-linear-gradient(0deg,#ffcc33 0 4px,#b77b16 4px 7px)!important;
+  box-shadow:inset 2px 0 0 #fff09a,2px 2px 0 #000!important;pointer-events:none!important;
+}
+.depth-cursor{display:none!important;}
+
+/* Clock and every existing right sheet share this one axis. Runtime variables mirror the actual clock
+   rect (including its collapsed state), so no drawer carries an independent magic width. */
+#calendarWidget{
+  right:var(--topo-right-axis)!important;
+  width:var(--topo-curtain-width)!important;
+  max-width:calc(100vw - (var(--topo-right-axis) * 2))!important;
+}
+#rosterSheet,#antProfile,#queenProfile,#invSheet{
+  right:var(--curtain-runtime-right,var(--topo-right-axis))!important;
+  left:auto!important;
+  width:min(var(--curtain-runtime-width,var(--topo-curtain-width)),calc(100vw - 28px))!important;
+  max-width:calc(100vw - 28px)!important;
+  box-sizing:border-box!important;
+  border-top:0!important;
+  transform-origin:top right!important;
+  overflow-x:hidden!important;
+}
+#rosterSheet,#antProfile,#queenProfile{
+  background-image:linear-gradient(90deg,rgba(255,255,255,.018) 50%,transparent 50%)!important;
+  background-size:16px 16px!important;
+}
+#invSheet{
+  transform:translateY(-12px) scaleY(0);
+  transform-origin:top right!important;
+  transition:transform .22s cubic-bezier(.2,.8,.2,1),opacity .16s linear!important;
+}
+#invSheet .inv-overview-grid,#invSheet .inv-resource-grid{grid-template-columns:1fr;}
+#invSheet .inv-resource-card{min-height:64px;}
+#invSheet .inv-heading h2{font-size:11px;}
+#invSheet .inv-header{grid-template-columns:42px minmax(0,1fr) 40px;padding:9px 10px;gap:8px;}
+#invSheet .inv-header-mark{width:42px;height:42px;}
+#invSheet #btnCloseInv.inv-close{width:40px;min-width:40px;height:40px;}
+
+/* A very short landscape viewport turns the clock itself into its existing mini presentation first;
+   the curtain still starts below it instead of covering it or leaving the screen. */
+@media (max-height:480px){
+  #calendarWidget:not(.collapsed){
+    height:42px!important;min-height:42px!important;max-height:42px!important;
+    display:flex!important;flex-direction:row!important;align-items:stretch!important;
+    background:#3e2a14!important;border:3px solid #000!important;box-shadow:4px 4px 0 #000!important;
+  }
+  #calendarWidget:not(.collapsed) .rc-hud{display:none!important;}
+  #calendarWidget:not(.collapsed) .rc-mini{
+    position:static!important;inset:auto!important;display:flex!important;flex:1!important;height:42px!important;min-height:42px!important;
+    background:transparent!important;border:0!important;box-shadow:none!important;padding:0 6px!important;
+    align-items:center!important;justify-content:center!important;gap:7px!important;
+  }
+  #calendarWidget:not(.collapsed) .rc-mini-season,#calendarWidget:not(.collapsed) .rc-mini-bar{display:none!important;}
+  #calendarWidget:not(.collapsed) #calAntRow{
+    position:static!important;display:flex!important;width:100px!important;height:42px!important;min-height:42px!important;
+    flex-direction:column!important;justify-content:center!important;border-left:3px solid #000!important;border-top:0!important;background:transparent!important;
+  }
+  #calendarWidget:not(.collapsed) #calCollapseBtn{top:8px!important;}
+}
+@media (max-width:520px){
+  .depth-ruler{width:40px!important;}
+  .depth-ruler::before{left:26px;width:7px;}
+  .depth-ruler .depth-mark{left:3px!important;}
+  .depth-ruler .depth-line{left:36px!important;width:max(0px,calc(var(--depth-frame-width, 960px) - 36px))!important;}
+  .depth-viewport{left:24px!important;}
+}
+/* The common 300 px curtain keeps the material ledger two-up, but compacts each voxel card instead of
+   making the drawer twice as long. Counts and reserve controls are the same existing data/actions. */
+#invSheet .inv-overview-grid{grid-template-columns:1fr!important;}
+#invSheet .inv-resource-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:6px;}
+#invSheet .inv-resource-card{grid-template-columns:32px minmax(0,1fr) auto;gap:4px;padding:6px;min-height:66px;}
+#invSheet .inv-resource-icon{width:32px;height:32px;}
+#invSheet .inv-resource-icon i{transform:scale(.76);transform-origin:top left;}
+#invSheet .inv-resource-name{font-size:6px;}
+#invSheet .inv-resource-note{font-size:12px;}
+#invSheet .inv-resource-count{min-width:18px;font-size:9px;}
+#invSheet .inv-reserve-control{gap:2px;}
+#invSheet .inv-reserve-label{display:block;font-size:4px;}
+#invSheet .inv-reserve-control button{width:28px;height:28px;min-width:28px;}
+#invSheet .inv-header{grid-template-columns:42px minmax(0,1fr) 44px;}
+#invSheet #btnCloseInv.inv-close{width:44px;min-width:44px;height:44px;}
+/* At the shared 300 px curtain width the ant name remains the primary, uncut identifier; compact only
+   the secondary health/age column rather than truncating the name. */
+#rosterSheet .ficha-hormiga .fh-dato{font-size:8px;}
+#rosterSheet .ficha-hormiga .fh-dato span{font-size:7px!important;}
+#invSheet .inv-resource-card>.inv-reserve-control{grid-column:1/-1;width:100%;box-sizing:border-box;margin-top:1px;}

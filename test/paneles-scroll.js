@@ -170,7 +170,8 @@ const BARRIDO = `(raiz)=>{
     const wrap=document.querySelector('.canvas-wrap');
     wrap.dispatchEvent(new WheelEvent('wheel',{deltaY:-240,bubbles:true,cancelable:true,clientX:620,clientY:300}));
     const despuesZoom={z:+view.zoom.toFixed(3), y:Math.round(view.y*100)/100};
-    setZoom(2.2); const y0=Math.round(view.y*100)/100;
+    setZoom(2.2); view.y=getPanBounds().minY; const y0=Math.round(view.y*100)/100;
+    // Start away from the lower clamp: a scrollbar at its bottom correctly cannot move farther down.
     document.querySelector('.depth-ruler').dispatchEvent(new WheelEvent('wheel',{deltaY:300,bubbles:true,cancelable:true}));
     return {antes, despuesZoom, y0, y:Math.round(view.y*100)/100, max:Math.round(getPanBounds().maxY)};
   })()`);

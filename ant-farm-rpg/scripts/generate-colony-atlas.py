@@ -155,6 +155,113 @@ def draw_store_shelf(d):
     px(d, 20, 17, "#b39a6d", 5, 4); px(d, 21, 17, "#e0cf9a", 3, 1)
 
 
+
+def draw_workshop(d):
+    shadow(d, 2, 28, 30)
+    # Low timber bench with a vice, stone anvil and peg board.
+    voxel_block(d, 3, 18, 26, 8, "#75421f", "#b97a3c", "#3e2111")
+    rect(d, (6, 25, 9, 29), "#2b180d"); rect(d, (23, 25, 26, 29), "#2b180d")
+    voxel_block(d, 19, 11, 9, 7, "#70777e", "#c5cbd0", "#3d4247")
+    rect(d, (5, 7, 17, 17), "#2a190f"); rect(d, (6, 8, 16, 16), "#8c5b2d")
+    # Tools are silhouettes here; equipped versions keep their own atlas entries.
+    d.line((8,10,14,15), fill="#d0d5d9", width=2); d.line((14,9,10,15), fill="#392013", width=2)
+    px(d, 7, 19, "#e4b35b", 4, 2); px(d, 15, 20, "#4b2b17", 3, 3)
+
+
+def draw_granary(d):
+    shadow(d, 2, 28, 30)
+    voxel_block(d, 3, 8, 26, 19, "#9b7246", "#d5b27d", "#5a3b22")
+    rect(d, (5, 13, 27, 16), "#412718"); rect(d, (6, 13, 26, 14), "#c28d48")
+    # Three dry food bins with different visible grains.
+    for x, col, hi in ((6,"#c89d54","#f0d18a"),(14,"#8ca54b","#d5e77f"),(22,"#b78348","#e9bd7a")):
+        rect(d, (x, 17, x + 5, 25), "#2a190f"); rect(d, (x + 1, 18, x + 4, 24), col); px(d, x + 1, 18, hi, 3, 1)
+    rect(d, (13, 5, 19, 10), "#2b190e"); rect(d, (14, 6, 18, 9), "#e4bd68")
+
+
+def draw_bridge(d):
+    shadow(d, 1, 27, 31)
+    for x in range(2, 30, 5):
+        voxel_block(d, x, 16 + ((x // 5) & 1), 5, 8, "#8b5529", "#c58b49", "#4a2915")
+    rect(d, (1, 13, 31, 15), "#2a190e"); rect(d, (2, 13, 30, 13), "#d1a05d")
+    for x in (3, 28):
+        rect(d, (x, 8, x + 2, 27), "#2a190e"); px(d, x + 1, 9, "#a46b35", 1, 15)
+    d.line((4,10,28,10), fill="#d2ad69", width=2)
+
+
+def draw_tower(d):
+    shadow(d, 4, 29, 28)
+    voxel_block(d, 8, 7, 17, 22, "#696c72", "#adb2b8", "#373a40")
+    for x in (7, 13, 20, 25):
+        rect(d, (x, 4, x + 4, 10), "#292c31"); rect(d, (x + 1, 4, x + 3, 8), "#888d94")
+    rect(d, (13, 19, 19, 28), "#22252a"); rect(d, (14, 20, 18, 27), "#4c3525")
+    rect(d, (11, 12, 14, 16), "#1c2025"); rect(d, (19, 12, 22, 16), "#1c2025")
+    px(d, 15, 5, "#e7c94e", 2, 3)
+
+
+def draw_mound(d):
+    shadow(d, 2, 29, 30)
+    # Loose excavated spoil, stepped like the terrain; no second nest entrance is invented per pile.
+    rect(d, (3, 24, 29, 28), "#3d2415"); rect(d, (6, 19, 27, 27), "#6f4325")
+    rect(d, (10, 15, 23, 26), "#86532e"); rect(d, (14, 12, 19, 23), "#9c6336")
+    px(d, 7, 20, "#b67b46", 7, 2); px(d, 13, 16, "#c88d53", 6, 2); px(d, 21, 21, "#4f2d1a", 5, 3)
+    px(d, 4, 25, "#56331d", 5, 2); px(d, 17, 25, "#5b351d", 8, 2)
+
+
+def draw_fungus_seedling(d):
+    shadow(d, 5, 28, 27)
+    voxel_block(d, 4, 21, 24, 6, "#71452c", "#aa6c48", "#3b2418")
+    rect(d, (6, 18, 26, 22), "#3d3023")
+    for x, y in ((8,16),(14,13),(21,16)):
+        rect(d, (x + 2, y + 2, x + 3, 21), "#d3c09d")
+        rect(d, (x, y, x + 5, y + 3), "#4f672f"); px(d, x + 1, y, "#a7c663", 2, 1)
+
+
+def draw_cargo_block(d, main, light, dark, form="crate"):
+    shadow(d, 5, 28, 27)
+    if form == "fiber":
+        for y in (12, 17, 22):
+            rect(d, (6, y, 26, y + 4), "#263018"); rect(d, (7, y, 25, y + 2), main); px(d, 8, y, light, 8, 1)
+        rect(d, (14, 10, 17, 28), dark); px(d, 15, 11, light, 1, 14)
+    elif form == "stone":
+        for x, y, w in ((5,20,10),(16,20,11),(10,13,11),(20,13,7),(14,7,10)):
+            voxel_block(d, x, y, w, 7, main, light, dark)
+    else:
+        voxel_block(d, 5, 9, 23, 18, main, light, dark)
+        rect(d, (8, 12, 25, 15), dark); rect(d, (14, 10, 18, 26), dark)
+        rect(d, (15, 16, 17, 19), "#e2bd63")
+
+
+def draw_store_full(d):
+    draw_store_shelf(d)
+    jar(d, 15, 17, main="#bd744d", light="#edb184", dark="#71391f", filled="#f1ad12")
+    px(d, 7, 10, "#d2b56c", 5, 3); px(d, 21, 10, "#8da64c", 4, 3)
+
+
+def draw_cache_full(d):
+    draw_cache(d, True)
+    px(d, 7, 12, "#ffd53b", 6, 5); px(d, 18, 12, "#96b75b", 7, 5)
+    px(d, 9, 12, "#fff2a1", 2, 1); px(d, 20, 12, "#d8e88d", 2, 1)
+
+
+def draw_reinforced_braces(d):
+    draw_braces(d)
+    for x in (4, 15, 26):
+        rect(d, (x - 2, 12, x + 3, 16), "#30343a"); rect(d, (x - 1, 12, x + 2, 14), "#aeb5bb")
+        px(d, x, 13, "#e9eef1", 1, 1)
+
+
+def draw_worksite_foundation(d):
+    draw_worksite(d)
+    for x in (7, 13, 19, 25):
+        voxel_block(d, x, 22, 5, 5, "#9a9ca1", "#d6dadd", "#53565c")
+
+
+def draw_empty_jars(d):
+    shadow(d, 3, 27, 29)
+    jar(d, 3, 12); jar(d, 12, 8, main="#c98258", light="#f3bc8b", dark="#774229")
+    jar(d, 21, 13, main="#a96142", light="#d88e68", dark="#61311f")
+    px(d, 7, 10, "#7f5537", 3, 2); px(d, 25, 11, "#6e432c", 2, 2)
+
 def draw_overflow(d, kind, color, light, dark, motif="round"):
     shadow(d, 3, 28, 29)
     # Reed mat says "outside protected shelves" at a glance.
@@ -416,6 +523,26 @@ SPECS = [
     S("state.fungus_healthy", "states", lambda d: draw_fungus_bed(d,"healthy")),
     S("state.storage_pressure", "states", draw_pressure_marker),
     S("state.reserved", "states", lambda d: None, "Reserved transparent slot for a compatible future sprite."),
+
+    # Appended in Build I: existing coordinates above remain stable. Every current ant-made object now
+    # has a named tile, and stateful families can add `<base>_<variant>` without touching gameplay coords.
+    S("structure.workshop", "structures", draw_workshop, "Ant-built timber workbench and simple metal tools."),
+    S("structure.granary", "structures", draw_granary, "Dry three-bin granary."),
+    S("structure.bridge", "structures", draw_bridge, "Rope-bound timber bridge."),
+    S("structure.tower", "structures", draw_tower, "Worked-stone lookout tower."),
+    S("structure.mound", "structures", draw_mound, "Stepped spoil mound with a supported nest entrance."),
+    S("structure.store_full", "structures", draw_store_full, "Protected store shelf visibly stocked with jars and dry goods."),
+    S("crop.fungus_bed", "crops", lambda d: draw_fungus_bed(d,"healthy"), "Healthy cultivated fungus bed."),
+    S("crop.fungus_dry", "crops", lambda d: draw_fungus_bed(d,"dry"), "Dry cultivated fungus bed."),
+
+    S("crop.fungus_seedling", "crops", draw_fungus_seedling, "Newly established fungus plugs in prepared substrate."),
+    S("cargo.fiber_bundle", "cargo", lambda d: draw_cargo_block(d,"#78984b","#c5dc82","#425e2f","fiber"), "Bound fibre construction load."),
+    S("cargo.stone_block", "cargo", lambda d: draw_cargo_block(d,"#85878b","#d4d8dc","#4a4c52","stone"), "Worked stone construction load."),
+    S("cargo.supply_crate", "cargo", lambda d: draw_cargo_block(d,"#8b5425","#d39a4f","#4f2a13","crate"), "Reusable mixed construction crate."),
+    S("project.forward_cache_full", "projects", draw_cache_full, "Operational cache with visible protected stock."),
+    S("project.tunnel_braces_reinforced", "projects", draw_reinforced_braces, "Timber support upgraded with metal joints."),
+    S("project.worksite_foundation", "projects", draw_worksite_foundation, "Surveyed worksite after its first foundation deliveries."),
+    S("project.clay_jars_empty", "projects", draw_empty_jars, "Sealed vessels waiting for the first protected rations."),
 ]
 
 
@@ -441,7 +568,7 @@ def main() -> None:
     manifest = {
         "meta": {
             "name": "ANT FARM · COLONY OBJECTS",
-            "version": "20261020h",
+            "version": "20261020i",
             "image": "colony-atlas.png",
             "width": atlas.width,
             "height": atlas.height,

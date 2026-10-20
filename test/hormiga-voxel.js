@@ -7,7 +7,7 @@
  * pegados encima del barro, con su recorte visible al acercar la camara. Aqui se mide el pintor
  * nuevo (`_hormigaVoxel`) con las funciones de verdad del juego, en Chrome real:
  *
- *   - que una hormiga se pinta SOLO con rectangulos (cero trazos, cero circulos, cero imagenes);
+ *   - que el cuerpo se pinta sólo con rectángulos y que únicamente una carga usa su tile del atlas común;
  *   - que los cinco PNG de hormiga ya no se piden al arrancar;
  *   - que el caste se ve en el tamano (minim < media < major < reina), no en un numero;
  *   - que la cara de luz arriba y el canto oscuro abajo estan, como en el terreno;
@@ -176,9 +176,11 @@ const TIRA = `(() => {
   ok(R.pngs === false, 'las variables de los PNG (antWalk6 y cia.) desaparecieron del codigo');
 
   const M = (n) => por[n].mide, T = (n) => por[n].trazos;
-  const sinTrazos = Object.values(por).every(r => r.trazos.stroke === 0 && r.trazos.arc === 0 && r.trazos.img === 0);
-  ok(sinTrazos, 'una hormiga se pinta SOLO con rectangulos: cero trazos, cero circulos, cero imagenes',
-    'rellenos por hormiga: ' + (M('media andando').rect ?? T('media andando').rect));
+  const cuerpos=['media andando','minim','major (soldado)','cavando','durmiendo','reina','antropomorfa','mini (mapa)'];
+  const cuerposEnBloques=cuerpos.every(n=>T(n).stroke===0&&T(n).arc===0&&T(n).img===0);
+  ok(cuerposEnBloques,'el cuerpo de cada hormiga sigue hecho sólo de rectángulos, sin trazos ni imágenes',
+    'rellenos por hormiga: '+(M('media andando').rect??T('media andando').rect));
+  ok(T('con carga').stroke===0&&T('con carga').arc===0&&T('con carga').img>=1,'la carga usa su textura nombrada del atlas sin cambiar el pintor del cuerpo',T('con carga').img+' drawImage');
 
   for (const n of Object.keys(por)) ok(M(n).ancho > 6 && M(n).alto > (n==='mini (mapa)'?3:5), '  · ' + n + ': hay bulto dibujado', M(n).ancho + 'x' + M(n).alto + ' px, ' + M(n).px + ' px pintados');
 
