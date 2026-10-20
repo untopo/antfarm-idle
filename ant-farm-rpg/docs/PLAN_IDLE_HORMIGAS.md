@@ -154,7 +154,7 @@ red entrenada.
 | Cerebro de 141 números | Rasgo heredado en la capa 3 |
 | Vuelo nupcial (ya existe la idea en el juego) | Capa 1, con su moneda y su fórmula |
 | Mundo pequeño/mediano/grande | Tamaño del nido (se conserva) |
-| Ataque/depredadores | Se retira por ahora; se puede reintroducir como evento |
+| Ataques, animales exteriores y defensa | Se retiran del núcleo inicial. Vuelven después de las fases 0–4 como incidentes de contenido: alarma emergente, soldadoras que responden sin asignación manual, consecuencias físicas y resolución offline justa. Diseño anotado en `BACKLOG_FUTURO.md` |
 
 ---
 
@@ -235,10 +235,12 @@ Cada fase deja algo jugable o medible. Ninguna se empieza sin que la anterior pa
 - Resumen de regreso con eventos en orden y dos caminos sugeridos.
 - **Criterio:** volver tras 12 h muestra un resumen legible y el estado es coherente (sin números absurdos).
 
-### Fase 5 · Contenido y arco
-- Nueve trofeos con bono, arco de tres actos, eventos ocasionales (una tormenta que inunda una banda, un
-  topo que cava un túnel nuevo).
-- **Criterio:** arco jugable completo en 15–25 horas medidas con bot y con dos personas.
+### Fase 5 · Contenido, ecología y arco
+- Nueve trofeos con bono, arco de tres actos y una tabla reutilizable de incidentes: clima, hallazgos,
+  animales del prado, colonias rivales y ataques. Las amenazas alertan defensas emergentes —incluidas
+  soldadoras— y se resuelven también offline sin castigar la ausencia.
+- **Criterio:** arco jugable completo en 15–25 horas medidas con bot y con dos personas; el conjunto de
+  incidentes produce rutas distintas entre semillas sin generar una derrota inevitable ni exigir conexión.
 
 ### Fase 6 · Vista «mirar» y pulido
 - Reincorporar las hormigas animadas como modo opcional, medido a 60 fps con el nido completo.
