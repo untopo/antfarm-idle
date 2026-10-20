@@ -173,10 +173,13 @@ const html = fs.readFileSync(path.join(ROOT, 'ant-farm-rpg/index.html'), 'utf8')
     m.scrollTop = 99999;
     await new Promise(rr => setTimeout(rr, 60));
     const ult = m.lastElementChild ? m.lastElementChild.getBoundingClientRect() : null;
-    const mr = m.getBoundingClientRect();
+    const mr = m.getBoundingClientRect(), scaleY = m.offsetHeight ? mr.height / m.offsetHeight : 1;
+    // `mr.bottom` includes the 4 px decorative border. The scroll viewport ends at the padding edge:
+    // compare against that real visible edge instead of treating a healthy black border as clipped space.
+    const viewportBottom = mr.top + (m.clientTop + m.clientHeight) * scaleY;
     return { abierto: !!m.getAttribute('data-open'), id: m.getAttribute('data-ant'), ancho: Math.round(r.width), fuera: +(r.bottom - window.innerHeight).toFixed(1),
       overflow: getComputedStyle(m).overflowY, noHaceFalta: m.scrollHeight <= m.clientHeight + 1,
-      ultimoDentro: ult ? +(mr.bottom - ult.bottom).toFixed(1) : null,
+      ultimoDentro: ult ? +(viewportBottom - ult.bottom).toFixed(1) : null,
       rosterCerrado: !document.querySelector('#rosterSheet[data-open]'), volver: getComputedStyle(document.getElementById('btnVolver')).display };
   });
   ok(perfil.abierto && perfil.id === filaId, 'pinchar una fila abre el perfil de ESA hormiga', `data-ant="${perfil.id}"`);

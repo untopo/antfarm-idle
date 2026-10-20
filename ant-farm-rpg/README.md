@@ -12,11 +12,19 @@ node dev-server.js 8017      # raiz: ant-farm-rpg/, sin cache (Cache-Control: no
 
 Servir con `no-store` importa: con HTML nuevo y `app.js` de la cache vieja el juego se comporta de
 forma distinta a como está escrito y no se puede depurar. `index.html`, `css/style.css` y los assets
-llevan **un solo** `?v=` (`20261020k`); al tocar CSS o JS se sube en todos los sitios a la vez.
+llevan **un solo** `?v=` (`20261020l`); al tocar CSS o JS se sube en todos los sitios a la vez.
 
 Depuración: `?debug=1` en la URL (o `localStorage.antfarm_debug='1'`) enciende el registro del juego
 (`tlog`) que está callado por defecto. En la consola: `_topoDbg()` devuelve día, obreras, comida,
 dimensiones y si está pausado.
+
+## Build L: recibo de regreso
+
+Al volver mediante `CONTINUE` o desde una pestaña oculta, un único diálogo consume el informe offline ya
+liquidado. Enseña tiempo contado y descartado por el tope, flujos físicos, cría/trabajos, el cuello que
+paró el avance y exactamente dos sugerencias de observación. Esas sugerencias sólo abren `NEST STORES` o
+centran la cámara; no inician proyectos ni asignan decisiones. Los sellos presentados y una cola breve de
+recibos pendientes se guardan con la granja para que ni la simulación ni la pantalla se repitan.
 
 ## Build H: presión de almacén
 
@@ -39,7 +47,7 @@ ant-farm-rpg/
 ├── css/style.css       tema del juego; css/startup.css contiene la familia voxel responsive de entrada
 ├── js/app.js           ~11 000 líneas · motor de mundo, colonia, almacén y UI
 ├── js/texture-pack.js  runtime del atlas: nombres estables, pivotes, nearest-neighbour y fallback
-├── assets/textures/colony-atlas.{png,json,manifest.js} · hoja única de 64 objetos voxel reutilizables
+├── assets/textures/colony-atlas.{png,json,manifest.js} · hoja única de 80 objetos voxel reutilizables
 ├── scripts/generate-colony-atlas.py · fuente determinista de la hoja y ambos manifiestos
 └── docs/
     ├── ARCHITECTURE.md    contrato del flujo de creación, guardado, helpers de HUD
@@ -76,6 +84,7 @@ node test/browser-smoke.js    # solo el navegador real (creación, iframe sandbo
 | `test/save-roundtrip.js` | Guardar → recargar → mismo mundo, obreras y tesoros |
 | `test/reload-simulation.js` | La granja activa sobrevive a llenar el archivo de 5 granjas |
 | `test/browser-smoke.js` | Chrome real: menú → tamaños → siembra → mundo 96×48 pintado, colonia viva, recarga, y el mismo flujo dentro de un `iframe sandbox` sin `allow-modals` |
+| `test/offline-return.js` | Chrome real: contenido del recibo, una presentación por sello en `CONTINUE` y visibilidad, idempotencia, dos sugerencias no automáticas, foco/ESC, movimiento reducido y tamaños desktop/retrato/landscape |
 | `test/intro-topo.js` | La transición usa la geometría responsive definitiva desde el primer píxel visible, sin título grande que luego se encoja |
 | `test/startup-menu.js` | Orden, teclado y tamaños táctiles del menú en escritorio, móvil y landscape |
 | `test/front-menu-settings.js` | Familia voxel completa: paneles sin recorte, ajustes persistentes, fondo inmóvil al desactivarlo, exportación/importación y borrado seguro |

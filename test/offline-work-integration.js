@@ -27,11 +27,27 @@ const before=sb.__offlineWorkBefore,after=sb.__offlineWorkAfter;
 check('la obra ya aprobada termina durante la ausencia',!after.active&&after.completed.length===1&&after.completed[0].type==='clay_jars',after.completed);
 check('materiales comprometidos se cargan y pagan exactamente una vez',after.clay===before.clay-3&&after.fiber===before.fiber-2&&after.heldClay===0&&after.heldFiber===0,
   {before:{clay:before.clay,fiber:before.fiber},after:{clay:after.clay,fiber:after.fiber},held:[after.heldClay,after.heldFiber]});
+const projectReceipt=after.report.applied.project,slabReceipt=after.report.applied.slab;
+check('el recibo identifica materiales, nombre y ubicación de la obra',projectReceipt.materialsConsumed.clay===3&&projectReceipt.materialsConsumed.fiber===2&&projectReceipt.name&&Number.isFinite(projectReceipt.anchor.x)&&Number.isFinite(projectReceipt.anchor.y),projectReceipt);
+check('el recibo conserva ubicación y daño físico de la losa',slabReceipt.completed&&slabReceipt.damage>0&&Number.isFinite(slabReceipt.anchor.x)&&Number.isFinite(slabReceipt.anchor.y),slabReceipt);
 check('la cuadrilla que ya mordía la losa abre una sola banda',after.umbrales===before.umbrales+1&&after.report.applied.slabCompleted===true,{before:before.umbrales,after:after.umbrales});
 check('el agregado registra obra y losa como eventos discretos ordenados',after.report.events.filter(e=>e.kind==='project_complete').length===1&&after.report.events.filter(e=>e.kind==='slab_complete').length===1,
   after.report.events.map(e=>e.kind));
 check('el regreso no aprueba otra obra ni encadena otra losa',after.completed.length===1&&!after.active&&after.umbrales===before.umbrales+1,
   {completed:after.completed.length,active:after.active,umbrales:after.umbrales});
+
+const nowDig=now+100000;
+vm.runInContext(`(()=>{
+  topoCreateFreshWorld(48,28);queens[0].health=10;const s=storageStructure(false);s.built=true;s.work=s.workNeeded;s.buildProgress=1;
+  const f=worldStats().frontier.find(p=>soilType[p.r]&&soilType[p.r][p.c]!==17&&soilType[p.r][p.c]!==15&&puedeAbrirSuperficie(p.c,p.r)),w=workers[0];
+  w.state='CAVANDO';w.digTarget={c:f.c,r:f.r};w.digProgress=0;w.digNeeded=100;brood=[{type:'egg',progress:0,isQueen:false,time:0,x:queens[0].x,y:queens[0].y,hunger:0}];serializeSave(true);window.__partialDigBefore={id:w.id,c:f.c,r:f.r};
+})()`,ctx);
+let digSave=JSON.parse(store.get('antFarm_fullSave_v2'));digSave.savedAt=nowDig-31000;store.set('antFarm_fullSave_v2',JSON.stringify(digSave));
+vm.runInContext(`(()=>{deserializeSave();const r=_applyOfflineAfterLoad(${nowDig}),f=window.__partialDigBefore,w=workers.find(x=>x.id===f.id);window.__partialDigAfter={soil:soil[f.r][f.c],progress:w&&w.digProgress,needed:w&&w.digNeeded,applied:r.applied.digs,brood:r.applied.brood,summary:_offlineReturnModel(r)};})()`,ctx);
+const partial=sb.__partialDigAfter;
+check('un frente incompleto conserva el avance agregado y su ubicación',partial.soil===1&&partial.progress>0&&partial.progress<partial.needed&&partial.applied.advanced===1&&partial.applied.last.c===sb.__partialDigBefore.c&&partial.applied.last.r===sb.__partialDigBefore.r,partial);
+check('el resumen distingue avance parcial de una excavación terminada',partial.summary.changes.some(x=>x.label==='EXCAVATION FRONTS ADVANCED')&&!partial.summary.changes.some(x=>x.label==='EXCAVATIONS OPENED'),partial.summary.changes);
+check('la cría parcial también queda aplicada y explicada',partial.brood.advanced===1&&partial.summary.changes.some(x=>x.label==='BROOD CARE ADVANCED'),{brood:partial.brood,changes:partial.summary.changes});
 
 const nowStore=now+200000;
 vm.runInContext(`(()=>{

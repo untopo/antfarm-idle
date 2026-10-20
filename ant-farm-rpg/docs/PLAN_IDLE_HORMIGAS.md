@@ -191,8 +191,17 @@ red entrenada.
   elige automáticamente el siguiente proyecto, frente, losa ni mejora.
 - Senescencia, clima, derrumbes, podredumbre e incidentes quedan fuera de esta primera liquidación: la
   ausencia no puede matar ni castigar al jugador mientras esos sistemas no tengan resolución agregada justa.
-- La pantalla única de regreso sigue deliberadamente separada: se conectará al informe comprobable sólo
-  después de estabilizar saldos, migración y no duplicación.
+
+**Presentación integrada (Build L):**
+- Un único diálogo de regreso consume el informe ya aplicado; nunca vuelve a liquidar ni recorre cuadros.
+  Muestra tiempo contado, exceso descartado por el tope, comida ganada/consumida, materiales físicos,
+  cría, obra, excavación/losa y el cuello de botella en inglés claro.
+- Una cola breve de modelos pendientes y hasta 64 sellos presentados viajan dentro del guardado. Cada recibo se abre una vez
+  tanto tras `CONTINUE` como al volver de una pestaña oculta; recargar o llamar otra vez al adaptador no
+  duplica saldos, nacimientos ni la pantalla.
+- Sus dos sugerencias exactas sólo abren `NEST STORES` o centran la cámara. No aprueban proyectos, eligen
+  excavaciones, asignan profesiones ni abren `COLONIA`/`HISTORIAL`. Mientras está abierto pausa la granja,
+  aísla el fondo, atrapa/restaura foco y respeta movimiento reducido.
 
 ### 3.4 Anti-trampas (medio alcance)
 - Como en Idle Deepcore o Idle Miner, el juego es de un solo jugador en un navegador. La tabla de tiempo

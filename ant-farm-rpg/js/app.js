@@ -2998,7 +2998,7 @@ function topoCreateFreshWorld(cols, rows){
   if(typeof soilCacheCanvas!=='undefined'){ try{ soilCacheCanvas.width=W; soilCacheCanvas.height=H; }catch(e){} }
   _topoHasWorld=true;
   // Un nido nuevo no hereda recibos ni ampliaciones offline de la granja que se acaba de archivar.
-  try{_loadedSaveSavedAt=0;_offlineUnlocks={lineage:false,lateStage:false};_lastOfflineReceipt=null;_lastOfflineReport=null;_offlineHiddenSavedAt=0;_offlineAppliedStamps.clear();}catch(e){}
+  try{_loadedSaveSavedAt=0;_offlineUnlocks={lineage:false,lateStage:false};_lastOfflineReceipt=null;_lastOfflineReport=null;_offlineHiddenSavedAt=0;_offlineReturnPending=[];_offlineAppliedStamps.clear();_offlinePresentedStamps.clear();}catch(e){}
   // limpiar previos por si había restos
   try{ workers.length=0; queens.length=0; foods.length=0; protectedFoodLots.length=0; brood.length=0; mound.length=0; hiddenRewards.length=0; particles.length=0; pheromones.length=0; commInks.length=0;_loadExploration([]); }catch(e){}
   // Topo: al sobre-escribir un mundo habia que limpiar TAMBIEN lo que se hereda del suelo (jardines
@@ -10734,7 +10734,7 @@ if(_topoHasWorld){
 
 // === SAVE PERSISTENTE - la granja sobrevive a recargar ===
 const SAVE_KEY='antFarm_fullSave_v2';
-const SAVE_VER='20261020k';
+const SAVE_VER='20261020l';
 const LS_ALIVE='antfarm_worldAlive';
 const LS_INGAME='antfarm_inGame';
 let _loadedSaveSavedAt=0;
@@ -10742,7 +10742,9 @@ let _offlineUnlocks={lineage:false,lateStage:false};
 let _lastOfflineReceipt=null;
 let _lastOfflineReport=null;
 let _offlineHiddenSavedAt=0;
+let _offlineReturnPending=[];
 const _offlineAppliedStamps=new Set();
+const _offlinePresentedStamps=new Set();
 // grids a string de digitos: 8x menos bytes que JSON de arrays (BIG 96x48 entra en localStorage)
 // One base-20 character per cell keeps saves compact while preserving every physical type (0–18).
 // Decimal saves from earlier builds are a strict subset, so this is also their migration path.
@@ -10792,7 +10794,7 @@ function serializeSave(force){
     try{_syncProtectedLotsWithLedger();}catch(e){}
     const data={
       v:SAVE_VER, savedAt:Date.now(), day,
-      offline:{v:1,unlocks:{lineage:!!_offlineUnlocks.lineage,lateStage:!!_offlineUnlocks.lateStage},receipt:_lastOfflineReceipt?{..._lastOfflineReceipt}:null},
+      offline:{v:1,unlocks:{lineage:!!_offlineUnlocks.lineage,lateStage:!!_offlineUnlocks.lateStage},receipt:_lastOfflineReceipt?{..._lastOfflineReceipt}:null,presented:[..._offlinePresentedStamps].slice(-64),pending:_offlineReturnPending.slice(0,16)},
       time, gen, colonyIQ, colonyFood:economyLedger.food, digs, deliveries, accidents, rewardsFound, mutations, commsCount, worldAge,
       ROWS, COLS, SURFACE_ROW, worldSeed,
       ancientSites:Array.isArray(ancientSites)?ancientSites.map(s=>({id:s.id,c:s.c,r:s.r,depth:s.depth,w:s.w,h:s.h,style:s.style,kind:s.kind,biome:s.biome,damage:s.damage,flood:s.flood,cycle:s.cycle,scar:s.scar,repairStyle:s.repairStyle,repairRate:s.repairRate,oddity:s.oddity||0,muralSeed:s.muralSeed})):[],
@@ -10853,6 +10855,8 @@ function deserializeSave(){
     _loadedSaveSavedAt=Math.max(0,Number(data.savedAt)||0);
     _offlineUnlocks={lineage:!!(data.offline&&data.offline.unlocks&&data.offline.unlocks.lineage),lateStage:!!(data.offline&&data.offline.unlocks&&data.offline.unlocks.lateStage)};
     _lastOfflineReceipt=data.offline&&data.offline.receipt&&typeof data.offline.receipt==='object'?{...data.offline.receipt}:null;
+    _offlinePresentedStamps.clear();for(const key of data.offline&&Array.isArray(data.offline.presented)?data.offline.presented:[])if(typeof key==='string'&&key.length<96)_offlinePresentedStamps.add(key);
+    {const pending=data.offline&&data.offline.pending,list=Array.isArray(pending)?pending:(pending&&typeof pending==='object'?[pending]:[]);_offlineReturnPending=list.filter(x=>x&&typeof x.key==='string'&&x.key.length<96).slice(0,16);}
     // 1) dimensiones primero: W/H/canvas/soilCache deben coincidir con el mapa guardado
     COLS = data.COLS||64; ROWS = data.ROWS||36;
     if(data.SURFACE_ROW) SURFACE_ROW = data.SURFACE_ROW;
@@ -10989,13 +10993,13 @@ function _offlineProjectInput(known){
   const byId=new Map(known.map(w=>[String(w.id),w])),a=colonyProjects.activeRef();
   if(!a){
     const site=storageStructure(false);
-    if(!site||site.built!==false)return {kind:'none',model:null,ref:null,crew:[],initialWork:0};
+    if(!site||site.built!==false)return {kind:'none',name:'',anchor:null,model:null,ref:null,crew:[],initialWork:0};
     const crew=(site.builders||[]).map(id=>byId.get(String(id))).filter(Boolean);let siteOK=false;
     try{siteOK=_storeSiteIsPhysical(site);}catch(e){}
     let workRate=0;for(const w of crew){const trait=w.traits&&w.traits.construccion||40,xp=_jobBook(w).build||0;workRate+=.74+trait/220+Math.min(.24,xp*.018)+(w.tool==='trowel' ? .20 : 0);}
     const workNeeded=site.workNeeded||STORE_WORK_REQUIRED,mainAfter=8+_storeFootprint(site).length*2+Math.max(0,(site.level||1)-1)*12+colonyProjects.completedCount('clay_jars')*12;
     const capacityAfter=Math.max(economyLedger.food,mainAfter+operationalColonyProjects('forward_cache').length*6);
-    return {kind:'store',model:{id:'STORE-'+site.c+'-'+site.r,enabled:siteOK&&crew.length>0,foodFloor:_reservaVital()+1,capacityAfter,haulRemaining:0,haulRate:0,work:site.work||0,workNeeded,workRate},ref:site,crew,initialWork:site.work||0};
+    return {kind:'store',name:'NEST STORE',anchor:_storeAnchor(site),model:{id:'STORE-'+site.c+'-'+site.r,enabled:siteOK&&crew.length>0,foodFloor:_reservaVital()+1,capacityAfter,haulRemaining:0,haulRate:0,work:site.work||0,workNeeded,workRate},ref:site,crew,initialWork:site.work||0};
   }
   const ids=new Set((a.crew||[]).map(String));
   for(const w of known)if(w.projectCargo&&w.projectCargo.projectId===a.id)ids.add(String(w.id));
@@ -11007,14 +11011,16 @@ function _offlineProjectInput(known){
   for(const w of crew){const trait=w.traits&&w.traits.construccion||40,xp=_jobBook(w).build||0;workRate+=.58+trait/230+Math.min(.28,xp*.02)+(w.tool==='trowel' ? .20 : 0);}
   const enabled=siteOK&&crew.length>0,baseCapacity=capacidadAlmacen();
   const capacityAfter=(a.type==='clay_jars'?Math.max(economyLedger.food,baseCapacity+12):a.type==='forward_cache'?Math.max(economyLedger.food,baseCapacity+6):0);
-  return {kind:'colony',model:{id:a.id,enabled,foodFloor:_reservaVital()+1,capacityAfter,haulRemaining,haulRate,work:a.work||0,workNeeded:a.workNeeded||0,workRate},ref:a,crew,initialWork:a.work||0};
+  const def=projectDefinition(a.type);
+  return {kind:'colony',name:def&&def.name||'APPROVED WORK',anchor:colonyProjectAnchor(a),model:{id:a.id,enabled,foodFloor:_reservaVital()+1,capacityAfter,haulRemaining,haulRate,work:a.work||0,workNeeded:a.workNeeded||0,workRate},ref:a,crew,initialWork:a.work||0};
 }
 function _offlineSlabInput(known,excluded){
   if(!umbral)return null;
   const crew=known.filter(w=>w&&!(excluded&&excluded.has(String(w.id)))&&w.digTarget&&w.digTarget.r===umbral.r&&soilType[umbral.r]&&soilType[umbral.r][w.digTarget.c]===17&&(w.state==='CAVANDO'||w._umbralLead||w._umbralSupport));
   let perDay=0;
   for(const w of crew)perDay+=6+(w.role==='EXCAVADORA' ? .9 : 0)+(w.tool==='pick' ? .8 : 0)+(inventions.masonry ? .6 : 0)+Math.min(.8,gen*.04);
-  return {id:'slab-'+umbral.r+'-'+umbral.banda,enabled:crew.length>0,hp:umbral.hp,hpMax:umbral.hpMax,rate:perDay/DAY_LENGTH};
+  const centerC=Number.isFinite(Number(umbral.centroC))?Number(umbral.centroC):(Number.isFinite(Number(umbral.c0))&&Number.isFinite(Number(umbral.c1))?(Number(umbral.c0)+Number(umbral.c1))/2:CENTER_COL);
+  return {id:'slab-'+umbral.r+'-'+umbral.banda,enabled:crew.length>0,hp:umbral.hp,hpMax:umbral.hpMax,rate:perDay/DAY_LENGTH,anchor:{x:(centerC+.5)*CELL,y:(umbral.r+.5)*CELL}};
 }
 function _offlineDigInput(known,excluded){
   const groups=new Map();
@@ -11096,20 +11102,21 @@ function _offlineConsumeProjectCargo(kind,amount,projectId){
   for(const w of workers){const c=w.projectCargo;if(!c||c.projectId!==projectId||c.kind!==kind)continue;const take=Math.min(left,Math.max(0,Math.floor(c.amount||1)));c.amount-=take;left-=take;if(c.amount<=0)delete w.projectCargo;if(left<=0)break;}
 }
 function _offlineMoveProjectUnits(count){
-  let moved=0;
+  let moved=0;const consumed={};
   while(moved<count){const a=colonyProjects.activeRef();if(!a)break;let kind=Object.keys(a.cost).find(k=>(a.inTransit[k]||0)>0);
     if(kind){const d=colonyProjects.deliver(kind,1,{time});if(!d.ok)break;_offlineConsumeProjectCargo(kind,d.amount,a.id);moved+=d.amount;continue;}
     kind=Object.keys(a.cost).find(k=>colonyProjects.outstanding(k)>0);if(!kind)break;
     const p=colonyProjects.pickup(kind,1,{time});if(!p.ok)break;const paid=economyLedger.consumeHeldMaterial(a.id,kind,p.amount,{reason:a.name+' offline hauling'});
-    if(paid!==p.amount){colonyProjects.returnTransit(kind,p.amount);break;}const d=colonyProjects.deliver(kind,paid,{time});if(!d.ok)break;moved+=d.amount;
+    if(paid!==p.amount){colonyProjects.returnTransit(kind,p.amount);break;}const d=colonyProjects.deliver(kind,paid,{time});if(!d.ok)break;moved+=d.amount;consumed[kind]=(consumed[kind]||0)+d.amount;
   }
-  return moved;
+  return {moved,consumed};
 }
 function _offlineApplyProject(result,ctx){
-  if(!result.project||!ctx.project.ref)return {kind:'none',hauled:0,work:0,completed:false};
-  const effort=Math.max(0,(Number(result.project.work)||0)-ctx.project.initialWork);
+  const p=result&&result.project,meta={name:ctx.project.name||'APPROVED WORK',anchor:ctx.project.anchor||null,workNeeded:p&&p.workNeeded||ctx.project.model&&ctx.project.model.workNeeded||0,finalWork:p&&p.work||ctx.project.initialWork||0,materialsConsumed:{}};
+  if(!p||!ctx.project.ref)return Object.assign({kind:'none',hauled:0,work:0,completed:false},meta);
+  const effort=Math.max(0,(Number(p.work)||0)-ctx.project.initialWork);
   if(ctx.project.kind==='store'){
-    const site=ctx.project.ref,needed=site.workNeeded||STORE_WORK_REQUIRED;site.work=Math.min(needed,(site.work||0)+effort);site.buildProgress=Math.min(1,site.work/needed);
+    const site=ctx.project.ref,needed=site.workNeeded||STORE_WORK_REQUIRED;site.work=Math.min(needed,(site.work||0)+effort);site.buildProgress=Math.min(1,site.work/needed);meta.finalWork=site.work;meta.workNeeded=needed;
     for(const w of ctx.project.crew)recordJobExperience(w,'build',effort/Math.max(1,needed*ctx.project.crew.length));
     let completed=false;
     if(site.built===false&&site.buildProgress>=1){
@@ -11117,14 +11124,14 @@ function _offlineApplyProject(result,ctx){
       const at=_storeAnchor(site);if(at)pantryPos={x:at.x,y:at.y};for(const w of workers)if(w.state==='BUILD_STORE')w.state='EXPLORAR';
       reconcileStoragePressure({silent:true});colonyFitness+=.45;stats.xp+=18;checkLevelUp();pushEvent('build','NEST STORE completed while you were away',(site.builtBy.join(', ')||'Colony crew')+' finished the connected cache');completed=true;
     }
-    return {kind:'store',hauled:0,work:effort,completed};
+    return Object.assign({kind:'store',hauled:0,work:effort,completed},meta);
   }
-  const hauled=_offlineMoveProjectUnits(Math.max(0,Math.floor(result.project.hauled||0))),a=colonyProjects.activeRef();
-  if(!a||!colonyProjects.allDelivered())return {kind:'colony',hauled,work:0,completed:false};
-  if(effort<=1e-7)return {kind:'colony',hauled,work:0,completed:false};
-  const workerId=ctx.project.crew[0]&&ctx.project.crew[0].id||'COLONY';const done=colonyProjects.addWork(effort,workerId,{time});
+  const haulDelta=_offlineMoveProjectUnits(Math.max(0,Math.floor(p.hauled||0))),hauled=haulDelta.moved,a=colonyProjects.activeRef();meta.materialsConsumed=haulDelta.consumed;
+  if(!a||!colonyProjects.allDelivered())return Object.assign({kind:'colony',hauled,work:0,completed:false},meta);
+  if(effort<=1e-7)return Object.assign({kind:'colony',hauled,work:0,completed:false},meta);
+  const workerId=ctx.project.crew[0]&&ctx.project.crew[0].id||'COLONY';const done=colonyProjects.addWork(effort,workerId,{time});meta.finalWork=a.work||p.work||0;
   if(done.completed)_applyCompletedColonyProject(done.project);
-  return {kind:'colony',hauled,work:effort,completed:!!done.completed};
+  return Object.assign({kind:'colony',hauled,work:effort,completed:!!done.completed},meta);
 }
 function _offlineAdvanceVisualStructures(gameUnits){
   let completed=0;
@@ -11157,13 +11164,14 @@ function _offlineHatchBrood(b){
   workers.push(ant);if(gen===0&&(ant.genome&&ant.genome.gen||0)>=1){gen=1;lastGenTime=time;colonyIQ=Math.max(colonyIQ,103);}stats.xp+=20;pushEvent('birth','🐣 '+ant.id+' hatched while you were away','GEN'+(ant.genome&&ant.genome.gen||0));return true;
 }
 function _offlineApplyBrood(result,ctx){
-  const byId=new Map(),generated=new Map();ctx.existingBrood.forEach((b,i)=>byId.set('existing-'+i,b));
-  const hatchEvents=result.events.filter(e=>e.kind==='hatch'),laidAt=new Map(result.events.filter(e=>e.kind==='egg_laid').map(e=>[e.id,e.atGameUnits])),survivors=[];
+  const byId=new Map(),initial=new Map(),generated=new Map();ctx.existingBrood.forEach((b,i)=>{const id='existing-'+i;byId.set(id,b);initial.set(id,{type:b.type,progress:Number(b.progress)||0});});
+  const hatchEvents=result.events.filter(e=>e.kind==='hatch'),laidEvents=result.events.filter(e=>e.kind==='egg_laid'),stageEvents=result.events.filter(e=>e.kind==='brood_stage'),laidAt=new Map(laidEvents.map(e=>[e.id,e.atGameUnits])),survivors=[];
   for(const rec of result.brood){const existing=byId.get(rec.id);let b=existing;if(!b)b=_offlineBuildGeneratedBrood(rec,ctx,generated);if(!b)continue;b.type=rec.type;b.progress=rec.progress;b._capWaiting=!!rec.waiting;b.time=existing?(b.time||0)+result.totalGameUnits:Math.max(0,result.totalGameUnits-(laidAt.get(rec.id)||0));survivors.push(b);}
   brood=survivors;let workerHatches=0,queenHatches=0;
   for(const e of hatchEvents){let b=byId.get(e.id);if(!b)b=_offlineBuildGeneratedBrood(e.record,ctx,generated);if(!b)continue;if(_offlineHatchBrood(b)){if(b.isQueen)queenHatches++;else workerHatches++;}}
   for(const qr of result.queens){const q=ctx.queenRefs.get(qr.id);if(q){q.progress=qr.progress;q._royalNext=!!qr.royalNext;}}
-  return {workerHatches,queenHatches,waiting:result.brood.filter(b=>b.waiting).length};
+  let advanced=0;for(const rec of result.brood){const was=initial.get(rec.id);if(was&&was.type===rec.type&&(Number(rec.progress)||0)>was.progress+1e-7)advanced++;}
+  return {workerHatches,queenHatches,waiting:result.brood.filter(b=>b.waiting).length,laid:laidEvents.length,transitions:stageEvents.length,advanced};
 }
 function _offlineCompleteDig(group){
   if(!group||!soil[group.r]||soil[group.r][group.c]!==1||!soilType[group.r]||soilType[group.r][group.c]!==group.type)return false;
@@ -11175,7 +11183,192 @@ function _offlineCompleteDig(group){
   for(const w of group.members){if(w.digTarget&&w.digTarget.c===group.c&&w.digTarget.r===group.r){w.digTarget=null;w.digProgress=0;w.state='EXPLORAR';recordJobExperience(w,'dig',1);}}
   checkRewardDiscovery(group.c,group.r);return true;
 }
-function _offlineApplyDigs(result,ctx){let completed=0;for(const d of result.digs||[])if(d.completed&&_offlineCompleteDig(ctx.dig.groups.get(d.id)))completed++;if(completed)checkLevelUp();return completed;}
+function _offlineApplyDigs(result,ctx){
+  const before={...economyLedger.materials},materials={};let completed=0,advanced=0,progress=0,last=null;
+  for(const d of result.digs||[]){
+    const g=ctx.dig.groups.get(d.id);if(!g)continue;const start=Math.max(0,Number(g.progress)||0),finish=Math.max(start,Number(d.progress)||0),gain=Math.max(0,finish-start);
+    if(d.completed){if(!_offlineCompleteDig(g))continue;completed++;progress+=gain;last={x:(g.c+.5)*CELL,y:(g.r+.5)*CELL,c:g.c,r:g.r};continue;}
+    if(gain<=1e-7)continue;for(const w of g.members){if(w.digTarget&&w.digTarget.c===g.c&&w.digTarget.r===g.r){w.digProgress=finish;w.digNeeded=Math.max(1,Number(d.needed)||g.needed);}}
+    advanced++;progress+=gain;last={x:(g.c+.5)*CELL,y:(g.r+.5)*CELL,c:g.c,r:g.r};
+  }
+  for(const kind of Object.keys(economyLedger.materials||{})){const gained=(Number(economyLedger.materials[kind])||0)-(Number(before[kind])||0);if(gained>1e-7)materials[kind]=gained;}
+  if(completed)checkLevelUp();return {completed,advanced,progress,materials,last};
+}
+
+// === ONE-TIME RETURN RECEIPT ================================================================
+// Presentation is deliberately downstream from settlement. These helpers only read the applied
+// report, persist a presentation stamp, and offer observation/navigation — never simulation or orders.
+const _OFFLINE_MATERIAL_NAMES={stone:'STONE',clay:'CLAY',sand:'SAND',fiber:'FIBER',wood:'WOOD',cobre:'COPPER',hierro:'IRON',oro:'GOLD',cuarzo:'QUARTZ',gema:'GEMSTONE',obsidiana:'OBSIDIAN',meteorito:'METEORITE'};
+function _offlineReturnDuration(ms){
+  let seconds=Math.max(0,Math.round((Number(ms)||0)/1000));
+  if(seconds<60)return seconds+' SEC';
+  let minutes=Math.round(seconds/60);if(minutes<60)return minutes+' MIN';
+  const hours=Math.floor(minutes/60);minutes%=60;
+  if(hours<24)return hours+'H'+(minutes?' '+minutes+'M':'');
+  const days=Math.floor(hours/24),rem=hours%24;return days+'D'+(rem?' '+rem+'H':'');
+}
+function _offlineReturnAmount(value){
+  const n=Math.max(0,Number(value)||0);if(n>=100)return String(Math.round(n));if(Math.abs(n-Math.round(n))<.005)return String(Math.round(n));
+  return n.toFixed(n<10?2:1).replace(/0+$/,'').replace(/\.$/,'');
+}
+function _offlineReturnPoint(point){return point&&Number.isFinite(Number(point.x))&&Number.isFinite(Number(point.y))?{x:Number(point.x),y:Number(point.y)}:null;}
+function _offlineReturnBottleneck(report){
+  const key=String(report&&report.bottleneck||'none'),idle=Math.max(0,Number(report&&report.idleGameUnits)||0);
+  const map={
+    storage:['STORAGE FULL','Foragers reached the protected food limit. Food still at the surface was left there.'],
+    food:['SAFE FOOD RESERVE','Available rations reached the protected reserve, so brood care and approved work could not safely continue.'],
+    population:['POPULATION LIMIT','Mature brood is waiting because the colony has no open worker space.'],
+    brood_space:['BROOD SPACE FULL','The nursery has no free slot for another egg.'],
+    project_crew:['NO AVAILABLE HAULERS','The approved worksite still needs materials, but no eligible crew could move them.'],
+    project_work:['NO AVAILABLE BUILDERS','Materials reached the approved worksite, but no eligible builder could continue it.'],
+    slab_crew:['SEALED DEPTH','The buried slab still needs an eligible excavation crew.'],
+    event_limit:['SAFETY LIMIT REACHED','The aggregate settlement reached its internal event limit and stopped cleanly.']
+  };
+  if(map[key])return {key,title:map[key][0],detail:map[key][1]};
+  if(idle>1e-7)return {key:'none',title:'NO ACTIVE OFFLINE TASK',detail:'No eligible food route, brood stage, approved worksite, slab or excavation could advance.'};
+  return {key:'none',title:'COUNTED TIME COMPLETE',detail:'The colony advanced through the full counted window without hitting a hard limit.'};
+}
+function _offlineReturnAction(id,target){
+  const catalog={
+    open_store:['I','CHECK NEST STORES','Review capacity, reserves and committed materials.'],
+    center_food:['F','VIEW FORAGING EDGE','Center the camera on the richest food patch.'],
+    center_brood:['B','VIEW THE NURSERY','Center the camera on brood care.'],
+    center_queen:['Q','RETURN TO THE QUEEN','Center the camera on the active nest.'],
+    center_project:['W','VIEW APPROVED WORK','Center the camera on the current worksite.'],
+    center_slab:['S','VIEW THE SEALED SLAB','Center the camera on the blocked depth.'],
+    center_dig:['D','VIEW EXCAVATION FRONT','Center the camera on the latest worked cell.']
+  },c=catalog[id]||catalog.center_queen;
+  return {id:catalog[id]?id:'center_queen',glyph:c[0],label:c[1],detail:c[2],target:_offlineReturnPoint(target)};
+}
+function _offlineReturnSuggestions(report,bottleneck){
+  const applied=report&&report.applied||{},project=applied.project||{},digs=applied.digs||{},slab=applied.slab||{};
+  const out=[],used=new Set(),add=(id,target)=>{if(!used.has(id)){used.add(id);out.push(_offlineReturnAction(id,target));}};
+  if(bottleneck.key==='storage'){add('open_store');add('center_food');}
+  else if(bottleneck.key==='food'){add('center_food');add('open_store');}
+  else if(bottleneck.key==='population'||bottleneck.key==='brood_space'){add('center_brood');add('center_queen');}
+  else if(bottleneck.key==='project_crew'||bottleneck.key==='project_work'){add('center_project',project.anchor);add('open_store');}
+  else if(bottleneck.key==='slab_crew'){add('center_slab',slab.anchor);add('center_queen');}
+  else{
+    if(project.completed||Number(project.work)>0)add('center_project',project.anchor);
+    if(digs.completed||digs.advanced)add('center_dig',digs.last);
+    if(slab.completed||Number(slab.damage)>0)add('center_slab',slab.anchor);
+    const brood=applied.brood||{};if(brood.workerHatches||brood.queenHatches||brood.advanced)add('center_brood');
+    add('center_queen');add('open_store');
+  }
+  add('center_queen');add('open_store');return out.slice(0,2);
+}
+function _offlineReturnModel(report){
+  report=report&&typeof report==='object'?report:{};const applied=report.applied||{},food=applied.food||report.food||{},project=applied.project||{},brood=applied.brood||{},digs=applied.digs||{};
+  const receipt=report.receipt||{},win=report.window||{},credited=Math.max(0,Number(receipt.creditedMs!==undefined?receipt.creditedMs:win.creditedMs)||0),raw=Math.max(credited,Number(win.rawMs)||credited),excluded=Math.max(0,raw-credited);
+  const source=Number(receipt.sourceSavedAt)||0,key=String(worldSeed)+'|'+String(source||Math.round(Number(receipt.appliedAt)||Date.now()));
+  const flow=[
+    {glyph:'F',label:'FOOD GATHERED',value:'+'+_offlineReturnAmount(food.harvested),tone:'gain'},
+    {glyph:'F',label:'FOOD CONSUMED',value:'−'+_offlineReturnAmount(food.consumed),tone:'loss'}
+  ];
+  const materials=digs.materials&&typeof digs.materials==='object'?digs.materials:{};
+  for(const kind of Object.keys(materials).sort())if(Number(materials[kind])>1e-7)flow.push({glyph:'M',label:(_OFFLINE_MATERIAL_NAMES[kind]||String(kind).replace(/_/g,' ').toUpperCase())+' FOUND',value:'+'+_offlineReturnAmount(materials[kind]),tone:'gain'});
+  const committed=project.materialsConsumed&&typeof project.materialsConsumed==='object'?project.materialsConsumed:{};
+  for(const kind of Object.keys(committed).sort())if(Number(committed[kind])>1e-7)flow.push({glyph:'M',label:(_OFFLINE_MATERIAL_NAMES[kind]||String(kind).replace(/_/g,' ').toUpperCase())+' COMMITTED',value:'−'+_offlineReturnAmount(committed[kind]),tone:'loss'});
+  const events=Array.isArray(report.events)?report.events:[],changes=[],addChange=(glyph,label,value)=>changes.push({glyph,label,value:value||'',tone:'work'});
+  const eggs=Math.max(events.filter(e=>e&&e.kind==='egg_laid').length,Number(brood.laid)||0),stages=Math.max(events.filter(e=>e&&e.kind==='brood_stage').length,Number(brood.transitions)||0);
+  if(Number(brood.workerHatches)>0)addChange('B','WORKERS HATCHED','×'+Math.floor(brood.workerHatches));
+  if(Number(brood.queenHatches)>0)addChange('Q','QUEENS HATCHED','×'+Math.floor(brood.queenHatches));
+  if(eggs)addChange('E','EGGS LAID','×'+eggs);if(stages)addChange('B','BROOD TRANSITIONS','×'+stages);
+  if(Number(brood.advanced)>0)addChange('B','BROOD CARE ADVANCED','×'+Math.floor(brood.advanced));
+  const committedLoads=Object.values(committed).reduce((n,v)=>n+Math.max(0,Number(v)||0),0),carriedLoads=Math.max(0,(Number(project.hauled)||0)-committedLoads);
+  if(carriedLoads>0)addChange('M','CARRIED LOADS DELIVERED','×'+Math.floor(carriedLoads));
+  if(project.completed)addChange('W',String(project.name||'APPROVED WORK').toUpperCase(),'COMPLETE');
+  else if(Number(project.work)>1e-7){const pct=Number(project.workNeeded)>0?Math.min(99,Math.floor((Number(project.finalWork)||0)/Number(project.workNeeded)*100)):0;addChange('W',String(project.name||'APPROVED WORK').toUpperCase(),pct?pct+'%':'ADVANCED');}
+  if(Number(digs.completed)>0)addChange('D','EXCAVATIONS OPENED','×'+Math.floor(digs.completed));
+  if(Number(digs.advanced)>0)addChange('D','EXCAVATION FRONTS ADVANCED','×'+Math.floor(digs.advanced));
+  const slab=applied.slab||{};if(slab.completed)addChange('S','BURIED SLAB','OPEN');else if(Number(slab.damage)>1e-7)addChange('S','SLAB WORK','−'+_offlineReturnAmount(slab.damage)+' HP');
+  if(Number(applied.structuresCompleted)>0)addChange('W','SMALL STRUCTURES FINISHED','×'+Math.floor(applied.structuresCompleted));
+  const bottleneck=_offlineReturnBottleneck(report),capHours=Math.max(0,Number(receipt.capHours!==undefined?receipt.capHours:win.capHours)||0);
+  return {v:1,key,sourceSavedAt:source,time:{creditedMs:credited,label:_offlineReturnDuration(credited),excludedMs:excluded,capHours,capText:excluded>500?_offlineReturnDuration(excluded)+' beyond the '+_offlineReturnAmount(capHours)+'H limit was not counted.':''},flow,changes,bottleneck,suggestions:_offlineReturnSuggestions(report,bottleneck)};
+}
+let _offlineReturnOpen=false,_offlineReturnCurrent=null,_offlineReturnPreviousFocus=null,_offlineReturnWasPaused=false,_offlineReturnInert=[];
+function _offlineReturnAppendRow(host,row){
+  const el=document.createElement('div');el.className='offline-return-row';el.dataset.tone=row&&row.tone||'work';
+  const glyph=document.createElement('span');glyph.className='offline-return-glyph';glyph.setAttribute('aria-hidden','true');glyph.textContent=String(row&&row.glyph||'·').slice(0,1);
+  const label=document.createElement('span');label.className='offline-return-label';label.textContent=String(row&&row.label||'CHANGE');
+  const value=document.createElement('strong');value.className='offline-return-value';value.textContent=String(row&&row.value||'');el.append(glyph,label,value);host.appendChild(el);
+}
+function _offlineReturnRender(model){
+  const byId=id=>document.getElementById(id),timeBox=byId('offlineReturnTime'),cap=byId('offlineReturnCap'),flow=byId('offlineReturnFlow'),changes=byId('offlineReturnChanges'),actions=byId('offlineReturnActions');
+  if(!timeBox||!cap||!flow||!changes||!actions)return false;
+  timeBox.textContent=String(model.time&&model.time.label||'0 SEC');cap.textContent=String(model.time&&model.time.capText||'');
+  flow.replaceChildren();const flowRows=Array.isArray(model.flow)?model.flow:[];for(const row of flowRows)_offlineReturnAppendRow(flow,row);
+  if(!flowRows.length){const empty=document.createElement('p');empty.className='offline-return-empty';empty.textContent='No resource flow was recorded.';flow.appendChild(empty);}
+  changes.replaceChildren();const eventRows=Array.isArray(model.changes)?model.changes:[];for(const row of eventRows)_offlineReturnAppendRow(changes,row);
+  if(!eventRows.length){const empty=document.createElement('p');empty.className='offline-return-empty';empty.textContent='No milestone finished; routine colony work still advanced.';changes.appendChild(empty);}
+  const bottleneck=model.bottleneck||{};byId('offlineReturnBottleneckName').textContent=String(bottleneck.title||'COUNTED TIME COMPLETE');byId('offlineReturnBottleneckDetail').textContent=String(bottleneck.detail||'The counted window ended cleanly.');
+  const suggestions=[],seen=new Set();for(const item of Array.isArray(model.suggestions)?model.suggestions:[]){if(item&&typeof item.id==='string'&&!seen.has(item.id)){seen.add(item.id);suggestions.push(item);}}
+  for(const fallback of [_offlineReturnAction('center_queen'),_offlineReturnAction('open_store')])if(suggestions.length<2&&!seen.has(fallback.id)){seen.add(fallback.id);suggestions.push(fallback);}
+  actions.replaceChildren();for(const item of suggestions.slice(0,2)){
+    const button=document.createElement('button');button.type='button';button.className='offline-return-action';button.dataset.offlineAction=item.id;
+    const mark=document.createElement('span');mark.className='offline-return-action-mark';mark.setAttribute('aria-hidden','true');mark.textContent=String(item.glyph||'·').slice(0,1);
+    const copy=document.createElement('span');copy.className='offline-return-action-copy';const label=document.createElement('b');label.textContent=String(item.label||'VIEW NEST');const detail=document.createElement('small');detail.textContent=String(item.detail||'Inspect the existing colony state.');copy.append(label,detail);button.append(mark,copy);actions.appendChild(button);
+  }
+  model.suggestions=suggestions.slice(0,2);return true;
+}
+function _offlineReturnCenter(point,label){
+  let p=_offlineReturnPoint(point);if(!p)p=_offlineReturnPoint(storagePos());if(!p)return false;
+  try{const b2=getPanBounds();view.x=clamp(p.x-VIEW_W/view.zoom/2,b2.minX,b2.maxX);view.y=clamp(p.y-VIEW_H/view.zoom/2,b2.minY,b2.maxY);clampView();pushToast(p.x,p.y-18,String(label||'VIEW'),'#ffcc00',1.4);const door=document.getElementById('btnInventory');if(door)door.focus({preventScroll:true});return true;}catch(e){return false;}
+}
+function _offlineReturnRuntimePoint(id,item){
+  if(item&&item.target)return item.target;
+  if(id==='center_food'){
+    let best=null;for(const f of Array.isArray(foods)?foods:[])if(f&&Number(f.amount)>0&&(!best||Number(f.amount)>Number(best.amount)))best=f;
+    return best&&{x:best.x,y:best.y}||{x:W/2,y:Math.max(CELL,SURFACE_Y-CELL)};
+  }
+  if(id==='center_brood'){const b=Array.isArray(brood)&&brood[0];return b&&{x:b.x,y:b.y}||queens[0]||storagePos();}
+  if(id==='center_queen')return queens[0]||storagePos();
+  if(id==='center_project'){const a=colonyProjects.activeRef();return a?colonyProjectAnchor(a):storagePos();}
+  if(id==='center_slab'&&umbral){const c=Number.isFinite(Number(umbral.centroC))?Number(umbral.centroC):(Number.isFinite(Number(umbral.c0))&&Number.isFinite(Number(umbral.c1))?(Number(umbral.c0)+Number(umbral.c1))/2:CENTER_COL);return {x:(c+.5)*CELL,y:(umbral.r+.5)*CELL};}
+  return storagePos();
+}
+function _offlineReturnPerform(id){
+  const item=_offlineReturnCurrent&&Array.isArray(_offlineReturnCurrent.suggestions)?_offlineReturnCurrent.suggestions.find(x=>x.id===id):null;
+  if(id==='open_store'){try{abrirInventario();}catch(e){}return;}
+  const labels={center_food:'FORAGING EDGE',center_brood:'NURSERY',center_queen:'QUEEN',center_project:'APPROVED WORK',center_slab:'SEALED SLAB',center_dig:'EXCAVATION'};
+  _offlineReturnCenter(_offlineReturnRuntimePoint(id,item),labels[id]||'COLONY');
+}
+function _closeOfflineReturn(actionId){
+  if(!_offlineReturnOpen)return false;const layer=document.getElementById('offlineReturn');_offlineReturnOpen=false;
+  if(layer){layer.hidden=true;layer.setAttribute('aria-hidden','true');layer.removeAttribute('data-open');}document.body.classList.remove('offline-return-open');paused=_offlineReturnWasPaused;
+  for(const el of _offlineReturnInert)if(el&&el!==layer)el.inert=false;_offlineReturnInert=[];
+  const previous=_offlineReturnPreviousFocus;_offlineReturnPreviousFocus=null;
+  if(actionId)setTimeout(()=>_offlineReturnPerform(actionId),0);else{const fallback=document.getElementById('btnInventory');const target=previous&&document.contains(previous)&&previous.offsetParent!==null?previous:fallback;if(target&&target.focus)setTimeout(()=>target.focus({preventScroll:true}),0);}
+  if(_offlineReturnPending.length)setTimeout(_presentPendingOfflineReturn,actionId?420:100);return true;
+}
+function _showOfflineReturn(model){
+  const layer=document.getElementById('offlineReturn');if(!layer||!model||typeof model.key!=='string'||_offlineReturnOpen||_offlinePresentedStamps.has(model.key))return false;
+  if(!_offlineReturnRender(model))return false;_offlineReturnCurrent=model;_offlineReturnPreviousFocus=document.activeElement;_offlineReturnWasPaused=!!paused;paused=true;_offlineReturnOpen=true;
+  layer.hidden=false;layer.setAttribute('aria-hidden','false');layer.setAttribute('data-open','1');document.body.classList.add('offline-return-open');
+  _offlineReturnInert=[];for(const el of document.body.children)if(el!==layer&&el.tagName!=='SCRIPT'&&!el.inert){el.inert=true;_offlineReturnInert.push(el);}
+  _offlinePresentedStamps.add(model.key);while(_offlinePresentedStamps.size>64)_offlinePresentedStamps.delete(_offlinePresentedStamps.values().next().value);_offlineReturnPending=_offlineReturnPending.filter(x=>x.key!==model.key);
+  try{serializeSave(true);}catch(e){}setTimeout(()=>{const close=document.getElementById('offlineReturnClose');if(close&&_offlineReturnOpen)close.focus({preventScroll:true});},0);return true;
+}
+function _queueOfflineReturn(report){
+  if(!report||report.skipped||!report.receipt||!(Number(report.receipt.creditedMs)>0))return null;const model=_offlineReturnModel(report);
+  if(_offlinePresentedStamps.has(model.key)||(_offlineReturnCurrent&&_offlineReturnOpen&&_offlineReturnCurrent.key===model.key)||_offlineReturnPending.some(x=>x.key===model.key))return null;
+  _offlineReturnPending.push(model);if(_offlineReturnPending.length>16)_offlineReturnPending.shift();return model;
+}
+function _presentPendingOfflineReturn(){
+  if(_offlineReturnOpen||!_topoHasWorld)return false;while(_offlineReturnPending.length&&_offlinePresentedStamps.has(_offlineReturnPending[0].key))_offlineReturnPending.shift();
+  return _offlineReturnPending.length?_showOfflineReturn(_offlineReturnPending[0]):false;
+}
+function initOfflineReturn(){
+  const layer=document.getElementById('offlineReturn'),close=document.getElementById('offlineReturnClose'),actions=document.getElementById('offlineReturnActions');if(!layer||!close||!actions||layer.dataset.wired)return;
+  layer.dataset.wired='1';close.addEventListener('click',()=>_closeOfflineReturn());layer.addEventListener('click',e=>{if(e.target===layer)_closeOfflineReturn();});
+  actions.addEventListener('click',e=>{const button=e.target.closest&&e.target.closest('[data-offline-action]');if(button){e.preventDefault();_closeOfflineReturn(button.dataset.offlineAction);}});
+  window.addEventListener('keydown',e=>{
+    if(!_offlineReturnOpen)return;if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();_closeOfflineReturn();return;}if(e.key!=='Tab')return;
+    const focusable=[...layer.querySelectorAll('button:not([disabled]),[tabindex="0"]')].filter(el=>el.offsetParent!==null);if(!focusable.length)return;e.preventDefault();e.stopImmediatePropagation();const i=focusable.indexOf(document.activeElement),next=e.shiftKey?(i<=0?focusable.length-1:i-1):(i<0||i===focusable.length-1?0:i+1);focusable[next].focus({preventScroll:true});
+  },true);
+}
+initOfflineReturn();
+
 function _applyOfflineAfterLoad(now){
   if(typeof computeOfflineWindow!=='function'||typeof advanceOffline!=='function'||!_loadedSaveSavedAt)return null;
   const stamp=String(worldSeed)+'|'+String(_loadedSaveSavedAt);
@@ -11183,18 +11376,19 @@ function _applyOfflineAfterLoad(now){
   const ctx=_offlineContext(Number(now)||Date.now());if(ctx.window.creditedMs<=0){_lastOfflineReport={v:1,window:ctx.window,skipped:true};window.__lastOfflineReport=_lastOfflineReport;return _lastOfflineReport;}
   _offlineAppliedStamps.add(stamp);if(_offlineAppliedStamps.size>64)_offlineAppliedStamps.delete(_offlineAppliedStamps.values().next().value);
   const result=advanceOffline(ctx.input),projectDelta=_offlineApplyProject(result,ctx),foodDelta=_offlineApplyFood(result,ctx),broodDelta=_offlineApplyBrood(result,ctx),structuresCompleted=_offlineAdvanceVisualStructures(result.totalGameUnits);
-  let slabCompleted=false;if(result.slab&&umbral){umbral.hp=Math.max(0,Number(result.slab.hp)||0);if(result.slab.completed){slabCompleted=abrirUmbral();}else markSoilDirty();}
-  const digsCompleted=_offlineApplyDigs(result,ctx);
+  let slabCompleted=false,slabDamage=0;const slabAnchor=ctx.input.slab&&ctx.input.slab.anchor||null,slabBefore=ctx.input.slab&&Number(ctx.input.slab.hp);
+  if(result.slab&&umbral){umbral.hp=Math.max(0,Number(result.slab.hp)||0);slabDamage=Math.max(0,(Number.isFinite(slabBefore)?slabBefore:umbral.hp)-umbral.hp);if(result.slab.completed){slabCompleted=abrirUmbral();}else markSoilDirty();}
+  const digsDelta=_offlineApplyDigs(result,ctx);
   time+=result.totalGameUnits;day=Math.floor(time/DAY_LENGTH)+1;
   _lastOfflineReceipt={v:1,sourceSavedAt:_loadedSaveSavedAt,appliedAt:ctx.now,creditedMs:ctx.window.creditedMs,capHours:ctx.window.capHours};
-  _lastOfflineReport={...result,applied:{food:foodDelta,brood:broodDelta,project:projectDelta,structuresCompleted,slabCompleted,digsCompleted},receipt:{..._lastOfflineReceipt}};window.__lastOfflineReport=_lastOfflineReport;
-  const hours=(ctx.window.creditedMs/3600000).toFixed(ctx.window.creditedMs<3600000?1:0),changes=broodDelta.workerHatches+broodDelta.queenHatches+digsCompleted+structuresCompleted+(projectDelta.completed?1:0)+(slabCompleted?1:0);
+  _lastOfflineReport={...result,applied:{food:foodDelta,brood:broodDelta,project:projectDelta,structuresCompleted,slab:{completed:slabCompleted,damage:slabDamage,anchor:slabAnchor},slabCompleted,digs:digsDelta,digsCompleted:digsDelta.completed},receipt:{..._lastOfflineReceipt}};window.__lastOfflineReport=_lastOfflineReport;_queueOfflineReturn(_lastOfflineReport);
+  const hours=(ctx.window.creditedMs/3600000).toFixed(ctx.window.creditedMs<3600000?1:0),changes=broodDelta.workerHatches+broodDelta.queenHatches+digsDelta.completed+structuresCompleted+(projectDelta.completed?1:0)+(slabCompleted?1:0);
   pushEvent('evo','⏳ '+hours+'h of offline progress',changes+' completed events · bottleneck: '+String(result.bottleneck||'none').replace(/_/g,' '));
   tlog('[offline] '+hours+'h · '+result.iterations+' aggregate events · '+result.bottleneck);
   try{serializeSave(true);}catch(e){console.warn('offline save receipt',e);}
   return _lastOfflineReport;
 }
-window.__antOffline={apply:_applyOfflineAfterLoad,flags:_offlineProgressFlags,last:()=>_lastOfflineReport};
+window.__antOffline={apply:_applyOfflineAfterLoad,flags:_offlineProgressFlags,last:()=>_lastOfflineReport,summary:_offlineReturnModel,show:report=>{const model=_queueOfflineReturn(report);return !!(model&&_showOfflineReturn(model));},present:_presentPendingOfflineReturn,close:_closeOfflineReturn,isOpen:()=>_offlineReturnOpen,pending:()=>_offlineReturnPending.slice()};
 
 // Entry from a saved farm is explicit: title menu -> CONTINUE or LOAD. Reload never auto-resumes.
 function topoResumeGame(opts){
@@ -11214,6 +11408,7 @@ function topoResumeGame(opts){
   try{ checkWorldExpansion(); }catch(e){}
   try{ clampView(); updateColonyUI(); _updateBothAntCounts(); }catch(e){}
   if(!silent){ try{ pushToast(W/2, SURFACE_Y-40, '🐜 Granja reanudada · Día '+day, '#2de67a'); }catch(e){} pushEvent('evo','💾 Partida reanudada', workers.length+' obreras · Día '+day); }
+  setTimeout(_presentPendingOfflineReturn,80);
   return true;
 }
 window.topoResumeGame=topoResumeGame;
@@ -11227,7 +11422,9 @@ document.addEventListener('visibilitychange', ()=>{
     try{if(_topoHasWorld&&serializeSave(true)){const meta=topoHasSave();_offlineHiddenSavedAt=meta&&meta.savedAt||0;}}catch(e){}
   }else{
     try{
-      if(_topoHasWorld&&_offlineHiddenSavedAt){_loadedSaveSavedAt=_offlineHiddenSavedAt;_offlineHiddenSavedAt=0;_applyOfflineAfterLoad(Date.now());}
+      if(_topoHasWorld&&_offlineHiddenSavedAt){
+        if(_offlineReturnOpen){_offlineHiddenSavedAt=0;serializeSave(true);}else{_loadedSaveSavedAt=_offlineHiddenSavedAt;_offlineHiddenSavedAt=0;_applyOfflineAfterLoad(Date.now());setTimeout(_presentPendingOfflineReturn,80);}
+      }
       last=performance.now();lastRealWall=Date.now();
     }catch(e){console.warn('offline visibility resume',e);}
   }

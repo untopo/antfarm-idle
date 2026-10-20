@@ -7,8 +7,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ANT FARM</title>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache">
-<link rel="stylesheet" href="css/style.css?v=20261020k">
-<link rel="stylesheet" href="css/startup.css?v=20261020k">
+<link rel="stylesheet" href="css/style.css?v=20261020l">
+<link rel="stylesheet" href="css/startup.css?v=20261020l">
 
 <style id="topoHideUntilStart">
   #appRoot{display:none !important}
@@ -558,6 +558,46 @@
 
 </div>
 
+<!-- ONE-TIME RETURN RECEIPT — consumes the applied offline report; never simulates again. -->
+<section id="offlineReturn" class="offline-return" role="dialog" aria-modal="true" aria-labelledby="offlineReturnTitle" aria-describedby="offlineReturnIntro" aria-hidden="true" hidden>
+  <article class="offline-return-card" tabindex="-1">
+    <header class="offline-return-head">
+      <div>
+        <div class="offline-return-kicker">BURROW RECEIPT · OFFLINE</div>
+        <h2 id="offlineReturnTitle">WELCOME BACK</h2>
+        <p id="offlineReturnIntro" class="topo-sr-only">Offline progress is already applied. Review counted time, colony changes, the stopping point, and two navigation suggestions.</p>
+      </div>
+      <button id="offlineReturnClose" class="offline-return-close" type="button" aria-label="Close return report">×</button>
+    </header>
+    <div class="offline-return-body" tabindex="0" aria-label="Offline settlement details">
+      <section class="offline-return-time" aria-labelledby="offlineReturnTimeLabel">
+        <span id="offlineReturnTimeLabel">TIME COUNTED</span>
+        <strong id="offlineReturnTime">—</strong>
+        <small id="offlineReturnCap"></small>
+      </section>
+      <section id="offlineReturnBottleneck" class="offline-return-bottleneck" aria-labelledby="offlineReturnBottleneckTitle">
+        <div class="offline-return-bottleneck-mark" aria-hidden="true">!</div>
+        <div><h3 id="offlineReturnBottleneckTitle">WHERE PROGRESS STOPPED</h3><strong id="offlineReturnBottleneckName">—</strong><p id="offlineReturnBottleneckDetail">—</p></div>
+      </section>
+      <div class="offline-return-columns">
+        <section class="offline-return-block" aria-labelledby="offlineReturnFlowTitle">
+          <h3 id="offlineReturnFlowTitle">COLONY FLOW</h3>
+          <div id="offlineReturnFlow" class="offline-return-list"></div>
+        </section>
+        <section class="offline-return-block" aria-labelledby="offlineReturnChangesTitle">
+          <h3 id="offlineReturnChangesTitle">WHAT CHANGED</h3>
+          <div id="offlineReturnChanges" class="offline-return-list"></div>
+        </section>
+      </div>
+    </div>
+    <footer class="offline-return-foot">
+      <div class="offline-return-next"><strong>NEXT MOVES</strong><span>Suggestions only — nothing starts automatically.</span></div>
+      <div id="offlineReturnActions" class="offline-return-actions" aria-label="Suggested next actions"></div>
+      <span class="offline-return-esc">ESC closes report</span>
+    </footer>
+  </article>
+</section>
+
 <!-- NEST INVENTORY — one responsive voxel drawer; simulation data stays untouched. -->
 <section id="invSheet" class="inv-sheet" role="dialog" aria-modal="false" aria-labelledby="invTitle" aria-describedby="invSubtitle" aria-hidden="true" tabindex="-1">
   <header class="inv-header">
@@ -913,18 +953,18 @@
   <!-- Motor del juego — núcleo profesional modular -->
   
 
-<script src="core/bandas.js?v=20261020k"></script>
-<script src="core/mundo.js?v=20261020k"></script>
-<script src="core/tesoros.js?v=20261020k"></script>
-<script src="core/economia.js?v=20261020k"></script>
-<script src="core/proyectos.js?v=20261020k"></script>
-<script src="core/agua.js?v=20261020k"></script>
-<script src="core/offline.js?v=20261020k"></script>
-<script src="assets/textures/colony-atlas.manifest.js?v=20261020k"></script>
-<script src="js/texture-pack.js?v=20261020k"></script>
-<script src="js/i18n-en.js?v=20261020k"></script>
-<script src="js/app.js?v=20261020k"></script>
-<script src="js/splash-topo.js?v=20261020k"></script>
+<script src="core/bandas.js?v=20261020l"></script>
+<script src="core/mundo.js?v=20261020l"></script>
+<script src="core/tesoros.js?v=20261020l"></script>
+<script src="core/economia.js?v=20261020l"></script>
+<script src="core/proyectos.js?v=20261020l"></script>
+<script src="core/agua.js?v=20261020l"></script>
+<script src="core/offline.js?v=20261020l"></script>
+<script src="assets/textures/colony-atlas.manifest.js?v=20261020l"></script>
+<script src="js/texture-pack.js?v=20261020l"></script>
+<script src="js/i18n-en.js?v=20261020l"></script>
+<script src="js/app.js?v=20261020l"></script>
+<script src="js/splash-topo.js?v=20261020l"></script>
 <script>
 // Vigia del arranque: si js/app.js no termino de cargar, decirlo en pantalla en vez de dejar
 // botones sordos. Es lo unico que vive en el HTML; el juego entero esta en js/app.js.

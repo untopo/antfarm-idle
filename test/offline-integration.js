@@ -33,7 +33,7 @@ vm.runInContext(`
   deserializeSave();
   window.__beforeOffline={time,workers:workers.length,food:economyLedger.food,physical:foods.reduce((n,f)=>n+(f.amount||0),0),soil:soil[${fixture.r}][${fixture.c}],savedAt:_loadedSaveSavedAt};
   const _r=_applyOfflineAfterLoad(${now});
-  window.__afterOffline={time,workers:workers.length,food:economyLedger.food,physical:foods.reduce((n,f)=>n+(f.amount||0),0),soil:soil[${fixture.r}][${fixture.c}],report:_r,
+  window.__afterOffline={time,workers:workers.length,food:economyLedger.food,physical:foods.reduce((n,f)=>n+(f.amount||0),0),soil:soil[${fixture.r}][${fixture.c}],report:_r,summary:_offlineReturnModel(_r),
     brood:brood.length,receipt:_lastOfflineReceipt,save:JSON.parse(localStorage.getItem(SAVE_KEY))};
   const _once={time,workers:workers.length,food:economyLedger.food,digs,events:events.length};
   const _again=_applyOfflineAfterLoad(${now});
@@ -44,6 +44,7 @@ const expectedGame=2*60*60*1000*.06;
 check('un save anterior migra y acredita las dos horas válidas',Math.abs((after.time-before.time)-expectedGame)<1e-6,{before:before.time,after:after.time});
 check('la pupa abierta eclosiona y no desaparece',after.workers===before.workers+1&&after.report.applied.brood.workerHatches===1,{before:before.workers,after:after.workers,brood:after.brood});
 check('sólo termina el frente que ya estaba asignado',before.soil===1&&after.soil===0&&after.report.applied.digsCompleted===1,{before:before.soil,after:after.soil,digs:after.report.applied.digsCompleted});
+check('el informe aplicado conserva ubicación y materiales reales de la excavación',after.report.applied.digs.last&&after.report.applied.digs.last.c===fixture.c&&after.report.applied.digs.last.r===fixture.r&&after.report.applied.digs.materials&&typeof after.report.applied.digs.materials==='object',after.report.applied.digs);
 check('la comida final procede de existencias físicas y respeta capacidad',after.report.applied.food.harvested>0&&after.food<=after.report.food.capacity+1e-7&&after.food>=0,after.report.applied.food);
 check('el adaptador conserva cada ración entre prado, estante y consumo',
   Math.abs((before.physical-after.physical)-after.report.applied.food.harvested)<1e-7&&Math.abs((before.food+before.physical)-(after.food+after.physical)-after.report.applied.food.consumed)<1e-7,
@@ -51,6 +52,8 @@ check('el adaptador conserva cada ración entre prado, estante y consumo',
 check('el informe conserva tope, iteraciones y cuello de botella comprobables',after.report.window.capHours===8&&after.report.iterations<4096&&typeof after.report.bottleneck==='string',
   {cap:after.report.window.capHours,it:after.report.iterations,b:after.report.bottleneck});
 check('la liquidación guarda recibo y versión de esquema offline',after.save.offline&&after.save.offline.v===1&&after.save.offline.receipt.sourceSavedAt===before.savedAt,after.save.offline);
+check('el modelo de regreso resume el recibo sin una segunda simulación',after.summary.time.label==='2H'&&after.summary.changes.some(x=>x.label==='WORKERS HATCHED')&&after.summary.changes.some(x=>x.label==='EXCAVATIONS OPENED')&&after.summary.suggestions.length===2,after.summary);
+check('el resumen pendiente se guarda hasta su única presentación',Array.isArray(after.save.offline.pending)&&after.save.offline.pending.length===1&&after.save.offline.pending[0].key===after.summary.key&&Array.isArray(after.save.offline.presented)&&after.save.offline.presented.length===0,after.save.offline);
 check('repetir apply sobre el mismo sello no cambia ningún saldo',dup.again===null&&JSON.stringify(dup.once)===JSON.stringify(dup.after),dup);
 
 // El save escrito tras liquidar tiene un timestamp nuevo: otra carga inmediata tampoco repite el delta.
@@ -68,7 +71,10 @@ vm.runInContext(`
   window.__freshOfflineMeta=JSON.parse(localStorage.getItem(SAVE_KEY)).offline;
 `,ctx);
 const fresh=sb.__freshOfflineMeta;
-check('una granja nueva no hereda tope ni recibo offline de la archivada',fresh&&fresh.unlocks.lineage===false&&fresh.unlocks.lateStage===false&&fresh.receipt===null,fresh);
+check('una granja nueva no hereda tope ni recibo offline de la archivada',fresh&&fresh.unlocks.lineage===false&&fresh.unlocks.lateStage===false&&fresh.receipt===null&&Array.isArray(fresh.pending)&&fresh.pending.length===0&&Array.isArray(fresh.presented)&&fresh.presented.length===0,fresh);
+vm.runInContext(`(()=>{_offlineReturnPending=[];_offlinePresentedStamps.clear();const base={window:{creditedMs:60000,rawMs:60000,capHours:4},bottleneck:'none',idleGameUnits:0,events:[],applied:{food:{harvested:0,consumed:0},brood:{},project:{},digs:{completed:0,advanced:0,materials:{}},slab:{},structuresCompleted:0}};const a=_queueOfflineReturn({...base,receipt:{sourceSavedAt:101,creditedMs:60000,capHours:4}}),b=_queueOfflineReturn({...base,receipt:{sourceSavedAt:202,creditedMs:60000,capHours:4}}),again=_queueOfflineReturn({...base,receipt:{sourceSavedAt:101,creditedMs:60000,capHours:4}});window.__offlineQueue={a:a&&a.key,b:b&&b.key,again,n:_offlineReturnPending.length,keys:_offlineReturnPending.map(x=>x.key)};})()`,ctx);
+const queued=sb.__offlineQueue;
+check('si quedaron dos recibos pendientes se conservan en orden y sin duplicar sellos',queued.n===2&&queued.keys[0]===queued.a&&queued.keys[1]===queued.b&&queued.again===null,queued);
 
 console.log(`\n${ok} ok · ${fail} FALLOS`);
 process.exit(fail?1:0);
