@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const CORE = path.join(__dirname, '..', 'ant-farm-rpg', 'core');
-const MODULOS = ['bandas.js', 'mundo.js', 'tesoros.js', 'economia.js', 'agua.js'];
+const MODULOS = ['bandas.js', 'mundo.js', 'tesoros.js', 'economia.js', 'proyectos.js', 'agua.js'];
 function coreCode() {
   return MODULOS.map(f => fs.readFileSync(path.join(CORE, f), 'utf8').replace(/^'use strict';\s*$/m, '')).join('\n;\n');
 }

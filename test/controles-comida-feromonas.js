@@ -86,7 +86,10 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   console.log('\n· procedencia real de la comida');
   const pickup=await page.evaluate(()=>{
     const p=__toolsCase.start,a=workers[0];foods.length=0;toasts.length=0;
-    a.x=p.x;a.y=p.y;a.food=null;a.targetFood=null;a.digTarget=null;a.wasteTarget=null;a.state='EXPLORAR';a.fatigue=0;a.health=100;a.blocked=0;
+    // This case is about food provenance, not the founding build. The emergent builder can randomly be
+    // workers[0]; finish that fixture first so BUILD_STORE cannot legitimately pre-empt this one tick.
+    const s=storageStructure(false);if(s){s.built=true;s.buildProgress=1;s.work=s.workNeeded||STORE_WORK_REQUIRED;}
+    a.x=p.x;a.y=p.y;a.food=null;a.targetFood=null;a.digTarget=null;a.wasteTarget=null;a.floodTarget=null;a.state='EXPLORAR';a.fatigue=0;a.health=100;a.blocked=0;delete a.projectCargo;delete a._magmaRetreat;
     const f={x:p.x,y:p.y,amount:2,max:2,r:8,ftype:'mushroom',rot:0,fresh:1,grounded:true};foods.push(f);a.targetFood=f;updateAnt(a,.1);
     return{food:a.food&&{amount:a.food.amount,ftype:a.food.ftype},toast:toasts.map(t=>t.txt).join(' | ')};
   });
@@ -98,9 +101,9 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
     s=storageStructure(true);const p=storagePos(),a=workers[0];toasts.length=0;
     a.x=p.x;a.y=p.y;a.food={amount:1,ftype:'mushroom'};a.targetFood=null;a.digTarget=null;a.wasteTarget=null;a.state='EXPLORAR';a.fatigue=0;a.health=100;a.blocked=0;a._cargaDesde=time-DAY_LENGTH;
     const before=economyLedger.food;updateAnt(a,.1);const hist=economyLedger.history(8),last=hist.filter(x=>x.account==='food'&&x.delta>0).slice(-1)[0];
-    return{store:!!s,delta:economyLedger.food-before,reason:last&&last.reason,toast:toasts.map(t=>t.txt).join(' | '),event:events.filter(e=>e.type==='food').slice(0,2).map(e=>e.title||e.text||'').join(' | ')};
+    return{store:!!s,physical:s&&_storeSiteIsPhysical(s),nodes:storageDeliveryNodes().length,target:storageTargetFor(a),state:a.state,stillFood:!!a.food,delta:economyLedger.food-before,reason:last&&last.reason,toast:toasts.map(t=>t.txt).join(' | '),event:events.filter(e=>e.type==='food').slice(0,2).map(e=>e.title||e.text||'').join(' | ')};
   });
-  ok(delivery.store&&delivery.delta===1,'la entrega física acredita exactamente una ración');
+  ok(delivery.store&&delivery.delta===1,'la entrega física acredita exactamente una ración',JSON.stringify(delivery));
   ok(delivery.reason==='worker delivery: mushroom','el ledger conserva la fuente mushroom',delivery.reason||'sin asiento');
   ok(/FUNGUS/.test(delivery.toast)&&!/HONEY/.test(delivery.toast),'el bubble de entrega muestra +1 FUNGUS, no +1 HONEY',delivery.toast);
 

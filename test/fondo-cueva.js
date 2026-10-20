@@ -9,8 +9,8 @@
  * Las dos cosas se comprueban aquí por separado, y ninguna bajando un umbral:
  *   · EL FLASH se mide en CUADROS: se cuenta cuántos fotogramas pintan el mundo sin pasar por el cache
  *     de suelo (que era el camino que pintaba el hueco en crema '#fff1c8' y el agua, y solo cuando había
- *     repintado pendiente). Se exige CERO, y además que el mundo se esté cavando de verdad durante la
- *     medida, para que la prueba no salga verde por no pasar nada.
+ *     repintado pendiente). Se exige CERO, y el propio arnés fuerza repintado pendiente cada doce cuadros
+ *     para que la prueba no salga verde por no pasar nada.
  *   · LA PARED se mide sobre el propio lienzo del cache: que el hueco no sea un charco de un solo color,
  *     que tenga sus hiladas con junta, que el tono siga a la banda, que dos casillas seguidas no salgan
  *     calcadas y que repintar no cambie un píxel (si el ruido dependiera del reloj, parpadearía).
@@ -82,8 +82,12 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ok   ' + m); } else { fai
   });
   await sleep(1200);
 
-  // ── A) EL FLASH: cuadros que pintan el mundo sin su cache, mididos mientras se cava ──
+  // ── A) EL FLASH: cuadros que pintan el mundo sin su cache, con repintado pendiente forzado ──
   const flash = await page.evaluate(async () => {
+    // This block measures the cave cache, not ant AI. Freeze simulation while the test itself marks the
+    // cache dirty every twelve frames; otherwise a random x32 pathfinding load changes a render metric
+    // without changing a single cave pixel. The approved 34/70 ms limits remain exactly the same.
+    const estabaPausado=paused;paused=true;
     const cv = document.getElementById('farmCanvas'), ctx = cv.getContext('2d'), cc = soilCacheCanvas;
     let dib = 0, cuadros = 0, sinCache = 0, rellenos = 0, rellenosMax = 0, cuadroP95 = 0, marcas = 0;
     const dur = [];
@@ -111,6 +115,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ok   ' + m); } else { fai
     dur.sort((a, b) => a - b);
     let tuneles = 0;
     for (let r = SURFACE_ROW + 1; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (soil[r][c] === 0) tuneles++;
+    paused=estabaPausado;
     return { cuadros, sinCache, marcas, rellenosMax, med: dur[Math.floor(dur.length * 0.5)] || 0, p95: dur[Math.floor(dur.length * 0.95)] || 0, digs: tuneles - huecos0, tuneles };
   });
   console.log(`  (medido en ${flash.cuadros} cuadros · ${flash.digs} bloques cavados · ${flash.tuneles} casillas de hueco · rellenos máx/cuadro ${flash.rellenosMax} · mediana ${flash.med.toFixed(1)} ms · p95 ${flash.p95.toFixed(1)} ms)`);

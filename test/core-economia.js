@@ -27,6 +27,7 @@ check('material ausente cuenta como 0', E.puedePagar(vacio, { wood: 1 }) === fal
 // Libro de cuentas: un único dueño para comida, materiales, pagos y guardado.
 const libro = E.createEconomyLedger({food:12,materials:{stone:5,clay:2}});
 check('el libro carga comida y completa materiales ausentes', libro.food === 12 && libro.materials.stone === 5 && libro.materials.wood === 0);
+check('el libro conserva también materiales profundos de partidas anteriores', libro.materials.cuarzo===0&&libro.materials.obsidiana===0&&E.ECONOMY_MATERIALS.includes('meteorito'));
 libro.creditFood(3,'entrega de prueba');
 check('acreditar comida actualiza el saldo', libro.food === 15, libro.food);
 const parcial=libro.debitFood(20,{floor:5,partial:true,reason:'cría de prueba'});
@@ -38,6 +39,18 @@ check('el libro acredita materiales', libro.materials.fiber === 4, libro.materia
 check('el pago de materiales es atómico', libro.payMaterials({stone:2,fiber:3},'herramienta') && libro.materials.stone===3 && libro.materials.fiber===1);
 const antesFallido={...libro.materials};
 check('un pago imposible no resta ninguna pieza', !libro.payMaterials({stone:99,fiber:1},'imposible') && JSON.stringify(libro.materials)===JSON.stringify(antesFallido));
+// Mínimos y compromisos: políticas separadas, nunca un segundo inventario.
+const protegido=E.createEconomyLedger({materials:{clay:8,fiber:4,wood:2}});
+protegido.setMaterialFloor('clay',3);
+check('un mínimo reduce disponibilidad sin descontar saldo', protegido.materials.clay===8&&protegido.materialAvailable('clay')===5);
+const comprometido=protegido.holdMaterials('CP-1',{clay:3,fiber:2},{reason:'proyecto'});
+check('comprometer varios recursos es atómico y no baja saldos', !!comprometido&&protegido.materials.clay===8&&protegido.materials.fiber===4&&protegido.materialHeld('clay')===3);
+check('un compromiso imposible no retiene parcialmente', !protegido.holdMaterials('CP-2',{wood:3,clay:1})&&protegido.materialHeld('wood')===0);
+check('los gastos ordinarios sólo usan saldo libre', !protegido.payMaterials({clay:3},'gasto ordinario')&&protegido.materials.clay===8);
+check('recoger una unidad retenida reduce saldo y compromiso juntos', protegido.consumeHeldMaterial('CP-1','clay',1)===1&&protegido.materials.clay===7&&protegido.materialHeld('clay')===2);
+const saldoAntesSoltar=protegido.materials.fiber;protegido.releaseHold('CP-1');
+check('liberar un compromiso no fabrica una devolución', protegido.materials.fiber===saldoAntesSoltar&&protegido.materialHeld('fiber')===0);
+
 const identidad=libro.materials;
 libro.replaceMaterials({wood:7},'cargar partida');
 check('cargar materiales conserva la identidad que usa la UI', libro.materials===identidad && libro.materials.wood===7 && libro.materials.stone===0);

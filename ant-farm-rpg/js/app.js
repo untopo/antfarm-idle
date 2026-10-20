@@ -221,6 +221,10 @@ Object.defineProperties(globalThis,{
   worldMaterials:{enumerable:true,configurable:true,get:()=>economyLedger.materials,set:v=>economyLedger.replaceMaterials(v,'legacy material assignment')}
 });
 window.economyLedger=economyLedger;
+// One pure project book owns reserve policies, the sole active worksite and completed physical works.
+// Material balances remain exclusively in economyLedger; project holds are promises against that ledger.
+const colonyProjects=createColonyProjects();
+window.colonyProjects=colonyProjects;
 let colonyFitness=0, colonyIQ=100; let lastCoup=0;
 let selectedAntIndex=0;
 let selectedQueenIndex=0;
@@ -958,11 +962,18 @@ function updateFallingSand(dt){
   // - tipo 4 (piedra) solo cae si es bloque aislado sin arco (derrumbes)
   // - pizarra/bedrock nunca caen
   const grav = Math.max(0.22, Math.min(1, dt*0.18));
+  // A new colony has no project geometry. Decide that once per physics pass instead of asking the
+  // empty project book several thousand times (one or two checks for every soil cell at high speed).
+  const _doneProjects=typeof colonyProjects!=='undefined'?colonyProjects.completedRef():[];
+  const _protectBraces=_doneProjects.some(p=>p.type==='tunnel_braces');
+  const _activeProject=typeof colonyProjects!=='undefined'?colonyProjects.activeRef():null;
+  const _protectProjectSites=!!(_activeProject&&_activeProject.type!=='clay_jars')||_doneProjects.some(p=>p.type!=='clay_jars');
   for(let r=ROWS-2;r>=SURFACE_ROW;r--){
     for(let c=0;c<COLS;c++){
       if(soil[r][c]!==1) continue;
       const t=soilType[r][c];
       if(t===6 || t===7) continue; // pizarra/bedrock nunca
+      if(_protectBraces&&(isBracedCell(c,r)||isBracedCell(c,r+1))) continue;
       // Topo: la fila del cesped tampoco se desploma. Medido en Chrome real al dia 5: la colonia
       // habia cavado bajo la capa de raices y la gravedad habia abierto un boquete del columna 23
       // a 47 - el "abren una abertura enorme arriba que las deja expuestas" no venia de cavar el
@@ -977,8 +988,8 @@ function updateFallingSand(dt){
         else chance=0.35;
         if(Math.random() < chance*grav){
           let nr=r+1;
-          while(nr<ROWS-1 && soil[nr+1][c]===0 && !(typeof isStoreCell==='function'&&isStoreCell(c,nr+1))) nr++;
-          if(typeof isStoreCell==='function'&&isStoreCell(c,nr)) continue;
+          while(nr<ROWS-1 && soil[nr+1][c]===0 && !(typeof isStoreCell==='function'&&isStoreCell(c,nr+1)) && !(_protectBraces&&isBracedCell(c,nr+1)) && !(_protectProjectSites&&isProjectSiteCell(c,nr+1,true))) nr++;
+          if((typeof isStoreCell==='function'&&isStoreCell(c,nr))||(_protectBraces&&isBracedCell(c,nr))||(_protectProjectSites&&isProjectSiteCell(c,nr,true))) continue;
           if(nr!==r){
             soil[r][c]=0; const oldT=soilType[r][c]; soilType[r][c]=0;
             if(soil[nr][c]===0){ soil[nr][c]=1; soilType[nr][c]=oldT; }
@@ -1421,7 +1432,7 @@ function _sealFloodCell(ant,target){
     // The grate protects the route; it does not move the physical store or its supplies.
   } else {
     soil[target.r][target.c]=1;
-    if(economyLedger&&economyLedger.materials.clay>0){ economyLedger.debitMaterial('clay',1,{reason:'emergency flood barrier'}); kind=2; }
+    if(economyLedger&&economyLedger.debitMaterial('clay',1,{reason:'emergency flood barrier',survival:true})===1) kind=2;
     if(soilType[target.r]) soilType[target.r][target.c]=kind;
   }
   if(trapped>0&&typeof displaceWaterMass==='function') displaceWaterMass(water,soil,target.c,target.r,trapped,floodBarriers);
@@ -1638,6 +1649,8 @@ function safeNestCollapse(centerC,centerR,randomFn=Math.random){
   let fallen=0;const occupied=(c,r)=>{
     if(c===(entradaCol>=0?entradaCol:detectarEntrada())&&r<=SURFACE_ROW+1)return true;
     if(typeof isStoreCell==='function'&&isStoreCell(c,r))return true;
+    if(typeof isBracedCell==='function'&&isBracedCell(c,r))return true;
+    if(typeof isProjectSiteCell==='function'&&isProjectSiteCell(c,r,true))return true;
     const onCell=o=>o&&Math.floor(o.x/CELL)===c&&Math.floor(o.y/CELL)===r;
     return queens.some(onCell)||workers.some(onCell)||brood.some(onCell);
   };
@@ -1673,7 +1686,7 @@ function tryBuildComplexStructure(ant, site){
   const def=STRUCTURE_DEFS[type];
   if(type==='granary'){
     const store=storageStructure(true); if(!store) return false;
-    economyLedger.payMaterials(def.need,'store upgrade');
+    if(!economyLedger.payMaterials(def.need,'store upgrade')) return false;
     store.level=Math.min(3,(store.level||1)+1); store.upgradedBy=ant.id; store.upgradedAt=time;
     const a=_storeAnchor(store); pantryPos={x:a.x,y:a.y};
     pushEvent('build',`🏗 ${ant.id} upgrades the NEST STORE`,`Level ${store.level} · same stable site [${store.c},${store.r}]`);
@@ -1684,11 +1697,11 @@ function tryBuildComplexStructure(ant, site){
   // verifica espacio libre  (site es celda única, expandimos)
   for(let dy=0; dy<def.h; dy++) for(let dx=0; dx<def.w; dx++){
     const cc=site.c+dx, rr=site.r+dy;
-    if(rr<0||rr>=ROWS||cc<0||cc>=COLS||soil[rr][cc]===1||(typeof isStoreCell==='function'&&isStoreCell(cc,rr))) return false;
+    if(rr<0||rr>=ROWS||cc<0||cc>=COLS||soil[rr][cc]===1||(typeof isStoreCell==='function'&&isStoreCell(cc,rr))||(typeof isProjectSiteCell==='function'&&isProjectSiteCell(cc,rr,true))||(typeof isBracedCell==='function'&&isBracedCell(cc,rr))) return false;
   }
   if(!_structureKeepsNestConnected(site,def)) return false;
   // consume materiales
-  economyLedger.payMaterials(def.need,'structure '+type);
+  if(!economyLedger.payMaterials(def.need,'structure '+type)) return false;
   // ocupa celdas como suelo especial pero marca estructura
   for(let dy=0; dy<def.h; dy++) for(let dx=0; dx<def.w; dx++){
     const cc=site.c+dx, rr=site.r+dy;
@@ -1707,13 +1720,13 @@ function tryBuildComplexStructure(ant, site){
 function tryCraftTool(ant){
   if(ant.tool) return false; // ya tiene
   const opts=[];
-  if(inventions.stone && gen>=TOOL_DEFS.pick.gen && colonyIQ>=TOOL_DEFS.pick.iq && economyLedger.materials.stone>=2) opts.push('pick');
-  if(inventions.fiber && gen>=TOOL_DEFS.basket.gen && colonyIQ>=TOOL_DEFS.basket.iq && economyLedger.materials.fiber>=2) opts.push('basket');
-  if(inventions.clay && gen>=TOOL_DEFS.trowel.gen && colonyIQ>=TOOL_DEFS.trowel.iq && economyLedger.materials.clay>=1 && economyLedger.materials.stone>=1) opts.push('trowel');
+  if(inventions.stone && gen>=TOOL_DEFS.pick.gen && colonyIQ>=TOOL_DEFS.pick.iq && economyLedger.canAffordMaterials(TOOL_DEFS.pick.need)) opts.push('pick');
+  if(inventions.fiber && gen>=TOOL_DEFS.basket.gen && colonyIQ>=TOOL_DEFS.basket.iq && economyLedger.canAffordMaterials(TOOL_DEFS.basket.need)) opts.push('basket');
+  if(inventions.clay && gen>=TOOL_DEFS.trowel.gen && colonyIQ>=TOOL_DEFS.trowel.iq && economyLedger.canAffordMaterials(TOOL_DEFS.trowel.need)) opts.push('trowel');
   if(!opts.length) return false;
   const t=opts[Math.floor(Math.random()*opts.length)];
   const def=TOOL_DEFS[t];
-  economyLedger.payMaterials(def.need,'tool '+t);
+  if(!economyLedger.payMaterials(def.need,'tool '+t)) return false;
   ant.tool=t; ant.toolBonus=def;
   pushEvent('evo',`🔧 ${ant.id} forja ${def.name} ${def.icon}`,`Herramienta - ${t}`);
   pushToast(ant.x, ant.y-14, def.icon+' '+def.name, '#ffcc00', 1.8);
@@ -1789,6 +1802,58 @@ function drawStructures(ctx,W,H,isMini){
       ctx.fillStyle='#000'; ctx.fillRect(x, y-6, w, 4); ctx.fillStyle='#ffcc00'; ctx.fillRect(x+1, y-5, Math.floor((w-2)*prog), 2);
     }
   }
+}
+function drawColonyProjectSites(g,isMini){
+  if(isMini||!colonyProjects)return;
+  const completed=colonyProjects.completedRef(),active=colonyProjects.activeRef();
+  if(!completed.length&&!active)return;
+  // Finished works remain physical marks in the chamber; effects are read from these same records.
+  for(const p of completed){
+    const a=colonyProjectAnchor(p),x=Math.round(a.x),y=Math.round(a.y);
+    if(!isExploredPixel(x,y))continue;
+    if(p.type==='clay_jars'){
+      const store=storageStructure(true),sa=_storeAnchor(store);if(!sa)continue;
+      const idx=completed.filter(q=>q.type==='clay_jars').findIndex(q=>q.id===p.id),jx=Math.round(sa.x-14+idx*10),jy=Math.round(sa.y+7);
+      g.fillStyle='#24130a';g.fillRect(jx-4,jy-8,8,8);g.fillStyle='#b96f49';g.fillRect(jx-3,jy-7,6,6);g.fillStyle='#e0a176';g.fillRect(jx-2,jy-7,4,1);g.fillStyle='#2a160c';g.fillRect(jx-2,jy-10,4,3);
+    }else if(p.type==='forward_cache'){
+      const left=p.site.c*CELL,top=p.site.r*CELL,w=(p.site.w||2)*CELL,h=(p.site.h||1)*CELL;
+      g.fillStyle='#2c180b';g.fillRect(left+1,top+3,w-2,3);g.fillRect(left+2,top+h-4,w-4,3);g.fillRect(left+2,top+3,3,h-5);g.fillRect(left+w-5,top+3,3,h-5);
+      g.fillStyle='#8c5a28';g.fillRect(left+6,top+h-11,10,7);g.fillRect(left+w-16,top+h-11,10,7);g.fillStyle='#c58b42';g.fillRect(left+7,top+h-10,8,2);g.fillRect(left+w-15,top+h-10,8,2);
+      g.fillStyle='#ffcc33';g.fillRect(x-2,top+5,4,3);
+    }else if(p.type==='tunnel_braces'){
+      // Three timber frames communicate the protected 5×3 zone without turning open cells solid.
+      for(const dc of [-2,0,2]){
+        const cc=p.site.c+dc;if(cc<0||cc>=COLS)continue;const bx=cc*CELL+7,bt=(p.site.r-1)*CELL+2,bh=CELL*3-4;
+        g.fillStyle='rgba(55,31,13,.88)';g.fillRect(bx-2,bt,5,bh);g.fillStyle='#a8753c';g.fillRect(bx-1,bt+1,2,bh-2);
+      }
+      g.fillStyle='#43250f';g.fillRect((p.site.c-2)*CELL+5,(p.site.r-1)*CELL+3,CELL*5+6,4);g.fillStyle='#b78347';g.fillRect((p.site.c-2)*CELL+6,(p.site.r-1)*CELL+3,CELL*5+4,1);
+    }else if(p.type==='fungus_bed'){
+      g.fillStyle='#3c2518';g.fillRect(p.site.c*CELL+2,p.site.r*CELL+10,12,5);g.fillStyle='#b76f4c';g.fillRect(p.site.c*CELL+3,p.site.r*CELL+10,10,2);g.fillStyle='#6f8d42';g.fillRect(p.site.c*CELL+5,p.site.r*CELL+8,6,3);
+    }
+  }
+  const p=active;if(!p||!p.site)return;
+  const def=projectDefinition(p.type),left=p.site.c*CELL,top=p.site.r*CELL,w=(p.site.w||1)*CELL,h=(p.site.h||1)*CELL,a=colonyProjectAnchor(p);
+  if(!isExploredPixel(a.x,a.y))return;
+  g.save();g.globalAlpha=.92;
+  g.fillStyle='#120b06';g.fillRect(left-2,top-5,w+4,4);g.fillStyle='#4e3924';g.fillRect(left-1,top-4,w+2,2);
+  const delivered=Object.values(p.delivered||{}).reduce((s,v)=>s+v,0),total=Object.values(p.cost||{}).reduce((s,v)=>s+v,0),build=p.workNeeded?Math.min(1,p.work/p.workNeeded):0;
+  const progress=total?Math.min(.55,delivered/total*.55)+build*.45:build;
+  g.fillStyle='#ffcc33';g.fillRect(left,top-4,Math.floor(w*progress),2);
+  g.strokeStyle=def.color;g.lineWidth=1;g.strokeRect(left+.5,top+.5,w-1,h-1);
+  const cols={clay:'#c47a52',fiber:'#8fbf5f',wood:'#a97a44',stone:'#8d8f91'};let n=0;
+  for(const k of Object.keys(p.delivered||{}))for(let i=0;i<p.delivered[k];i++){
+    const px=left+3+(n%Math.max(1,Math.floor((w-4)/5)))*5,py=top+h-4-Math.floor(n/Math.max(1,Math.floor((w-4)/5)))*4;
+    g.fillStyle='#120b06';g.fillRect(px-1,py-3,5,4);g.fillStyle=cols[k]||'#aaa';g.fillRect(px,py-3,3,3);n++;
+  }
+  if(build>0){g.fillStyle='#70431e';g.fillRect(left+2,top+2,3,h-4);g.fillRect(left+w-5,top+2,3,h-4);g.fillRect(left+2,top+2,w-4,3);}
+  g.restore();
+}
+function drawColonyProjectPlacement(g,isMini){
+  if(isMini||typeof mapTool==='undefined'||mapTool!=='project'||!projectPlacementType)return;
+  const def=projectDefinition(projectPlacementType);if(!def)return;
+  const c=Math.floor(mouse.x/CELL),r=Math.floor(mouse.y/CELL),check=projectSiteCheck(projectPlacementType,c,r),w=(def.size.w||1)*CELL,h=(def.size.h||1)*CELL,x=c*CELL,y=r*CELL;
+  g.save();g.globalAlpha=.28;g.fillStyle=check.ok?'#2de67a':'#ff3b30';g.fillRect(x+1,y+1,w-2,h-2);g.globalAlpha=1;g.strokeStyle=check.ok?'#9cff9f':'#ff8f86';g.lineWidth=2;g.strokeRect(x+1,y+1,w-2,h-2);
+  g.fillStyle=check.ok?'#2de67a':'#ff3b30';for(let xx=x+3;xx<x+w-2;xx+=5)g.fillRect(xx,y-3,3,2);g.restore();
 }
 function isSolidPixel(x,y){
   const c=Math.floor(x/CELL),r=Math.floor(y/CELL);
@@ -1918,6 +1983,8 @@ function findBuildSite(ant){
   for(let r=SURFACE_ROW+1;r<ROWS-1;r++) for(let c=1;c<COLS-1;c++) if(soil[r][c]===0){
     if(!known.has(c+','+r)) continue;
     if(typeof isStoreCell==='function'&&isStoreCell(c,r)) continue;
+    if(typeof isProjectSiteCell==='function'&&isProjectSiteCell(c,r,true)) continue;
+    if(typeof isBracedCell==='function'&&isBracedCell(c,r)) continue;
     const dist=Math.hypot((c+0.5)*16-ant.x,(r+0.5)*16-ant.y);
     if(dist>65) continue;
     if(r===SURFACE_ROW+1 && Math.abs(c-CENTER_COL)<2) continue;
@@ -2881,6 +2948,7 @@ function topoCreateFreshWorld(cols, rows){
   day=1; time=DAY_LENGTH*0.28; deliveries=0; digs=0; gen=0; worldAge=0;
   worldSeed=worldSeed32(Math.floor(Math.random()*4294967296));
   worldProfile=createWorldProfile(worldSeed,COLS); ancientSites=[]; ancientMasonry=[]; _generatedSiteIds=new Set(); rebuildAncientIndexes();
+  resetColonyProjects();
   economyLedger.setFood(Math.max(2,Math.round(startReserveFood()/2)),'fresh world reserve');
   economyLedger.replaceMaterials({},'fresh world reset'); colonyFitness=0;
   try{ initSoil(); }catch(e){ console.error('initSoil fresh',e); }
@@ -2983,7 +3051,7 @@ function colonyProfessionNeeds(){
   const knownWorkers=workers.filter(w=>_entityInKnownWalkspace(w)),knownBrood=brood.filter(b=>_entityInKnownWalkspace(b));
   const n=knownWorkers.length;
   const pendingStore=!!(storageStructure(false)&&!storageStructure(false).built);
-  const pendingBuild=pendingStore||structures.some(s=>!s.abandoned&&s.type!=='store'&&(s.buildProgress||0)<1&&isNestCellConnected(s.c,s.r));
+  const pendingBuild=pendingStore||!!colonyProjects.activeRef()||structures.some(s=>!s.abandoned&&s.type!=='store'&&(s.buildProgress||0)<1&&isNestCellConnected(s.c,s.r));
   const lowFood=economyLedger.food<Math.max(_reservaVital()+2,n*.9+knownBrood.length*1.4);
   const materialStock=Object.values(economyLedger.materials||{}).reduce((a,v)=>a+(Number(v)||0),0);
   const raw={
@@ -3370,8 +3438,251 @@ function granerosConstruidos(){
 }
 function capacidadAlmacen(){
   const s=storageStructure(true); if(!s||!_storeSiteIsPhysical(s)) return 0;
-  return 8+storageCells().length*2+granerosConstruidos()*12;
+  return 8+storageCells().length*2+granerosConstruidos()*12
+    +colonyProjects.completedCount('clay_jars')*12+operationalColonyProjects('forward_cache').length*6;
 }
+
+// === COLONY PROJECTS — one decision, physical hauling, emergent builders =========================
+// The player picks the bottleneck and (where relevant) the site. Workers still decide who hauls and
+// builds from health, age, learned experience, traits and colony need; no manual worker assignment exists.
+const _PROJECT_STATE_SET=new Set(['HAUL_PROJECT','DELIVER_PROJECT','BUILD_PROJECT']);
+let projectPlacementType=null;
+function colonyProjectAnchor(p){
+  if(!p||!p.site)return storagePos();
+  return {x:(p.site.c+(p.site.w||1)/2)*CELL,y:(p.site.r+(p.site.h||1)/2)*CELL};
+}
+function _projectSiteCells(p){
+  const out=[];if(!p||!p.site)return out;
+  for(let r=p.site.r;r<p.site.r+(p.site.h||1);r++)for(let c=p.site.c;c<p.site.c+(p.site.w||1);c++)out.push({c,r});
+  return out;
+}
+function _projectSiteOperational(p){
+  if(!p||!p.site)return false;
+  for(const q of _projectSiteCells(p)){
+    if(q.c<0||q.c>=COLS||q.r<=SURFACE_ROW||q.r>=ROWS||!soil[q.r]||soil[q.r][q.c]!==0)return false;
+    if(!isNestCellConnected(q.c,q.r)||waterAtCell(q.c,q.r)>=WATER_AVOID_LEVEL)return false;
+  }
+  return true;
+}
+function operationalColonyProjects(type){
+  return colonyProjects.completedRef().filter(p=>p.type===type&&(type==='clay_jars'||_projectSiteOperational(p)));
+}
+function isProjectSiteCell(c,r,includeActive=true){
+  const hit=p=>p&&p.type!=='clay_jars'&&p.site&&c>=p.site.c&&c<p.site.c+(p.site.w||1)&&r>=p.site.r&&r<p.site.r+(p.site.h||1);
+  for(const p of colonyProjects.completedRef())if(hit(p))return true;
+  return !!(includeActive&&hit(colonyProjects.activeRef()));
+}
+function isBracedCell(c,r){
+  // Hot path: falling-soil physics calls this per cell. Read the tiny internal list directly and avoid
+  // cloning snapshots or rebuilding connectivity for every grain.
+  for(const p of colonyProjects.completedRef())if(p.type==='tunnel_braces'&&p.site&&soil[p.site.r]&&soil[p.site.r][p.site.c]===0&&Math.abs(c-p.site.c)<=2&&Math.abs(r-p.site.r)<=1)return true;
+  return false;
+}
+function storageDeliveryNodes(){
+  const nodes=[];const s=storageStructure(true),a=_storeAnchor(s);
+  // The simulation's maintenance pass retires a physically lost store. Keep the historical one-tick
+  // delivery grace until that pass runs, so a carrier already touching its shelves is not stranded.
+  if(s&&a&&!s.abandoned)nodes.push({id:'main',x:a.x,y:a.y,type:'store',project:null});
+  for(const p of operationalColonyProjects('forward_cache')){const q=colonyProjectAnchor(p);nodes.push({id:p.id,x:q.x,y:q.y,type:'forward_cache',project:p});}
+  return nodes;
+}
+function storageTargetFor(ant){
+  const nodes=storageDeliveryNodes();if(!nodes.length)return {...storagePos(),id:'main',type:'store'};
+  let remembered=nodes.find(n=>ant&&ant._deliveryNodeId===n.id);
+  if(remembered)return remembered;
+  let best=nodes[0],score=Infinity;
+  for(const n of nodes){
+    let d=ant?Math.hypot(ant.x-n.x,ant.y-n.y):0;
+    // A surface load first enters through the founding shaft. Remote underground caches only compete
+    // after the carrier is inside, which prevents a cache under the meadow from stealing surface trips.
+    if(ant&&ant.y<SURFACE_Y+8&&n.type==='forward_cache')d+=Math.abs(n.y-SURFACE_Y)*.75;
+    if(d<score){score=d;best=n;}
+  }
+  if(ant)ant._deliveryNodeId=best.id;return best;
+}
+function projectWorldContext(){
+  const cap=capacidadAlmacen(),stock={...economyLedger.materials};
+  return {storeBuilt:!!storageStructure(true),workers:workers.filter(w=>_entityInKnownWalkspace(w)).length,
+    gardens:fungusGardens.filter(g=>_entityInKnownWalkspace(g)).length,fillRatio:cap?economyLedger.food/cap:0,
+    depthCells:exploredDepth(),longHaul:exploredDepth()*CELL,collapseRisk:accidents,digs,stock,available:economyLedger.availableMaterials()};
+}
+function colonyProjectProposals(){return colonyProjects.proposals(projectWorldContext(),3);}
+function setProjectReserve(kind,amount){
+  const k=String(kind||'');if(!COLONY_PROJECT_RESOURCES.includes(k))return 0;
+  const held=economyLedger.materialHeld(k),max=Math.max(0,Math.floor((economyLedger.materials[k]||0)-held));
+  const next=Math.max(0,Math.min(max,Math.floor(Number(amount)||0)));
+  colonyProjects.setReserve(k,next);economyLedger.setMaterialFloor(k,next,{reason:'player reserve policy'});
+  try{pintarInventario();}catch(e){}return next;
+}
+function _applyProjectReserveRules(){
+  for(const k of COLONY_PROJECT_RESOURCES)economyLedger.setMaterialFloor(k,colonyProjects.reserve(k),{reason:'load project reserve policy'});
+}
+function _rebuildActiveProjectHold(reason){
+  const a=colonyProjects.activeRef();if(!a)return false;
+  economyLedger.releaseHold(a.id,reason||'rebuild project commitment');
+  return !!economyLedger.holdMaterials(a.id,colonyProjects.holds(),{force:true,reason:reason||'rebuild project commitment'});
+}
+function resetColonyProjects(){
+  colonyProjects.reset();economyLedger.resetRules('fresh colony projects');projectPlacementType=null;
+  try{for(const w of workers){delete w.projectCargo;if(_PROJECT_STATE_SET.has(w.state))w.state='EXPLORAR';}}catch(e){}
+}
+function restoreColonyProjects(data){
+  colonyProjects.load(data||null);economyLedger.resetRules('load colony projects');_applyProjectReserveRules();
+  const a=colonyProjects.activeRef();
+  if(!a){for(const w of workers){delete w.projectCargo;if(_PROJECT_STATE_SET.has(w.state))w.state='EXPLORAR';}return true;}
+  const allowed={...a.inTransit};
+  for(const w of workers){
+    const cargo=w.projectCargo;
+    if(!cargo||cargo.projectId!==a.id||!Object.prototype.hasOwnProperty.call(allowed,cargo.kind)){if(cargo)delete w.projectCargo;continue;}
+    const amt=Math.max(0,Math.floor(cargo.amount||1));
+    if(allowed[cargo.kind]>=amt)allowed[cargo.kind]-=amt;else delete w.projectCargo;
+  }
+  // Missing carriers mean a physical load was lost; turn it back into outstanding work, never into stock.
+  for(const k of Object.keys(allowed))if(allowed[k]>0)colonyProjects.returnTransit(k,allowed[k]);
+  _rebuildActiveProjectHold('restore active project');return true;
+}
+function projectSiteCheck(type,c,r){
+  const def=projectDefinition(type);if(!def)return {ok:false,reason:'Unknown project.'};
+  c=Math.floor(c);r=Math.floor(r);const w=def.size.w||1,h=def.size.h||1;
+  if(type==='clay_jars')return storageStructure(true)?{ok:true,site:{c,r,w,h}}:{ok:false,reason:'Build the founding store first.'};
+  if(c<1||c+w>=COLS||r<=SURFACE_ROW||r+h>=ROWS)return {ok:false,reason:'Choose a known underground chamber.'};
+  const completed=colonyProjects.completed();
+  for(let rr=r;rr<r+h;rr++)for(let cc=c;cc<c+w;cc++){
+    if(!soil[rr]||soil[rr][cc]!==0||!isNestCellConnected(cc,rr)||!isExploredCell(cc,rr))return {ok:false,reason:'Every project cell must be open and connected.'};
+    if(waterAtCell(cc,rr)>=WATER_AVOID_LEVEL)return {ok:false,reason:'The worksite must be dry.'};
+    if(isStoreCell(cc,rr)||isProjectSiteCell(cc,rr,true))return {ok:false,reason:'That chamber is already in use.'};
+    if(type!=='tunnel_braces'&&(!soil[r+h]||soil[r+h][cc]===0))return {ok:false,reason:'Caches and beds need a solid floor.'};
+    for(const s of structures)if(!s.abandoned&&cc>=s.c&&cc<s.c+(s.w||1)&&rr>=s.r&&rr<s.r+(s.h||1))return {ok:false,reason:'A structure already occupies that cell.'};
+  }
+  if(type==='fungus_bed'&&fungusGardens.some(g=>Math.hypot(g.c-c,g.r-r)<2.2))return {ok:false,reason:'Leave working space around existing beds.'};
+  if(completed.some(p=>p.site&&Math.abs(p.site.c-c)<1&&Math.abs(p.site.r-r)<1))return {ok:false,reason:'Choose a separate worksite.'};
+  return {ok:true,site:{c,r,w,h}};
+}
+function _projectStartMessage(reason){
+  return reason==='one_active_project'?'Only one colony project can be active.':reason==='project_limit'?'This project has reached its current physical limit.':reason==='resources'?'Reserved and committed stock leaves too few materials.':reason||'This project cannot begin yet.';
+}
+function approveColonyProject(type,site){
+  const def=projectDefinition(type),store=storageStructure(true);
+  if(!def||!store){showNotify('warn','PROJECT NOT READY','The colony needs a completed physical store first.');return {ok:false,reason:'store'};}
+  let chosen=site;
+  if(def.placement==='store'){
+    const a=_storeAnchor(store);chosen={c:Math.floor(a.x/CELL),r:Math.floor(a.y/CELL),w:1,h:1};
+  }else{
+    const checked=projectSiteCheck(type,site&&site.c,site&&site.r);if(!checked.ok){showNotify('warn','INVALID WORKSITE',checked.reason);return checked;}chosen=checked.site;
+  }
+  const result=colonyProjects.start(type,chosen,economyLedger.availableMaterials(),{time});
+  if(!result.ok){showNotify('warn','PROJECT HELD',_projectStartMessage(result.reason));return result;}
+  if(!economyLedger.holdMaterials(result.project.id,colonyProjects.holds(),{reason:'approved '+def.name})){
+    colonyProjects.cancel();showNotify('warn','STOCK CHANGED','Another colony need used those materials first.');return {ok:false,reason:'resources'};
+  }
+  projectPlacementType=null;_assignColonyProjectCrew(true);
+  pushEvent('build',`PROJECT APPROVED · ${def.name}`,`${Object.entries(def.cost).map(([k,v])=>v+' '+k.toUpperCase()).join(' · ')} committed; workers will collect every unit`);
+  const p=colonyProjectAnchor(result.project);pushToast(p.x,p.y-14,def.name,def.color,2.4);
+  showNotify('ok',def.name,'Materials are committed, not spent. The selected crew must carry and build it.');
+  try{pintarInventario();}catch(e){}return result;
+}
+function armColonyProject(type){
+  const def=projectDefinition(type);if(!def)return false;
+  const check=colonyProjects.canStart(type,economyLedger.availableMaterials(),def.placement==='store'?{c:0,r:0}:{c:1,r:SURFACE_ROW+1});
+  if(!check.ok){showNotify('warn','PROJECT HELD',_projectStartMessage(check.reason));return false;}
+  if(def.placement==='store'){approveColonyProject(type,null);return true;}
+  projectPlacementType=type;try{cerrarInventario();}catch(e){}setMapTool('project');return true;
+}
+function cancelColonyProject(){
+  const a=colonyProjects.activeRef();if(!a)return false;
+  const result=colonyProjects.cancel();if(!result.ok){showNotify('warn','WORK ALREADY MOVING','Once a unit leaves the store, this physical build must finish.');return false;}
+  economyLedger.releaseHold(a.id,'project cancelled before pickup');for(const w of workers)if(_PROJECT_STATE_SET.has(w.state))w.state='EXPLORAR';
+  pushEvent('build','PROJECT RELEASED',result.project.name+' · no unit had left the store');try{pintarInventario();}catch(e){}return true;
+}
+function _projectWorkerAvailable(w){
+  return w&&!w.isQueen&&w.health>28&&(w.fatigue||0)<82&&_entityInKnownWalkspace(w)&&!w.food&&!w.wasteTarget&&!w.floodTarget&&!w._magmaRetreat&&w.state!=='DESCANSAR'&&w.state!=='BUILD_STORE';
+}
+function _assignColonyProjectCrew(force=false){
+  const a=colonyProjects.activeRef();if(!a)return [];
+  if(economyLedger.food<_reservaVital()+1){colonyProjects.markBlocked('SURVIVAL PRIORITY');return colonyProjects.setCrew([]);}
+  const current=(a.crew||[]).filter(id=>workers.some(w=>w.id===id&&_projectWorkerAvailable(w)));
+  if(!force&&current.length&&(time<(a.crewReviewAt||0)))return current;
+  const hauling=!colonyProjects.allDelivered(),candidates=workers.filter(_projectWorkerAvailable).map(w=>{
+    const build=_professionScore(w,'CONSTRUCTORA'),haul=_professionScore(w,'RECOLECTORA_EXTERIOR');
+    const age=(w.age||0)/DAY_LENGTH,needFit=(age>=.25&&age<=2?10:age<.14?-12:2),score=build+(hauling?haul*.18:0)+needFit-(w.fatigue||0)*.38;
+    return {w,score};
+  }).sort((x,y)=>y.score-x.score||String(x.w.id).localeCompare(String(y.w.id)));
+  const n=candidates.length?Math.max(1,Math.min(3,Math.ceil(workers.length/7))):0,ids=candidates.slice(0,n).map(x=>x.w.id);
+  colonyProjects.setCrew(ids);a.crewReviewAt=time+DAY_LENGTH*.045;a.blocked=ids.length?'':'NO AVAILABLE BUILDERS';return ids;
+}
+function _moveProjectWorker(ant,target,speed){
+  let waypoint=target;const routed=routeStep(ant,target.x,target.y);if(routed)waypoint=routed;
+  const ang=Math.atan2(waypoint.y-ant.y,waypoint.x-ant.x);ant.angle+=((ang-ant.angle+Math.PI*3)%(Math.PI*2)-Math.PI)*.26;
+  const step=Math.min(speed,Math.max(.7,dist(ant,waypoint))),nx=ant.x+Math.cos(ant.angle)*step,ny=ant.y+Math.sin(ant.angle)*step;
+  if(canAntMove(ant,nx,ny)){ant.x=nx;ant.y=ny;ant.blocked=0;}else{ant.blocked=(ant.blocked||0)+1;ant._routeUntil=0;ant.angle=ang+(Math.random()-.5)*.4;}
+}
+function _nextProjectMaterial(a){
+  for(const k of Object.keys(a.cost))if(colonyProjects.outstanding(k)>0&&economyLedger.materialHeld(k,a.id)>0&&economyLedger.materials[k]>economyLedger.materialFloor(k))return k;
+  return null;
+}
+function _applyCompletedColonyProject(p){
+  const def=projectDefinition(p.type),at=colonyProjectAnchor(p);
+  if(p.type==='fungus_bed'&&!fungusGardens.some(g=>g.projectId===p.id)){
+    fungusGardens.push({x:at.x,y:at.y,c:p.site.c,r:p.site.r,health:.88,size:1.05,age:0,fed:p.cost.fiber||0,projectId:p.id});inventions.fungus=true;
+  }
+  for(const w of workers)if(_PROJECT_STATE_SET.has(w.state)){w.state='EXPLORAR';delete w.projectCargo;}
+  economyLedger.releaseHold(p.id,'project complete');stats.xp+=24;colonyFitness+=.7;checkLevelUp();
+  pushEvent('build',`${def.name} COMPLETED`,`${(p.builtBy||[]).join(', ')||'Colony crew'} · ${def.effect}`);pushToast(at.x,at.y-18,'✓ '+def.name,'#2de67a',2.8);
+  showNotify('ok',def.name+' COMPLETE',def.effect+' '+def.tradeoff);try{pintarInventario();}catch(e){}
+}
+function workOnColonyProject(ant,dt,speed){
+  const a=colonyProjects.activeRef();
+  if(!a){if(_PROJECT_STATE_SET.has(ant.state))ant.state='EXPLORAR';if(ant.projectCargo)delete ant.projectCargo;return false;}
+  if(ant.food||ant.wasteTarget||ant.floodTarget||ant._magmaRetreat)return false;
+  if(economyLedger.food<_reservaVital()+1){if(_PROJECT_STATE_SET.has(ant.state))ant.state='EXPLORAR';colonyProjects.markBlocked('SURVIVAL PRIORITY');return false;}
+  let crew=(a.crew||[]);if(!crew.length||time>=(a.crewReviewAt||0))crew=_assignColonyProjectCrew();
+  if(!crew.includes(ant.id)){if(_PROJECT_STATE_SET.has(ant.state))ant.state='EXPLORAR';return false;}
+  if((ant.fatigue||0)>=82)return false;
+  ant.targetFood=null;ant.digTarget=null;ant.digProgress=0;ant.buildTarget=null;ant._excursion=false;
+  const site=colonyProjectAnchor(a);
+  if(ant.projectCargo){
+    const cargo=ant.projectCargo;
+    if(cargo.projectId!==a.id){delete ant.projectCargo;return false;}
+    ant.state='DELIVER_PROJECT';
+    if(dist(ant,site)<11){
+      const d=colonyProjects.deliver(cargo.kind,cargo.amount||1,{time});delete ant.projectCargo;
+      if(d.ok){recordJobExperience(ant,'build',.16*d.amount);ant.deliveries=(ant.deliveries||0)+d.amount;pushToast(site.x,site.y-10,'+'+d.amount+' '+cargo.kind.toUpperCase(),projectDefinition(a.type).color,1.1);}
+    }else _moveProjectWorker(ant,site,speed);
+    ant.fatigue=Math.min(100,(ant.fatigue||0)+_fatUnidad*dt*.42);return true;
+  }
+  if(!colonyProjects.allDelivered()){
+    const kind=_nextProjectMaterial(a);
+    if(!kind){colonyProjects.markBlocked('WAITING FOR RESERVED STOCK');if(_PROJECT_STATE_SET.has(ant.state))ant.state='EXPLORAR';return false;}
+    ant.state='HAUL_PROJECT';const store=storagePos();
+    if(dist(ant,store)<13){
+      const moved=colonyProjects.pickup(kind,1,{time});
+      if(moved.ok){
+        const paid=economyLedger.consumeHeldMaterial(a.id,kind,moved.amount,{reason:a.name+' worker pickup'});
+        if(paid===moved.amount){ant.projectCargo={projectId:a.id,kind,amount:paid};pushToast(store.x,store.y-12,kind.toUpperCase()+' →','#f1c27d',.9);}
+        else colonyProjects.returnTransit(kind,moved.amount);
+      }
+    }else _moveProjectWorker(ant,store,speed);
+    ant.fatigue=Math.min(100,(ant.fatigue||0)+_fatUnidad*dt*.42);return true;
+  }
+  ant.state='BUILD_PROJECT';
+  if(dist(ant,site)<12){
+    const trait=ant.traits&&ant.traits.construccion||40,xp=_jobBook(ant).build||0;
+    const effort=dt*(.58+trait/230+Math.min(.28,xp*.02))*(ant.tool==='trowel'?1.24:1);
+    const result=colonyProjects.addWork(effort,ant.id,{time});recordJobExperience(ant,'build',effort/Math.max(1,a.workNeeded));
+    ant.fatigue=Math.min(100,(ant.fatigue||0)+_fatUnidad*dt*.74);
+    if(Math.random()<.2)particles.push({x:site.x+(Math.random()-.5)*18,y:site.y+(Math.random()-.5)*10,vx:(Math.random()-.5),vy:-.4,life:.7,decay:.05,color:projectDefinition(a.type).color});
+    if(result.completed)_applyCompletedColonyProject(result.project);
+  }else _moveProjectWorker(ant,site,speed);
+  return true;
+}
+function releaseProjectCargoOnDeath(ant){
+  const cargo=ant&&ant.projectCargo,a=colonyProjects.activeRef();if(!cargo)return;
+  if(a&&cargo.projectId===a.id){colonyProjects.returnTransit(cargo.kind,cargo.amount||1);_rebuildActiveProjectHold('load lost with worker');}
+  delete ant.projectCargo;
+}
+window.colonyProjectsAPI={proposals:colonyProjectProposals,approve:approveColonyProject,arm:armColonyProject,cancel:cancelColonyProject,setReserve:setProjectReserve,
+  siteCheck:projectSiteCheck,work:workOnColonyProject,storageNodes:storageDeliveryNodes,isBracedCell,snapshot:()=>colonyProjects.snapshot()};
+
 // UN CUADRO, SIEMPRE DEL MISMO TAMAÑO. El dueno lo pidio claro: las siluetas distintas (bote, losa,
 // monton) se leian mal a 16 px y no decian que eran. Todo es un cuadrado de 6x6 con su borde negro y su
 // franja de apoyo; lo unico que cambia es el color, y los metales llevan encima dos puntitos del tono
@@ -3890,8 +4201,7 @@ function updateFungus(dt){
     } else {
       // Workers clean it for free, but food mass cannot appear from care alone. Fibre is substrate.
       if(Math.random()<0.018*tenders){
-        if(economyLedger.materials.fiber>0&&Math.random()<.5){
-          economyLedger.debitMaterial('fiber',1,{reason:'fungus garden substrate'});
+        if(Math.random()<.5&&economyLedger.debitMaterial('fiber',1,{reason:'fungus garden substrate'})===1){
           f.fed=Math.min(24,f.fed+1);f.size=Math.min(4.2,f.size+.018);
         }
         f.health=Math.min(1,f.health+.035);
@@ -4358,6 +4668,9 @@ function showAntProfile(ant){
 
 }
 function handleDeath(ant, reason){
+  // A carried project unit was already removed from the store. If its carrier dies it is physically
+  // lost and becomes outstanding again; no fictitious refund is credited to the ledger.
+  try{releaseProjectCargoOnDeath(ant);}catch(e){}
   const idx=workers.indexOf(ant);
   if(idx>=0) workers.splice(idx,1);
   // partículas y evento
@@ -4516,10 +4829,20 @@ function updateAnt(ant, dt){
   // Los estados que se trabajan en un sitio fijo no son encajamiento: la que cava se queda pegada a la pared
   // hasta romperla, y la del jardin del hongo vive encima de su parcela. Si se las cuenta como atascadas, el
   // rescate les reinicia el progreso cada 40 ticks y no terminan nunca (medido: 814 rescates en 8 dias).
-  const _paradaHonesta = ant.state==='TRABAJAR_JARDIN' || ant.state==='DESCANSAR'
+  // Building is only an honest stationary job once the worker is actually touching the worksite.
+  // While travelling, BUILD_STORE/BUILD_PROJECT still needs the ordinary blocked-route rescue; treating
+  // the state alone as stationary could strand the sole founding builder and leave the colony with no
+  // operational store (therefore no food deliveries) for days.
+  let _obraFija=false;
+  if(ant.state==='BUILD_STORE'){
+    const _s=storageStructure(false),_a=_storeAnchor(_s);_obraFija=!!(_a&&dist(ant,_a)<13);
+  }else if(ant.state==='BUILD_PROJECT'){
+    const _p=colonyProjects.activeRef(),_a=colonyProjectAnchor(_p);_obraFija=!!(_p&&_a&&dist(ant,_a)<14);
+  }
+  const _paradaHonesta = ant.state==='TRABAJAR_JARDIN' || ant.state==='DESCANSAR' || _obraFija
     || (ant.state==='CAVANDO' && ant.digTarget);
   if(!ant.isQueen && !_paradaHonesta){
-    const _conObj = !!(ant.targetFood || ant.wasteTarget || ant.food || ant.digTarget);
+    const _conObj = !!(ant.targetFood || ant.wasteTarget || ant.food || ant.projectCargo || ant.digTarget || _PROJECT_STATE_SET.has(ant.state));
     ant._ciclo = (ant._ciclo||0) + 1;
     const _cada = _conObj ? 40 : 120;
     if(ant._ciclo % _cada === 0){
@@ -4888,6 +5211,10 @@ function updateAnt(ant, dt){
   // Founding storage is an urgent colony need, but assignment remains emergent: the most suitable
   // healthy workers win it from age, construction trait and accumulated building experience.
   if(workOnStore(ant,dt,speed)) return;
+  // Survival and the founding store stay above player projects. Once those are safe, the emergent crew
+  // physically collects committed stock before any ordinary digging, crafting or construction. Keep
+  // the zero-project founding loop free of an extra dispatch for every worker and every substep.
+  if((colonyProjects.activeRef()||ant.projectCargo||_PROJECT_STATE_SET.has(ant.state))&&workOnColonyProject(ant,dt,speed)) return;
 
   if(ant.state!=='DESCANSAR'){
     // Unidades: la fatiga se media por FRAME y el reloj simula en milisegundos escalados, asi que a
@@ -5198,16 +5525,16 @@ function updateAnt(ant, dt){
             return;
           }
           ant.buildProgress=0;
-          if(!_structureKeepsNestConnected({c,r},{w:1,h:1})){
+          if(!_structureKeepsNestConnected({c,r},{w:1,h:1})||(typeof isProjectSiteCell==='function'&&isProjectSiteCell(c,r,true))||(typeof isBracedCell==='function'&&isBracedCell(c,r))){
             ant.buildTarget=null; ant.state='EXPLORAR'; return;
           }
           soil[r][c]=1; markSoilDirty(c,r);
-          // material usado: si son inteligentes usan piedra/arcilla/madera según stock
+          // material usado: los gastos ordinarios sólo ven stock libre; mínimos y proyectos quedan intactos.
           let usedType=1;
-          if(inventions.wood && economyLedger.materials.wood>0 && ant.traits.construccion>62 && Math.random()<0.28){ economyLedger.debitMaterial('wood',1,{reason:'wall decoration'}); usedType=1; decoSet.add(dkey(c,r)); }
-          else if(inventions.stone && economyLedger.materials.stone>2 && Math.random()<0.32){ economyLedger.debitMaterial('stone',2,{reason:'wall construction'}); usedType=4; }
-          else if(inventions.clay && economyLedger.materials.clay>1 && Math.random()<0.38){ economyLedger.debitMaterial('clay',1,{reason:'wall construction'}); usedType=2; }
-          else if(economyLedger.materials.sand>1 && Math.random()<0.18){ economyLedger.debitMaterial('sand',1,{reason:'wall construction'}); usedType=3; }
+          if(inventions.wood && ant.traits.construccion>62 && Math.random()<0.28 && economyLedger.debitMaterial('wood',1,{reason:'wall decoration'})===1){ usedType=1; decoSet.add(dkey(c,r)); }
+          else if(inventions.stone && Math.random()<0.32 && economyLedger.debitMaterial('stone',2,{reason:'wall construction'})===2){ usedType=4; }
+          else if(inventions.clay && Math.random()<0.38 && economyLedger.debitMaterial('clay',1,{reason:'wall construction'})===1){ usedType=2; }
+          else if(Math.random()<0.18 && economyLedger.debitMaterial('sand',1,{reason:'wall construction'})===1){ usedType=3; }
           if(soilType[r]) soilType[r][c]=usedType;
           if(usedType===4) pushToast(tgt.x,tgt.y-10,'🧱 PIEDRA','#8a8a8a',1.4);
           else if(usedType===2) pushToast(tgt.x,tgt.y-10,'🏺 ARCILLA','#c2a080',1.4);
@@ -5239,6 +5566,8 @@ function updateAnt(ant, dt){
             if(nr<=SURFACE_ROW||nr>=ROWS||nc<0||nc>=COLS) continue;
             if(soil[nr][nc]!==0) continue;
             if(typeof isStoreCell==='function'&&isStoreCell(nc,nr)) continue;
+            if(typeof isProjectSiteCell==='function'&&isProjectSiteCell(nc,nr,true)) continue;
+            if(typeof isBracedCell==='function'&&isBracedCell(nc,nr)) continue;
             // necesita apoyo debajo para no flotar (Terraria)
             const hasSupport = (nr+1<ROWS && soil[nr+1][nc]===1) || (nc>0&&nr+1<ROWS&&soil[nr+1][nc-1]===1) || (nc<COLS-1&&nr+1<ROWS&&soil[nr+1][nc+1]===1);
             if(!hasSupport||!_structureKeepsNestConnected({c:nc,r:nr},{w:1,h:1})) continue;
@@ -5268,7 +5597,7 @@ function updateAnt(ant, dt){
   const carrying=!!ant.food && !ant.food.isSoil;
   if(carrying && ant.state!=='DESCANSAR'){
     ant.state='VOLVER_COMIDA';
-    const _storeTarget=storagePos();
+    const _storeTarget=storageTargetFor(ant);
     let tgt=_storeTarget;
     // waypoint Minecraft: si estás en la superficie (y < 100) y lejos del hueco central, ve primero a la boca del túnel para no atravesar tierra en diagonal
     const shaftX = CENTER_COL*CELL+8;
@@ -5289,12 +5618,13 @@ function updateAnt(ant, dt){
     const nx=ant.x+Math.cos(ant.angle)*_returnStep, ny=ant.y+Math.sin(ant.angle)*_returnStep;
     if((_directReturn||_routedReturn)&&_openResourceSegment(ant.x,ant.y,nx,ny,true)&&canAntMove(ant,nx,ny)){ant.x=nx;ant.y=ny;ant.blocked=0;}else{ ant.blocked++; ant._routeUntil=0; ant.angle+=(Math.random()-0.5)*0.9 + 0.12; if(ant.blocked>32){ ant.angle+=Math.PI*0.45; ant.blocked=0; /* no abandonar miel: seguir intentando VOLVER_COMIDA */ } }
     if(time-ant.lastPhero>11){ const isRecruit=!!ant.food && !ant.food.isSoil; const amt=isRecruit?(ant.food.amount||1):1; pheromones.push({x:ant.x,y:ant.y,strength: isRecruit? 0.92+amt*0.18 : 0.38, life:1, type: isRecruit?'recruit':'explore', quality: amt}); ant.lastPhero=time; }
-    const _physicalStore=storageStructure(true);
-    let _guarda = !!_physicalStore && dist(ant,_storeTarget)<14;
-    // A delayed carrier may unload at any cell of the SAME built footprint, but never found a new
-    // pantry wherever she got stuck. This keeps one stable address without sacrificing a valid return.
+    const _physicalStore=storageDeliveryNodes().length>0;
+    let _guarda = _physicalStore && dist(ant,_storeTarget)<14;
+    // A delayed carrier may unload at any operational delivery node or founding-store cell, never at
+    // an arbitrary place where she became blocked. Forward caches are physical completed projects.
     if(!_guarda&&_physicalStore&&(time-(ant._cargaDesde||-1e9))>DAY_LENGTH*.22){
       let nearest=Infinity;
+      for(const node of storageDeliveryNodes())nearest=Math.min(nearest,Math.hypot(ant.x-node.x,ant.y-node.y));
       for(const cd of storageCells()) nearest=Math.min(nearest,Math.hypot(ant.x-(cd.c+.5)*CELL,ant.y-(cd.r+.5)*CELL));
       _guarda=nearest<CELL*1.35;
     }
@@ -5306,7 +5636,7 @@ function updateAnt(ant, dt){
       // no es el unico camino (antes, sin el click, la colonia solo huertea por un dado de 0,0016/tick junto
       // a la camara de la cria, amonton los jardines en un rincon y el resto del nido se quedaba sin cosecha).
       _votaHuerto(ant.x,ant.y,(kind==='mushroom'||kind==='seed'||kind==='grassSeed'||kind==='berry')?2:1);
-      ant.food=null;ant.targetFood=null;ant.deliveries++;deliveries++;economyLedger.creditFood(amt,`worker delivery: ${kind}`);
+      ant.food=null;ant.targetFood=null;delete ant._deliveryNodeId;ant.deliveries++;deliveries++;economyLedger.creditFood(amt,`worker delivery: ${kind}`);
       recordJobExperience(ant,'forage',Math.max(.5,amt));
       // Trophallaxis: the forager fills her crop and shares it later.
       ant.crop=Math.min(ant.cropMax||1.6,(ant.crop||0)+amt*.38);
@@ -5978,6 +6308,7 @@ function _hormigaVoxel(g, ant, s, mini, idx){
     _bloque(g, Q(-3), Q(-2)+oy, Q(5), Q(4), base);
     _bloque(g, Q(2), Q(-3)+oy, Q(5), Q(5), _tilde16(base, 14));
     g.fillStyle=tinte; g.fillRect(Q(-2), Q(-2)+oy, Q(3), 1);
+    if(ant.projectCargo){const pc={clay:'#c47a52',fiber:'#8fbf5f',wood:'#a97a44',stone:'#9a9a9a'}[ant.projectCargo.kind]||'#f1c27d';g.fillStyle=pc;g.fillRect(Q(7),Q(-2)+oy,2,2);}
     return;
   }
 
@@ -5995,6 +6326,7 @@ function _hormigaVoxel(g, ant, s, mini, idx){
     g.fillStyle='#2e1a0a'; g.fillRect(Q(6), Q(-2)+_brazo+oy, 3, 3); g.fillRect(Q(-9), Q(-2)-_brazo+oy, 3, 3);
     g.fillStyle=tinte; g.fillRect(Q(-5), Q(-4)+oy, Q(10), 1);
     if(ant.isQueen){ _bloque(g, Q(-4), Q(-16)+oy, Q(9), Q(4), '#ffcc00'); }
+    if(ant.projectCargo){const pc={clay:'#c47a52',fiber:'#8fbf5f',wood:'#a97a44',stone:'#9a9a9a'}[ant.projectCargo.kind]||'#f1c27d';_bloque(g,Q(8),Q(-4)+oy,Q(6),Q(6),pc);}
     return;
   }
 
@@ -6018,7 +6350,7 @@ function _hormigaVoxel(g, ant, s, mini, idx){
   const hy = Q(-3) + oy + (cavando? 1 + _golpe : 0);
   _bloque(g, Q(6), hy, Q(8), Q(7), _tilde16(base, 12));
   // mandibulas: se abren con el golpe y cierran la carga
-  const _boca = cavando? (1 - _golpe) : (ant.food? 1 : 0);
+  const _boca = cavando? (1 - _golpe) : (ant.food||ant.projectCargo? 1 : 0);
   g.fillStyle = '#1a0a00'; g.fillRect(Q(14), hy+Q(2)-_boca, caste==='major'? Q(5):Q(3), 2);
   if(caste==='major'){ g.fillRect(Q(14), hy+Q(4)+_boca, Q(4), 2); }
   // ojo: dos de luz con su pupila; dormida = una raya, sin Z ni letrero
@@ -6053,6 +6385,9 @@ function _hormigaVoxel(g, ant, s, mini, idx){
       g.fillStyle=_fd.cap;g.fillRect(Q(16)+_w,hy-Q(1),1,2);
       // la cantidad NO se escribe: en grupo eran veinte numeritos flotando
     }
+  } else if(ant.projectCargo){
+    const _w=Math.round(Math.sin(_bp*1.4+i)*1.2),_col={clay:'#c47a52',fiber:'#8fbf5f',wood:'#a97a44',stone:'#9a9a9a'}[ant.projectCargo.kind]||'#f1c27d';
+    _bloque(g,Q(15)+_w,hy-Q(1),Q(7),Q(6),_col);g.fillStyle='#fff1ca';g.fillRect(Q(16)+_w,hy,2,1);
   } else if(mini && ant.isQueen){
     g.fillStyle='#ffcc00'; g.fillRect(Q(1), Q(-6)+oy, 2, 2);
   }
@@ -6994,6 +7329,8 @@ function drawFarm(ctx,W,H,isMini=false){
   }
   // estructuras complejas (taller, granero, puente, torre) - textura pixel detallada + construcción progresiva 4s
   drawStructures(ctx,W,H,isMini);
+  drawColonyProjectSites(ctx,isMini);
+  drawColonyProjectPlacement(ctx,isMini);
   // hongos de cueva ya dibujados arriba
   // hidden rewards - atlas 11 ocultos
   if(!isMini){
@@ -8301,7 +8638,7 @@ function updateColonyUIInner(){
     chip.className='ant-chip'+(w.selected?' selected':'');
     const col = w.role==='EXCAVADORA'?'#ff3b30':w.role==='EXPLORADORA'?'#00e5ff':w.role==='NODRIZA'?'#b47aff':'#ffcc00';
     const facCol = society.factions.find(f=>f.id===w.faction)?.color || col;
-    const stateIcon=w.state==='CAVANDO'?'⛏':w.food&&!w.food.isSoil?foodDef(w.food).icon:w.state==='DESCANSAR'?'💤':w.food?'🪨':'🔍';
+    const stateIcon=w.state==='CAVANDO'?'⛏':_PROJECT_STATE_SET.has(w.state)?(w.state==='BUILD_PROJECT'?'🔨':'📦'):w.food&&!w.food.isSoil?foodDef(w.food).icon:w.state==='DESCANSAR'?'💤':w.food?'🪨':'🔍';
     // mood emoji
     let moodIcon='😐';
     if(w.mood.anger>0.62) moodIcon='😠';
@@ -8618,6 +8955,7 @@ const MENTE_TAREAS = {
   DESCANSAR:'rests', BUSCAR:'searches', TANDEM_LEADER:'guides another ant', TANDEM_FOLLOWER:'follows a guide',
   LLEVANDO_BASURA:'hauls waste', TRABAJAR_JARDIN:'tends the garden', IDLE:'has no task', ALIMENTAR_REINA:'shares food',
   CUIDAR_CRIA:'tends brood', PELEAR:'fights', HUÍR:'flees', CONTROLAR_AGUA:'controls a flood', HUIR_AGUA:'escapes water',
+  HAUL_PROJECT:'collects project stock', DELIVER_PROJECT:'carries stock to a worksite', BUILD_PROJECT:'builds the active project', BUILD_STORE:'builds the founding store',
 };
 const _pctv = v => Math.max(0, Math.min(100, Math.round((isFinite(v)?v:0)*100)));
 const _lado = a => a>0.22 ? 'to the right' : (a<-0.22 ? 'to the left' : 'straight ahead');
@@ -8838,7 +9176,9 @@ function farmPointer(e){
 let isDragging=false,dragStartScreen={x:0,y:0},dragStartView={x:0,y:0},hasPanned=false;
 let mapTool='navigate',pheromonePainting=false,lastGuidePoint=null,guidePointsAdded=0,suppressCanvasClick=false,guideTrailSerial=0,activeGuideTrail=0;
 function setMapTool(next='navigate'){
-  mapTool=(next==='honey'||next==='pheromone')?next:'navigate';
+  const previous=mapTool;
+  mapTool=(next==='honey'||next==='pheromone'||(next==='project'&&projectPlacementType))?next:'navigate';
+  if(previous==='project'&&mapTool!=='project')projectPlacementType=null;
   const honey=document.getElementById('btnFood'),phero=document.getElementById('btnPhero'),hint=document.getElementById('mapHint');
   for(const [el,on,color,text] of [[honey,mapTool==='honey','var(--amber)','#000'],[phero,mapTool==='pheromone','var(--purple)','#fff']])if(el){
     el.classList.toggle('on',on);el.setAttribute('aria-pressed',on?'true':'false');
@@ -8846,9 +9186,10 @@ function setMapTool(next='navigate'){
   }
   if(hint) hint.textContent=mapTool==='honey'?'HONEY ARMED · CLICK ONE OPEN, EXPLORED SPOT · ESC TO CANCEL'
     :mapTool==='pheromone'?'FOLLOW TRAIL ARMED · DRAG FROM ANTS TO DESTINATION · RELEASE TO FINISH'
+    :mapTool==='project'?((projectDefinition(projectPlacementType)||{name:'PROJECT'}).name+' SITE · CLICK OPEN CONNECTED FLOOR · ESC TO CANCEL')
     :'NAVIGATE · CLICK AN ANT TO FOLLOW · SHIFT+CLICK TO DIG';
   canvas.dataset.mapTool=mapTool;
-  canvas.style.cursor=mapTool==='honey'?'copy':mapTool==='pheromone'?'cell':'crosshair';
+  canvas.style.cursor=mapTool==='honey'?'copy':mapTool==='pheromone'||mapTool==='project'?'cell':'crosshair';
 }
 function canPlaceMapItem(x,y){
   return canInteractAt(x,y)&&_entityInKnownWalkspace({x,y})&&waterAtPixel(x,y)<WATER_AVOID_LEVEL;
@@ -8978,6 +9319,11 @@ canvas.addEventListener('click',e=>{
     if(mapTool!=='navigate')setMapTool('navigate');
     return;
   }
+  if(mapTool==='project'){
+    const type=projectPlacementType,c=Math.floor(x/CELL),r=Math.floor(y/CELL),checked=projectSiteCheck(type,c,r);
+    if(!checked.ok){pushToast(x,y,'✕ WORKSITE','#ff6b6b');showNotify('warn','INVALID WORKSITE',checked.reason);return;}
+    const result=approveColonyProject(type,checked.site);if(result&&result.ok)setMapTool('navigate');return;
+  }
   if(mapTool==='honey'){
     if(placePlayerHoney(x,y))setMapTool('navigate');
     return;
@@ -9043,6 +9389,12 @@ document.getElementById('btnPhero').onclick=e=>{
   if(e)e.stopPropagation();setMapTool(mapTool==='pheromone'?'navigate':'pheromone');
 };
 setMapTool('navigate');
+// Capture ESC before the global farm-menu shortcut: cancelling a temporary placement must cancel only
+// that tool, not also throw the player out to the title menu in the same key event.
+window.addEventListener('keydown',e=>{
+  const typing=e.target&&(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.isContentEditable);
+  if(!typing&&e.key==='Escape'&&mapTool!=='navigate'){setMapTool('navigate');e.preventDefault();e.stopImmediatePropagation();}
+},{capture:true});
 document.addEventListener('pointerdown',e=>{
   if(mapTool==='navigate')return;
   const t=e.target;
@@ -9246,7 +9598,6 @@ document.getElementById('btnExpert').onclick=()=>{
 document.getElementById('btnClearHist').onclick=()=>{events=[]; renderEvents();};
 window.addEventListener('keydown',e=>{
   const typing=e.target&&(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.isContentEditable);
-  if(!typing&&e.key==='Escape'&&mapTool!=='navigate'){setMapTool('navigate');e.preventDefault();}
   if(!typing&&e.code==='Space'){paused=!paused;e.preventDefault();}
   if(e.key==='1'){ setGameSpeed(1); }
   if(e.key==='2'){ setGameSpeed(2); }
@@ -10103,7 +10454,7 @@ if(_topoHasWorld){
 
 // === SAVE PERSISTENTE - la granja sobrevive a recargar ===
 const SAVE_KEY='antFarm_fullSave_v2';
-const SAVE_VER='20261019f';
+const SAVE_VER='20261019g';
 const LS_ALIVE='antfarm_worldAlive';
 const LS_INGAME='antfarm_inGame';
 // grids a string de digitos: 8x menos bytes que JSON de arrays (BIG 96x48 entra en localStorage)
@@ -10172,6 +10523,7 @@ function serializeSave(force){
       mound: Array.isArray(mound)? mound.filter(m=>m && !m.isPuddle).slice(0,300).map(m=>({x:m.x,y:m.y,h:m.h})) : [],
       // Topo: JSON.stringify ya serializa profundo; los spreads ({...w}) copiaban cada hormiga DOS veces
       workers, queens, brood, fungusGardens, wastePiles, structures,
+      colonyProjects: colonyProjects.snapshot(),
       queen: queen|| null,
       worldMaterials: {...economyLedger.materials},
       inventions: {...inventions},
@@ -10280,6 +10632,8 @@ function deserializeSave(){
     if(Array.isArray(data.events)){ events.length=0; data.events.forEach(e=>events.push(e)); }
     time = data.time||time; gen = data.gen||gen; colonyIQ = data.colonyIQ||colonyIQ;
     if(data.colonyFood!==undefined) economyLedger.setFood(data.colonyFood,'load save'); digs = data.digs||digs;
+    // F saves have no colonyProjects field: the pure loader migrates them to empty rules and no worksite.
+    restoreColonyProjects(data.colonyProjects);
     if(data.day) day = data.day; else day = Math.floor(time/DAY_LENGTH)+1;
     if(data.worldAge) worldAge = data.worldAge;
     deliveries = data.deliveries||deliveries; accidents = data.accidents||0; rewardsFound = data.rewardsFound||0;
@@ -10894,11 +11248,41 @@ function updateEcoHud(){
   }catch(e){ /* un nodo que falte no puede parar el bucle */ }
 }
 function _filaInv(def, valor){
+  const keep=colonyProjects.reserve(def.k);
   return '<article class="inv-resource-card" data-material="'+def.k+'">'
     + '<span class="inv-resource-icon" style="--mat-main:'+def.col+';--mat-dark:'+def.col2+'" aria-hidden="true"><i></i></span>'
     + '<span class="inv-resource-copy"><b class="inv-resource-name">'+def.n+'</b>'
-    + '<span class="inv-resource-note">'+def.sirve+'</span></span>'
+    + '<span class="inv-resource-note">'+def.sirve+'</span>'
+    + '<span class="inv-reserve-control"><span class="inv-reserve-label">KEEP <b>'+keep+'</b></span>'
+    + '<button type="button" data-reserve-kind="'+def.k+'" data-reserve-delta="-1" aria-label="Keep one less '+def.n.toLowerCase()+'">−</button>'
+    + '<button type="button" data-reserve-kind="'+def.k+'" data-reserve-delta="1" aria-label="Keep one more '+def.n.toLowerCase()+'">+</button></span></span>'
     + '<b class="inv-resource-count" aria-label="'+valor+' '+def.n.toLowerCase()+'">'+valor+'</b></article>';
+}
+function _projectCostHtml(cost){return Object.entries(cost||{}).map(([k,v])=>'<span><b>'+v+'</b> '+k.toUpperCase()+'</span>').join('');}
+function _colonyProjectsHtml(){
+  const active=colonyProjects.active();let html='<section class="inv-section inv-project-section" aria-labelledby="invProjectsTitle"><h3 class="inv-section-head" id="invProjectsTitle">COLONY PROJECTS</h3>'
+    +'<p class="inv-project-intro">Choose one bottleneck. Materials are committed now, then carried from the store by an emergent crew.</p>';
+  if(active){
+    const def=projectDefinition(active.type),total=Object.values(active.cost).reduce((a,v)=>a+v,0),delivered=Object.values(active.delivered).reduce((a,v)=>a+v,0),transit=Object.values(active.inTransit).reduce((a,v)=>a+v,0),work=Math.round(active.work/Math.max(1,active.workNeeded)*100);
+    const crew=(active.crew||[]).map(id=>{const w=workers.find(x=>x.id===id);return w?antDisplayName(w):id;});
+    const moved=delivered+transit+active.work;
+    html+='<article class="inv-active-project" data-project="'+active.type+'"><div class="inv-project-top"><span class="inv-project-glyph">'+def.icon+'</span><span><b>'+def.name+'</b><small>ACTIVE · ONE AT A TIME</small></span></div>'
+      +'<div class="inv-project-track"><i style="--project-progress:'+Math.round(((delivered+transit)/Math.max(1,total))*55+work*.45)+'%"></i></div>'
+      +'<div class="inv-project-stats"><span><b>'+delivered+'</b>/'+total+' DELIVERED</span><span><b>'+transit+'</b> IN TRANSIT</span><span><b>'+work+'%</b> BUILT</span></div>'
+      +'<p class="inv-project-status">'+(active.blocked?active.blocked:(colonyProjects.allDelivered()?'Crew is building at the chosen site.':'Workers are collecting committed units from the founding store.'))+'</p>'
+      +'<p class="inv-project-crew"><b>EMERGENT CREW</b> '+(crew.length?crew.join(' · '):'Survival work currently has priority.')+'</p>'
+      +(moved===0?'<button class="inv-project-cancel" type="button" data-project-cancel="1">RELEASE BEFORE PICKUP</button>':'')+'</article>';
+  }else{
+    const proposals=colonyProjectProposals();
+    if(!proposals.length)html+='<div class="inv-project-empty">Complete the connected founding store before the colony can commit a worksite.</div>';
+    for(const p of proposals){
+      const action=p.placement==='store'?'APPROVE':'CHOOSE SITE',built=p.count?'<span class="inv-project-built">BUILT '+p.count+'</span>':'';
+      html+='<article class="inv-project-card" data-project="'+p.id+'"><div class="inv-project-top"><span class="inv-project-glyph" style="--project-color:'+p.color+'">'+p.icon+'</span><span><b>'+p.name+'</b><small>'+p.reason+'</small></span>'+built+'</div>'
+        +'<div class="inv-project-cost" aria-label="Project cost">'+_projectCostHtml(p.cost)+'</div><p class="inv-project-effect"><b>EFFECT</b> '+p.effect+'</p><p class="inv-project-trade"><b>SACRIFICE</b> '+p.tradeoff+'</p>'
+        +'<button class="inv-project-start" type="button" data-project-start="'+p.id+'" '+(p.affordable?'':'disabled')+'>'+(p.affordable?action:'HELD BY RESERVES')+'</button></article>';
+    }
+  }
+  return html+'</section>';
 }
 function pintarInventario(){
   const body=document.getElementById('invBody'); if(!body) return;
@@ -10921,6 +11305,7 @@ function pintarInventario(){
     + '<b class="inv-cache-coord">'+(sitio?'['+cx+','+cy+']':'UNASSIGNED')+'</b>'
     + '<span class="inv-cache-detail">'+(celdas.length?'<b>'+celdas.length+'</b> structure '+(celdas.length===1?'cell':'cells'):sitio?'<span class="is-empty">under construction · '+Math.round((sitio.buildProgress||0)*100)+'%</span>':'<span class="is-empty">no connected build site</span>')
     + (graneros?' · <b>'+graneros+'</b> '+(graneros===1?'upgrade':'upgrades'):'')+'</span></span></article></section>';
+  html += _colonyProjectsHtml();
   html += '<section class="inv-section" aria-labelledby="invMaterialsTitle"><h3 class="inv-section-head" id="invMaterialsTitle">RAW MATERIALS</h3><div class="inv-resource-grid">';
   for(const d of _MAT_DEFS){
     html += _filaInv(d, Math.max(0, Math.floor(economyLedger.materials[d.k]||0)));
@@ -10940,7 +11325,11 @@ function pintarInventario(){
       + '<div class="inv-colony-facts"><div class="inv-fact"><b>'+estructur+'</b><span>STRUCTURES</span></div>'
       + '<div class="inv-fact"><b>'+crias+'</b><span>BROOD</span></div><div class="inv-fact"><b>'+wastePiles.length+'</b><span>WASTE</span></div></div></section>';
   }catch(e){}
-  if(body.dataset.stamp!==html){ body.innerHTML=html; body.dataset.stamp=html; }
+  if(body.dataset.stamp!==html){
+    const scroll=body.scrollTop,focus=document.activeElement&&document.activeElement.dataset?{kind:document.activeElement.dataset.reserveKind,delta:document.activeElement.dataset.reserveDelta,project:document.activeElement.dataset.projectStart}:null;
+    body.innerHTML=html;body.dataset.stamp=html;body.scrollTop=scroll;
+    if(focus){const sel=focus.kind?'[data-reserve-kind="'+focus.kind+'"][data-reserve-delta="'+focus.delta+'"]':focus.project?'[data-project-start="'+focus.project+'"]':'';const el=sel&&body.querySelector(sel);if(el)try{el.focus({preventScroll:true});}catch(e){}}
+  }
 }
 // Topo (dueño, 2026-10-15): «en el menu del inventario o almacen quiero que puedas scrollear, porque hay
 // muchos items y algunos no se pueden ver». Habia dos cosas mal. Una de caja: la hoja del almacen cortaba
@@ -11047,6 +11436,17 @@ function initInventarioHud(){
   if(c && !c.dataset.wired){ c.dataset.wired='1'; c.onclick=cerrarInventario; }
   const sh=document.getElementById('invSheet');
   if(sh && !sh.dataset.wired){ sh.dataset.wired='1'; sh.onclick=(e)=>{ if(e.target===sh) cerrarInventario(); }; }
+  const body=document.getElementById('invBody');
+  if(body&&!body.dataset.projectWired){
+    body.dataset.projectWired='1';body.addEventListener('click',e=>{
+      const reserve=e.target.closest&&e.target.closest('[data-reserve-kind][data-reserve-delta]');
+      if(reserve){e.preventDefault();e.stopPropagation();const k=reserve.dataset.reserveKind,d=Number(reserve.dataset.reserveDelta)||0;setProjectReserve(k,colonyProjects.reserve(k)+d);return;}
+      const start=e.target.closest&&e.target.closest('[data-project-start]');
+      if(start&&!start.disabled){e.preventDefault();e.stopPropagation();armColonyProject(start.dataset.projectStart);return;}
+      const cancel=e.target.closest&&e.target.closest('[data-project-cancel]');
+      if(cancel){e.preventDefault();e.stopPropagation();cancelColonyProject();return;}
+    });
+  }
   const go=document.getElementById('btnInvGo');
   if(go && !go.dataset.wired){ go.dataset.wired='1'; go.onclick=()=>{
     try{const p=storagePos(),b2=getPanBounds();view.x=clamp(p.x-VIEW_W/view.zoom/2,b2.minX,b2.maxX);view.y=clamp(p.y-VIEW_H/view.zoom/2,b2.minY,b2.maxY);clampView();pushToast(p.x,p.y-18,'🍽 FOOD','#ffcc00',1.4);}catch(e){}

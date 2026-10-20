@@ -129,9 +129,11 @@ const BARRIDO = `(raiz)=>{
   // que no es caja de scroll - y eso no es un fallo del juego, era un fallo de la prueba.
   const punto = await page.evaluate(`(()=>{const r=document.getElementById('invBody').getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+Math.min(52,r.height/2))}})()`);
   await page.mouse.move(punto.x, punto.y);
-  await page.mouse.wheel({ deltaY: 400 });   // un golpe de rueda con recorrido: Chrome lo topa en el maximo
-                                            // del contenedor (260 se quedaba a 13 px del final y la ultima
-                                            // fila asomaba a medias, que no es un fallo del juego)
+  // PROJECTS makes the store sheet intentionally taller. Use one wheel gesture whose travel comes from
+  // the real scroll range instead of a stale pixel guess; Chrome still has to route that gesture to the
+  // panel and clamp it at the bottom (we never assign scrollTop here).
+  const recorrido=await page.evaluate(`(()=>{const b=document.getElementById('invBody');return b.scrollHeight-b.clientHeight+120})()`);
+  await page.mouse.wheel({ deltaY: recorrido });
   await sleep(320);
   const despues = await page.evaluate(`(()=>{
     const b=document.getElementById('invBody'), sh=document.getElementById('invSheet');
