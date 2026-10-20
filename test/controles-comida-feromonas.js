@@ -97,8 +97,19 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   ok(/FUNGUS/.test(pickup.toast)&&!/HONEY/.test(pickup.toast),'el bubble de recogida dice FUNGUS, no HONEY',pickup.toast);
 
   const delivery=await page.evaluate(()=>{
-    let s=storageStructure(false);if(s){s.built=true;s.buildProgress=1;}
-    s=storageStructure(true);const p=storagePos(),a=workers[0];toasts.length=0;
+    let s=storageStructure(false);
+    // Finish a genuinely connected footprint. A forced `built=true` on closed geometry must not create
+    // capacity — that is the STORAGE PRESSURE contract this provenance check now respects.
+    if(s){
+      const ec=entradaCol>=0?entradaCol:detectarEntrada(),sc=s.c+Math.floor((s.w||3)/2),sr=s.r;
+      for(const q of _storeFootprint(s)){soil[q.r][q.c]=0;soilType[q.r][q.c]=0;}
+      for(let r=SURFACE_ROW;r<=sr;r++){soil[r][ec]=0;soilType[r][ec]=0;}
+      for(let c=Math.min(ec,sc);c<=Math.max(ec,sc);c++){soil[sr][c]=0;soilType[sr][c]=0;}
+      s.built=true;s.buildProgress=1;s.work=s.workNeeded||STORE_WORK_REQUIRED;markSoilDirty();refreshExploration(true);
+    }
+    s=storageStructure(true);reconcileStoragePressure({silent:true});
+    economyLedger.setFood(Math.max(0,capacidadAlmacen()-2),'delivery provenance fixture');_syncProtectedLotsWithLedger();
+    const p=storagePos(),a=workers[0];toasts.length=0;
     a.x=p.x;a.y=p.y;a.food={amount:1,ftype:'mushroom'};a.targetFood=null;a.digTarget=null;a.wasteTarget=null;a.state='EXPLORAR';a.fatigue=0;a.health=100;a.blocked=0;a._cargaDesde=time-DAY_LENGTH;
     const before=economyLedger.food;updateAnt(a,.1);const hist=economyLedger.history(8),last=hist.filter(x=>x.account==='food'&&x.delta>0).slice(-1)[0];
     return{store:!!s,physical:s&&_storeSiteIsPhysical(s),nodes:storageDeliveryNodes().length,target:storageTargetFor(a),state:a.state,stillFood:!!a.food,delta:economyLedger.food-before,reason:last&&last.reason,toast:toasts.map(t=>t.txt).join(' | '),event:events.filter(e=>e.type==='food').slice(0,2).map(e=>e.title||e.text||'').join(' | ')};

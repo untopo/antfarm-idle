@@ -14,6 +14,18 @@ check('reserva de superficie tiene suelo 2 y techo 10', E.reservaSuperficie(0.1)
 check('tope de superficie en referencia = 8', E.topeSuperficie(1) === 8, E.topeSuperficie(1));
 check('tope de superficie tiene suelo 3 y techo 14', E.topeSuperficie(0.1) === 3 && E.topeSuperficie(9) === 14);
 check('la reserva vital protege exactamente 5 raciones', E.reservaVitalComida() === 5, E.reservaVitalComida());
+// Presión de almacenamiento: el núcleo divide, pero nunca borra, una entrega que no cabe.
+const cabe=E.splitStorageDelivery(4,7,12);
+check('una entrega dentro del límite queda protegida completa', cabe.accepted===4&&cabe.overflow===0&&cabe.protectedAfter===11);
+const presiona=E.splitStorageDelivery(5,10,12);
+check('sólo el hueco real entra y el resto queda como excedente', presiona.accepted===2&&presiona.overflow===3&&presiona.protectedAfter===12);
+const sinAlmacen=E.splitStorageDelivery(2,0,0);
+check('sin capacidad nada se acredita como protegido', sinAlmacen.accepted===0&&sinAlmacen.overflow===2);
+const estado=E.storagePressureState(12,12,5);
+check('la presión suma protegido y excedente sin nueva moneda', estado.protected===12&&estado.overflow===5&&estado.total===17&&estado.full&&estado.pressured);
+check('el estado expone hueco real y ratios', estado.free===0&&estado.fillRatio===1&&estado.pressureRatio===17/12);
+const fraccion=E.splitStorageDelivery(.75,11.5,12);
+check('las raciones fraccionarias de cría no rompen el límite', fraccion.accepted===.5&&fraccion.overflow===.25);
 // Pagar
 const m = { stone: 5, clay: 2, wood: 3 };
 check('puedePagar con inventario suficiente', E.puedePagar(m, { stone: 2, clay: 1 }) === true);

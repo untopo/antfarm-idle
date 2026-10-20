@@ -12,6 +12,7 @@ const root=fs.readFileSync(path.join(OUT,'index.html'),'utf8');
 const legacy=fs.readFileSync(path.join(OUT,'ant-farm-rpg/index.html'),'utf8');
 ok(/id="mainMenu"/.test(root)&&/ANT FARM · BUILD \d{8}[A-Z]/.test(root),'la raíz pública contiene el juego real y su build, no una pantalla puente');
 ok(fs.existsSync(path.join(OUT,'js/app.js'))&&fs.existsSync(path.join(OUT,'css/style.css'))&&fs.existsSync(path.join(OUT,'core/economia.js')),'JS, CSS y core quedan al mismo nivel relativo que index.html');
+ok(fs.existsSync(path.join(OUT,'assets/textures/colony-atlas.png'))&&fs.existsSync(path.join(OUT,'assets/textures/colony-atlas.manifest.js'))&&fs.existsSync(path.join(OUT,'js/texture-pack.js')),'el atlas, manifiesto y runtime viajan juntos al sitio raíz');
 ok(!fs.existsSync(path.join(OUT,'ant-farm-rpg/js/app.js')),'el artefacto no duplica todo el juego bajo la ruta antigua');
 ok(/location\.replace\('\.\.\/'/.test(legacy)&&/canonical" href="\.\.\//.test(legacy),'el enlace antiguo redirige limpiamente a ../');
 ok(!fs.existsSync(path.join(OUT,'assets/_archivo')),'Pages no publica el archivo de arte muerto');

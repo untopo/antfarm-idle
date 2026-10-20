@@ -6,13 +6,13 @@ if [ -d /tmp/libs ]; then export LD_LIBRARY_PATH="/tmp/libs${LD_LIBRARY_PATH:+:$
 # Uso: bash test/run-all.sh
 cd "$(dirname "$0")/.." || exit 1
 fail=0
-for t in no-orphans pages-root create-farm-flow economia-integracion proyectos-integracion proyectos-save core-agua core-agua-flujo core-mundo geologia-integracion agua-sucesion-integracion agua-visual vestigios-ambientales world-size-rules almacen-fisico conectividad-recursos niebla-profundidad oficios-emergentes brood-hatch foundacion-dias paron-fundacion salida-superficie tandem-objetivo expansion-agua primera-losa save-roundtrip reload-simulation; do
+for t in no-orphans pages-root create-farm-flow texture-pack storage-pressure economia-integracion proyectos-integracion proyectos-save core-agua core-agua-flujo core-mundo geologia-integracion agua-sucesion-integracion agua-visual vestigios-ambientales world-size-rules almacen-fisico conectividad-recursos niebla-profundidad oficios-emergentes brood-hatch foundacion-dias paron-fundacion salida-superficie tandem-objetivo expansion-agua primera-losa save-roundtrip reload-simulation; do
   printf '\n=== test/%s.js ===\n' "$t"
   if node "test/$t.js" > /tmp/_t.out 2>&1; then
     tail -n 3 /tmp/_t.out
     if grep -q "^FAIL" /tmp/_t.out; then echo ">> HAY FALLOS"; fail=1; fi
   else
-    echo ">> EL TEST MURIO"; tail -n 20 /tmp/_t.out; fail=1
+    echo ">> EL TEST MURIO"; grep -E "^FAIL|^FALLO" /tmp/_t.out | head -n 12; tail -n 20 /tmp/_t.out; fail=1
   fi
 done
 printf '\n=== navegador real (si hay puppeteer) ===\n'
@@ -35,6 +35,7 @@ done
 
 printf '\n=== sintaxis ===\n'
 node --check ant-farm-rpg/js/app.js && echo "app.js OK"
+node --check ant-farm-rpg/js/texture-pack.js && echo "texture-pack.js OK"
 node --check ant-farm-rpg/core/mundo.js && echo "mundo.js OK"
 node --check ant-farm-rpg/core/agua.js && echo "agua.js OK"
 node --check ant-farm-rpg/core/economia.js && echo "economia.js OK"

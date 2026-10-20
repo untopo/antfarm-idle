@@ -74,6 +74,9 @@ const FOOD_DEFS={
 function foodKind(o){const k=o&&(o.ftype||o.type);return FOOD_DEFS[k]?k:'honey';}
 function foodDef(o){return FOOD_DEFS[foodKind(o)]||FOOD_DEFS.honey;}
 function isFoodInStockpile(f){
+  // Overflow may sit on the store floor, but it is explicitly outside sealed shelves/jars. Treating
+  // that footprint as protected would make perishable excess immortal and erase storage pressure.
+  if(f&&f.storedOverflow)return false;
   // Preservation belongs to the physical store footprint, never to a radius around pantryPos. An
   // excavated but disconnected hollow is still unknown to the colony and cannot preserve anything.
   const fc=Math.floor(f.x/CELL), fr=Math.floor(f.y/CELL);
@@ -230,6 +233,13 @@ let selectedAntIndex=0;
 let selectedQueenIndex=0;
 let stats={nivel:1,xp:0,xpToNext:360}; // realista: GEN cuesta trabajo, no 2 entregas
 let foods=[], pheromones=[], particles=[], mound=[], hiddenRewards=[], events=[];
+// Protected rations still use the single economyLedger balance. These lots add only physical type and
+// node provenance so capacity loss can put the same food back into the world instead of deleting it.
+// Reconcile every thirty simulated seconds as well as at delivery/project event boundaries. The short
+// cadence matters when the last workers consume protected rations beside physical overflow: shelf space
+// must reopen before a brood cycle can stall, including during accelerated and long-life simulation.
+const STORAGE_RECONCILE_INTERVAL=30;
+let protectedFoodLots=[], _storagePressureTimer=0, _lastStoragePressureEvent=-Infinity;
 let commInks=[], toasts=[];
 let soil=[];
 let water=[]; // physical liquid mass per cell; it may exceed 1 briefly under pressure
@@ -1104,7 +1114,7 @@ function updateDepthRuler(){
       }
       const locked=_bloqueado(d);
       el.dataset.depth=String(d);el.dataset.locked=locked?'1':'0';el.setAttribute('aria-disabled',locked?'true':'false');el.classList.toggle('fog-locked',locked);
-      el.title=locked?'Depth '+d+' · unexplored':_pisoProfundo(d)?'Depth '+d+' · at the current camera limit':'Go to depth '+d+' · '+names[i];
+      el.title=locked?'Depth '+d+' · unexplored':_pisoProfundo(d)?'Depth '+d+' · '+_materialEn(d)+' · at the current camera limit':'Go to depth '+d+' · '+names[i];
       // la barra representa del PISO al FONDO del mundo: el cielo no es un piso que medir
       const worldY=SURFACE_Y+d*CELL;
       const totalH = _pisos*CELL;
@@ -1807,45 +1817,59 @@ function drawColonyProjectSites(g,isMini){
   if(isMini||!colonyProjects)return;
   const completed=colonyProjects.completedRef(),active=colonyProjects.activeRef();
   if(!completed.length&&!active)return;
+  const atlas=(name,x,y,w,h,opts)=>typeof colonyTexturePack!=='undefined'&&colonyTexturePack.draw(g,name,x,y,w,h,opts);
   // Finished works remain physical marks in the chamber; effects are read from these same records.
   for(const p of completed){
     const a=colonyProjectAnchor(p),x=Math.round(a.x),y=Math.round(a.y);
     if(!isExploredPixel(x,y))continue;
     if(p.type==='clay_jars'){
       const store=storageStructure(true),sa=_storeAnchor(store);if(!sa)continue;
-      const idx=completed.filter(q=>q.type==='clay_jars').findIndex(q=>q.id===p.id),jx=Math.round(sa.x-14+idx*10),jy=Math.round(sa.y+7);
-      g.fillStyle='#24130a';g.fillRect(jx-4,jy-8,8,8);g.fillStyle='#b96f49';g.fillRect(jx-3,jy-7,6,6);g.fillStyle='#e0a176';g.fillRect(jx-2,jy-7,4,1);g.fillStyle='#2a160c';g.fillRect(jx-2,jy-10,4,3);
+      const idx=completed.filter(q=>q.type==='clay_jars').findIndex(q=>q.id===p.id),jx=Math.round(sa.x-24+idx*17),jy=Math.round(sa.y+9);
+      if(!atlas(economyLedger.food>=capacidadAlmacen()*.72?'project.clay_jars_full':'project.clay_jars',jx-10,jy-17,22,22)){
+        g.fillStyle='#24130a';g.fillRect(jx-4,jy-8,8,8);g.fillStyle='#b96f49';g.fillRect(jx-3,jy-7,6,6);g.fillStyle='#e0a176';g.fillRect(jx-2,jy-7,4,1);g.fillStyle='#2a160c';g.fillRect(jx-2,jy-10,4,3);
+      }
     }else if(p.type==='forward_cache'){
       const left=p.site.c*CELL,top=p.site.r*CELL,w=(p.site.w||2)*CELL,h=(p.site.h||1)*CELL;
-      g.fillStyle='#2c180b';g.fillRect(left+1,top+3,w-2,3);g.fillRect(left+2,top+h-4,w-4,3);g.fillRect(left+2,top+3,3,h-5);g.fillRect(left+w-5,top+3,3,h-5);
-      g.fillStyle='#8c5a28';g.fillRect(left+6,top+h-11,10,7);g.fillRect(left+w-16,top+h-11,10,7);g.fillStyle='#c58b42';g.fillRect(left+7,top+h-10,8,2);g.fillRect(left+w-15,top+h-10,8,2);
-      g.fillStyle='#ffcc33';g.fillRect(x-2,top+5,4,3);
-    }else if(p.type==='tunnel_braces'){
-      // Three timber frames communicate the protected 5×3 zone without turning open cells solid.
-      for(const dc of [-2,0,2]){
-        const cc=p.site.c+dc;if(cc<0||cc>=COLS)continue;const bx=cc*CELL+7,bt=(p.site.r-1)*CELL+2,bh=CELL*3-4;
-        g.fillStyle='rgba(55,31,13,.88)';g.fillRect(bx-2,bt,5,bh);g.fillStyle='#a8753c';g.fillRect(bx-1,bt+1,2,bh-2);
+      const flooded=_projectSiteCells(p).some(q=>waterAtCell(q.c,q.r)>=WATER_AVOID_LEVEL),operational=_projectSiteOperational(p);
+      const sprite=operational?'project.forward_cache':flooded?'state.cache_flooded':'state.cache_disabled';
+      if(!atlas(sprite,left,top-8,w,h+8)){
+        g.fillStyle='#2c180b';g.fillRect(left+1,top+3,w-2,3);g.fillRect(left+2,top+h-4,w-4,3);g.fillRect(left+2,top+3,3,h-5);g.fillRect(left+w-5,top+3,3,h-5);
+        g.fillStyle='#8c5a28';g.fillRect(left+6,top+h-11,10,7);g.fillRect(left+w-16,top+h-11,10,7);g.fillStyle='#c58b42';g.fillRect(left+7,top+h-10,8,2);g.fillRect(left+w-15,top+h-10,8,2);
+        g.fillStyle=operational?'#ffcc33':'#d9574f';g.fillRect(x-2,top+5,4,3);
       }
-      g.fillStyle='#43250f';g.fillRect((p.site.c-2)*CELL+5,(p.site.r-1)*CELL+3,CELL*5+6,4);g.fillStyle='#b78347';g.fillRect((p.site.c-2)*CELL+6,(p.site.r-1)*CELL+3,CELL*5+4,1);
+    }else if(p.type==='tunnel_braces'){
+      const left=(p.site.c-2)*CELL,top=(p.site.r-1)*CELL,w=CELL*5,h=CELL*3;
+      if(!atlas('project.tunnel_braces',left,top,w,h)){
+        // Primitive fallback survives the one loading frame and a failed image decode.
+        for(const dc of [-2,0,2]){
+          const cc=p.site.c+dc;if(cc<0||cc>=COLS)continue;const bx=cc*CELL+7,bt=(p.site.r-1)*CELL+2,bh=CELL*3-4;
+          g.fillStyle='rgba(55,31,13,.88)';g.fillRect(bx-2,bt,5,bh);g.fillStyle='#a8753c';g.fillRect(bx-1,bt+1,2,bh-2);
+        }
+        g.fillStyle='#43250f';g.fillRect(left+5,top+3,w+6,4);g.fillStyle='#b78347';g.fillRect(left+6,top+3,w+4,1);
+      }
     }else if(p.type==='fungus_bed'){
-      g.fillStyle='#3c2518';g.fillRect(p.site.c*CELL+2,p.site.r*CELL+10,12,5);g.fillStyle='#b76f4c';g.fillRect(p.site.c*CELL+3,p.site.r*CELL+10,10,2);g.fillStyle='#6f8d42';g.fillRect(p.site.c*CELL+5,p.site.r*CELL+8,6,3);
+      const garden=fungusGardens.find(f=>f.projectId===p.id),sprite=garden&&garden.health<.48?'state.fungus_dry':'project.fungus_bed';
+      if(!atlas(sprite,p.site.c*CELL-3,p.site.r*CELL-8,22,24)){
+        g.fillStyle='#3c2518';g.fillRect(p.site.c*CELL+2,p.site.r*CELL+10,12,5);g.fillStyle='#b76f4c';g.fillRect(p.site.c*CELL+3,p.site.r*CELL+10,10,2);g.fillStyle='#6f8d42';g.fillRect(p.site.c*CELL+5,p.site.r*CELL+8,6,3);
+      }
     }
   }
   const p=active;if(!p||!p.site)return;
   const def=projectDefinition(p.type),left=p.site.c*CELL,top=p.site.r*CELL,w=(p.site.w||1)*CELL,h=(p.site.h||1)*CELL,a=colonyProjectAnchor(p);
   if(!isExploredPixel(a.x,a.y))return;
-  g.save();g.globalAlpha=.92;
-  g.fillStyle='#120b06';g.fillRect(left-2,top-5,w+4,4);g.fillStyle='#4e3924';g.fillRect(left-1,top-4,w+2,2);
+  g.save();g.globalAlpha=.94;
+  const _worksite=atlas('project.worksite',left-1,top-Math.max(4,Math.round(h*.35)),w+2,h+Math.max(4,Math.round(h*.35)));
+  if(!_worksite){g.fillStyle='#120b06';g.fillRect(left-2,top-5,w+4,4);g.fillStyle='#4e3924';g.fillRect(left-1,top-4,w+2,2);g.strokeStyle=def.color;g.lineWidth=1;g.strokeRect(left+.5,top+.5,w-1,h-1);}
   const delivered=Object.values(p.delivered||{}).reduce((s,v)=>s+v,0),total=Object.values(p.cost||{}).reduce((s,v)=>s+v,0),build=p.workNeeded?Math.min(1,p.work/p.workNeeded):0;
   const progress=total?Math.min(.55,delivered/total*.55)+build*.45:build;
-  g.fillStyle='#ffcc33';g.fillRect(left,top-4,Math.floor(w*progress),2);
-  g.strokeStyle=def.color;g.lineWidth=1;g.strokeRect(left+.5,top+.5,w-1,h-1);
+  g.fillStyle='#120b06';g.fillRect(left-2,top-6,w+4,4);g.fillStyle='#ffcc33';g.fillRect(left-1,top-5,Math.floor((w+2)*progress),2);
+  const cargoSprites={clay:'cargo.clay_brick',fiber:'material.fiber',wood:'cargo.beam',stone:'material.stone'};
   const cols={clay:'#c47a52',fiber:'#8fbf5f',wood:'#a97a44',stone:'#8d8f91'};let n=0;
   for(const k of Object.keys(p.delivered||{}))for(let i=0;i<p.delivered[k];i++){
-    const px=left+3+(n%Math.max(1,Math.floor((w-4)/5)))*5,py=top+h-4-Math.floor(n/Math.max(1,Math.floor((w-4)/5)))*4;
-    g.fillStyle='#120b06';g.fillRect(px-1,py-3,5,4);g.fillStyle=cols[k]||'#aaa';g.fillRect(px,py-3,3,3);n++;
+    const per=Math.max(1,Math.floor((w-3)/7)),px=left+1+(n%per)*7,py=top+h-7-Math.floor(n/per)*6;
+    if(!atlas(cargoSprites[k]||'cargo.basket',px,py,7,7)){g.fillStyle='#120b06';g.fillRect(px-1,py,6,5);g.fillStyle=cols[k]||'#aaa';g.fillRect(px,py,4,4);}n++;
   }
-  if(build>0){g.fillStyle='#70431e';g.fillRect(left+2,top+2,3,h-4);g.fillRect(left+w-5,top+2,3,h-4);g.fillRect(left+2,top+2,w-4,3);}
+  if(build>0&&!_worksite){g.fillStyle='#70431e';g.fillRect(left+2,top+2,3,h-4);g.fillRect(left+w-5,top+2,3,h-4);g.fillRect(left+2,top+2,w-4,3);}
   g.restore();
 }
 function drawColonyProjectPlacement(g,isMini){
@@ -2576,6 +2600,7 @@ function workOnStore(ant,dt,speed){
       site.built=true; site.buildProgress=1; site.builtAt=time; site.age=0; site.builtBy=[...new Set(site.builders)];
       pantryPos={x:target.x,y:target.y};
       for(const w of workers) if(w.state==='BUILD_STORE') w.state='EXPLORAR';
+      try{reconcileStoragePressure({silent:true});}catch(e){}
       pushEvent('build','NEST STORE completed',site.builtBy.join(', ')+' built a stable connected cache');
       pushToast(target.x,target.y-18,'▣ STORE','#ffcc33',2.2); colonyFitness+=.45; stats.xp+=18; checkLevelUp();
     }
@@ -2937,7 +2962,7 @@ function topoCreateFreshWorld(cols, rows){
   if(typeof soilCacheCanvas!=='undefined'){ try{ soilCacheCanvas.width=W; soilCacheCanvas.height=H; }catch(e){} }
   _topoHasWorld=true;
   // limpiar previos por si había restos
-  try{ workers.length=0; queens.length=0; foods.length=0; brood.length=0; mound.length=0; hiddenRewards.length=0; particles.length=0; pheromones.length=0; commInks.length=0;_loadExploration([]); }catch(e){}
+  try{ workers.length=0; queens.length=0; foods.length=0; protectedFoodLots.length=0; brood.length=0; mound.length=0; hiddenRewards.length=0; particles.length=0; pheromones.length=0; commInks.length=0;_loadExploration([]); }catch(e){}
   // Topo: al sobre-escribir un mundo habia que limpiar TAMBIEN lo que se hereda del suelo (jardines
   // de hongo, monticulos de residuo, estructuras, charcos): quedaban residuos del mapa anterior en
   // el nuevo - el "residuo al sobre escribir un mundo" que señalo el dueño.
@@ -2991,7 +3016,8 @@ function topoCreateFreshWorld(cols, rows){
     // Topo: la reserva de fundacion tiene que dar para las primeras puestas mientras las
     // forrajeras arrancan (una entrega = 1-2, un huevo = 3). Con 7 la colonia se quedaba sin
     // despensa el dia 2 y nunca volvia a poner: 0 nacimientos para siempre.
-    economyLedger.setFood(Math.max(12,startReserveFood()+startSurfaceFood()),'founding provisions'); if(queen) queen.progress=0; digs=0;
+    economyLedger.setFood(Math.max(12,startReserveFood()+startSurfaceFood()),'founding provisions');
+    _syncProtectedLotsWithLedger(); if(queen) queen.progress=0; digs=0;
     const _sf2=startSurfaceFood(); const _spread=Math.max(24, Math.round(38*worldAreaRatio()*0.9));
     for(let i=0;i<_sf2;i++) spawnFoodSurface(CENTER_COL*CELL+8 + (Math.random()-0.5)*(_spread*3) + (i-Math.floor(_sf2/2))*_spread, 1+Math.floor(Math.random()*1.6));
     // Finite founding provisions sit inside the nest. They are seeds/fungus, never unexplained honey:
@@ -3325,6 +3351,9 @@ function isFoodReachable(food,from=null){
   if(p.r<SURFACE_ROW) known=food.y>=SURFACE_Y-34&&!isSolidPixel(food.x,food.y);
   else known=!!soil[p.r]&&soil[p.r][p.c]===0&&isNestCellConnected(p.c,p.r);
   if(!known||waterAtCell(p.c,p.r)>=WATER_AVOID_LEVEL) return false;
+  // A pile beside a full cache is not fresh forage. It becomes collectible only when some real,
+  // operational node has shelf space; otherwise carriers would pick up and dump the same pile forever.
+  if(food.storedOverflow&&typeof hasProtectedStorageSpace==='function'&&!hasProtectedStorageSpace())return false;
   return !from||_entityInKnownWalkspace(from);
 }
 function _openResourceSegment(x0,y0,x1,y1,avoidWater=true){
@@ -3436,10 +3465,15 @@ function storageCells(){
 function granerosConstruidos(){
   const s=storageStructure(true); return s?Math.max(0,(s.level||1)-1):0;
 }
+function _mainProtectedCapacity(){
+  const s=storageStructure(true);if(!s||!_storeSiteIsPhysical(s))return 0;
+  // The founding store is a framed, sealed room: water can block workers temporarily without erasing
+  // shelves or jars (the physical-storage contract already keeps floods from demolishing it). Remote
+  // forward caches are the vulnerable exception and must be dry cell-for-cell to contribute their +6.
+  return 8+storageCells().length*2+granerosConstruidos()*12+colonyProjects.completedCount('clay_jars')*12;
+}
 function capacidadAlmacen(){
-  const s=storageStructure(true); if(!s||!_storeSiteIsPhysical(s)) return 0;
-  return 8+storageCells().length*2+granerosConstruidos()*12
-    +colonyProjects.completedCount('clay_jars')*12+operationalColonyProjects('forward_cache').length*6;
+  return _mainProtectedCapacity()+operationalColonyProjects('forward_cache').length*6;
 }
 
 // === COLONY PROJECTS — one decision, physical hauling, emergent builders =========================
@@ -3478,20 +3512,173 @@ function isBracedCell(c,r){
   for(const p of colonyProjects.completedRef())if(p.type==='tunnel_braces'&&p.site&&soil[p.site.r]&&soil[p.site.r][p.site.c]===0&&Math.abs(c-p.site.c)<=2&&Math.abs(r-p.site.r)<=1)return true;
   return false;
 }
+function _storageNodeDescriptors(includeUnavailable=false){
+  const out=[],s=storageStructure(true),a=_storeAnchor(s);
+  if(s&&a&&!s.abandoned){
+    const cap=_mainProtectedCapacity(),physical=_storeSiteIsPhysical(s),operational=physical&&cap>0;
+    if(includeUnavailable||operational)out.push({id:'main',x:a.x,y:a.y,type:'store',project:null,capacity:cap,operational});
+  }
+  for(const p of colonyProjects.completedRef())if(p.type==='forward_cache'){
+    const q=colonyProjectAnchor(p),operational=_projectSiteOperational(p),cap=operational?6:0;
+    if(includeUnavailable||operational)out.push({id:p.id,x:q.x,y:q.y,type:'forward_cache',project:p,capacity:cap,operational});
+  }
+  return out;
+}
+function _protectedLotTotal(nodeId){
+  let total=0;for(const lot of protectedFoodLots)if(nodeId===undefined||lot.nodeId===nodeId)total+=Math.max(0,Number(lot.amount)||0);return total;
+}
+function overflowFoodAmount(nodeId){
+  let total=0;for(const f of foods)if(f&&f.storedOverflow&&(nodeId===undefined||f.overflowNodeId===nodeId))total+=Math.max(0,Number(f.amount)||0);return total;
+}
+function _foundingProvisionCapacity(){return Math.max(12,startReserveFood()+startSurfaceFood());}
+function _emergencyCropCapacity(){
+  const alive=(queens||[]).some(q=>(q.health||0)>0)||(workers||[]).some(w=>(w.health||0)>0);return alive?reservaVitalComida():0;
+}
+function _effectiveProtectedCapacity(){
+  const built=capacidadAlmacen(),founder=protectedFoodLots.some(l=>l.nodeId==='founder')?_foundingProvisionCapacity():0,
+    crop=protectedFoodLots.some(l=>l.nodeId==='emergency_crop')?_emergencyCropCapacity():0;
+  return built+founder+crop;
+}
+function storagePressureSnapshot(){return storagePressureState(_effectiveProtectedCapacity(),economyLedger.food,overflowFoodAmount());}
+function _foodTypeName(kind){return FOOD_DEFS[kind]?kind:'honey';}
+function _lotNode(nodeOrId){
+  if(nodeOrId&&typeof nodeOrId==='object')return nodeOrId;
+  const id=String(nodeOrId||'main');return _storageNodeDescriptors(true).find(n=>n.id===id)||null;
+}
+function _addProtectedLot(kind,amount,nodeOrId,rot=0){
+  const a=Math.max(0,Number(amount)||0);if(a<=1e-7)return null;
+  const node=_lotNode(nodeOrId),nodeId=node?node.id:String(nodeOrId||'main'),k=_foodTypeName(kind),r=Math.max(0,Math.min(1,Number(rot)||0));
+  let lot=protectedFoodLots.find(x=>x.nodeId===nodeId&&x.kind===k&&Math.abs((x.rot||0)-r)<.08);
+  if(lot){const old=lot.amount;lot.amount+=a;lot.rot=(old*(lot.rot||0)+a*r)/lot.amount;if(node){lot.x=node.x;lot.y=node.y;}return lot;}
+  lot={kind:k,amount:a,nodeId,rot:r,x:node?node.x:storagePos().x,y:node?node.y:storagePos().y,storedAt:time};protectedFoodLots.push(lot);return lot;
+}
+function _consumeProtectedLots(amount){
+  let left=Math.max(0,Number(amount)||0),taken=0;
+  // Use older/perishable lots first while they are still protected. This changes no ration value; it
+  // only decides which food type would remain if a cache later failed.
+  protectedFoodLots.sort((a,b)=>(((FOOD_DEFS[a.kind]||FOOD_DEFS.honey).rotDays)-((FOOD_DEFS[b.kind]||FOOD_DEFS.honey).rotDays))||((b.rot||0)-(a.rot||0))||((a.storedAt||0)-(b.storedAt||0)));
+  for(let i=0;i<protectedFoodLots.length&&left>1e-7;i++){
+    const lot=protectedFoodLots[i],take=Math.min(left,Math.max(0,Number(lot.amount)||0));lot.amount-=take;left-=take;taken+=take;
+  }
+  let write=0;for(const lot of protectedFoodLots)if(lot.amount>1e-7)protectedFoodLots[write++]=lot;protectedFoodLots.length=write;return taken;
+}
+function _syncProtectedLotsWithLedger(){
+  // This is a hot accelerated-play path. Normalise the existing lot records in place instead of
+  // manufacturing a fresh object graph every thirty simulated seconds and paying its GC pause later.
+  const lots=Array.isArray(protectedFoodLots)?protectedFoodLots:[];let write=0;
+  for(let i=0;i<lots.length;i++){
+    const lot=lots[i],amount=lot&&Math.max(0,Number(lot.amount)||0);if(!lot||amount<=1e-7)continue;
+    const needsAnchor=!Number.isFinite(Number(lot.x))||!Number.isFinite(Number(lot.y)),anchor=needsAnchor?storagePos():null;
+    lot.kind=_foodTypeName(lot.kind);lot.amount=amount;lot.nodeId=String(lot.nodeId||'main');
+    lot.rot=Math.max(0,Math.min(1,Number(lot.rot)||0));lot.x=Number.isFinite(Number(lot.x))?Number(lot.x):anchor.x;
+    lot.y=Number.isFinite(Number(lot.y))?Number(lot.y):anchor.y;lot.storedAt=Number(lot.storedAt)||0;lots[write++]=lot;
+  }
+  lots.length=write;protectedFoodLots=lots;
+  const balance=Math.max(0,Number(economyLedger.food)||0),sum=_protectedLotTotal();
+  if(sum>balance+1e-7)_consumeProtectedLots(sum-balance);
+  else if(sum<balance-1e-7){
+    const nodes=_storageNodeDescriptors(true),main=nodes.find(n=>n.id==='main'),fallback=main||{id:'founder',x:storagePos().x,y:storagePos().y};
+    _addProtectedLot('honey',balance-sum,fallback,0);
+  }
+  return _protectedLotTotal();
+}
+function _overflowSpot(node,kind){
+  const k=String(kind||'honey'),hash=[...k].reduce((a,ch)=>(a*33+ch.charCodeAt(0))>>>0,7);
+  if(node&&node.id==='main'){
+    const cells=storageCells();if(cells.length){const cd=cells[hash%cells.length];return{x:(cd.c+.5)*CELL+(hash%3-1)*3,y:(cd.r+.72)*CELL};}
+  }
+  return{x:(node&&node.x||storagePos().x)+(hash%5-2)*2,y:(node&&node.y||storagePos().y)+4+(hash%3)};
+}
+function _storeOverflowAt(nodeOrId,kind,amount,meta){
+  const a=Math.max(0,Number(amount)||0);if(a<=1e-7)return null;
+  const o=meta||{},node=_lotNode(nodeOrId)||{id:String(nodeOrId&&nodeOrId.id||nodeOrId||'main'),x:Number(o.x)||storagePos().x,y:Number(o.y)||storagePos().y,type:'lost_cache'},
+    k=_foodTypeName(kind),rot=Math.max(0,Math.min(1,Number(o.rot)||0));
+  let pile=foods.find(f=>f.storedOverflow&&f.overflowNodeId===node.id&&foodKind(f)===k);
+  if(pile){const old=Math.max(0,Number(pile.amount)||0);pile.amount=old+a;pile.max=Math.max(pile.max||0,pile.amount);pile.rot=(old*(pile.rot||0)+a*rot)/pile.amount;pile.fresh=1-pile.rot;pile.r=5+Math.min(4,pile.amount)*2;return pile;}
+  const p=_overflowSpot(node,k);pile={x:Number.isFinite(Number(o.x))?Number(o.x):p.x,y:Number.isFinite(Number(o.y))?Number(o.y):p.y,
+    amount:a,max:a,r:5+Math.min(4,a)*2,pulse:Math.random()*Math.PI*2,ftype:k,rot,fresh:1-rot,spawnDay:day,vy:0,grounded:true,
+    storedOverflow:true,overflowNodeId:node.id,overflowNodeType:node.type||'store'};foods.push(pile);return pile;
+}
+function _loadProtectedFoodLots(raw,balance){
+  protectedFoodLots=[];const target=Math.max(0,Number(balance)||0);
+  if(Array.isArray(raw)&&raw.length){
+    for(const lot of raw)if(lot&&Number(lot.amount)>0)_addProtectedLot(lot.kind,lot.amount,{id:String(lot.nodeId||'main'),x:Number(lot.x)||storagePos().x,y:Number(lot.y)||storagePos().y},lot.rot);
+    _syncProtectedLotsWithLedger();return;
+  }
+  // G and older saves had one abstract total. Spread that legacy honey across the real nodes in capacity
+  // order, then let reconciliation place every remainder physically beside the store.
+  let left=target;const nodes=_storageNodeDescriptors(false);
+  for(const node of nodes){const take=Math.min(left,node.capacity);if(take>0){_addProtectedLot('honey',take,node,0);left-=take;}}
+  if(left>1e-7){const main=_storageNodeDescriptors(true).find(n=>n.id==='main');_addProtectedLot('honey',left,main||{id:'founder',x:storagePos().x,y:storagePos().y},0);}
+  _syncProtectedLotsWithLedger();
+}
+function hasProtectedStorageSpace(){
+  for(const n of _storageNodeDescriptors(false))if(n.capacity-_protectedLotTotal(n.id)>1e-7)return true;return false;
+}
+function _absorbLocalOverflow(){
+  let moved=0;
+  for(const node of _storageNodeDescriptors(false)){
+    let free=Math.max(0,node.capacity-_protectedLotTotal(node.id));if(free<=1e-7)continue;
+    for(let i=foods.length-1;i>=0&&free>1e-7;i--){
+      const f=foods[i];if(!f.storedOverflow||f.overflowNodeId!==node.id||Math.hypot(f.x-node.x,f.y-node.y)>CELL*2.6)continue;
+      const take=Math.min(free,Math.max(0,Number(f.amount)||0));if(take<=0)continue;
+      _addProtectedLot(foodKind(f),take,node,f.rot||0);economyLedger.creditFood(take,`overflow moved onto ${node.type} shelves`);
+      f.amount-=take;free-=take;moved+=take;if(f.amount<=1e-7)foods.splice(i,1);else{f.r=5+Math.min(4,f.amount)*2;f.max=Math.max(f.amount,f.max||0);}
+    }
+  }
+  return moved;
+}
+function reconcileStoragePressure(options){
+  const o=options||{};_syncProtectedLotsWithLedger();
+  const all=_storageNodeDescriptors(true),main=all.find(n=>n.id==='main'&&n.operational);
+  if(main)for(const lot of protectedFoodLots)if(lot.nodeId==='founder'||lot.nodeId==='emergency_crop'){lot.nodeId='main';lot.x=main.x;lot.y=main.y;}
+  // If the founding store is physically cut off, living ants can carry only the already-protected vital
+  // floor in their social stomachs. Everything above five still spills at the failed room. This is a
+  // real, bounded physical bridge to reconstruction — not shelf capacity and never a delivery node.
+  if(!main&&!protectedFoodLots.some(l=>l.nodeId==='founder')){
+    let room=Math.max(0,_emergencyCropCapacity()-_protectedLotTotal('emergency_crop')),anchor=queens.find(q=>(q.health||0)>0)||workers.find(w=>(w.health||0)>0)||storagePos();
+    const carried=[];
+    for(const lot of protectedFoodLots)if(lot.nodeId==='main'&&room>1e-7){const take=Math.min(room,lot.amount);lot.amount-=take;room-=take;carried.push({kind:lot.kind,amount:take,rot:lot.rot});}
+    protectedFoodLots=protectedFoodLots.filter(l=>l.amount>1e-7);
+    for(const c of carried)_addProtectedLot(c.kind,c.amount,{id:'emergency_crop',x:anchor.x,y:anchor.y,type:'social_crop'},c.rot);
+  }
+  const byId=new Map(all.map(n=>[n.id,n])),used=new Map(),kept=[];let spilled=0;
+  for(const lot of protectedFoodLots){
+    const founding=lot.nodeId==='founder'&&!main,emergency=lot.nodeId==='emergency_crop'&&!main;
+    const node=founding?{id:'founder',x:lot.x,y:lot.y,type:'founding_provisions',capacity:_foundingProvisionCapacity(),operational:true}
+      :emergency?{id:'emergency_crop',x:lot.x,y:lot.y,type:'social_crop',capacity:_emergencyCropCapacity(),operational:true}:byId.get(lot.nodeId),
+      cap=node&&node.operational?node.capacity:0,already=used.get(lot.nodeId)||0,room=Math.max(0,cap-already),stay=Math.min(lot.amount,room),excess=Math.max(0,lot.amount-stay);
+    if(stay>1e-7){lot.amount=stay;if(node){lot.x=node.x;lot.y=node.y;}kept.push(lot);used.set(lot.nodeId,already+stay);}
+    if(excess>1e-7){_storeOverflowAt(node||{id:lot.nodeId,x:lot.x,y:lot.y,type:'lost_cache'},lot.kind,excess,{rot:lot.rot,x:lot.x,y:lot.y});spilled+=excess;}
+  }
+  protectedFoodLots=kept;
+  if(spilled>1e-7){
+    economyLedger.setFood(Math.max(0,economyLedger.food-spilled),'storage capacity lost to physical overflow');
+    if(!o.silent&&time-_lastStoragePressureEvent>DAY_LENGTH*.08){
+      _lastStoragePressureEvent=time;pushEvent('food','STORAGE PRESSURE',`${Math.ceil(spilled)} ration${spilled>1?'s':''} moved out of protected shelves; the physical pile can spoil.`);
+    }
+  }
+  const absorbed=_absorbLocalOverflow(),snap=storagePressureSnapshot();return {...snap,spilled,absorbed};
+}
+function storeFoodDelivery(cargo,node){
+  _syncProtectedLotsWithLedger();const n=_lotNode(node),kind=foodKind(cargo),amount=Math.max(0,Number(cargo&&cargo.amount)||0);
+  if(!n||!n.operational||amount<=0){const pile=_storeOverflowAt(n||node||'main',kind,amount,{rot:cargo&&cargo.rot||0});return{accepted:0,overflow:amount,pile,node:n};}
+  const local=_protectedLotTotal(n.id),split=splitStorageDelivery(amount,local,n.capacity);
+  if(split.accepted>0){economyLedger.creditFood(split.accepted,`worker delivery: ${kind}`);_addProtectedLot(kind,split.accepted,n,cargo&&cargo.rot||0);}
+  const pile=split.overflow>0?_storeOverflowAt(n,kind,split.overflow,{rot:cargo&&cargo.rot||0}):null;
+  return{...split,pile,node:n};
+}
 function storageDeliveryNodes(){
-  const nodes=[];const s=storageStructure(true),a=_storeAnchor(s);
-  // The simulation's maintenance pass retires a physically lost store. Keep the historical one-tick
-  // delivery grace until that pass runs, so a carrier already touching its shelves is not stranded.
-  if(s&&a&&!s.abandoned)nodes.push({id:'main',x:a.x,y:a.y,type:'store',project:null});
-  for(const p of operationalColonyProjects('forward_cache')){const q=colonyProjectAnchor(p);nodes.push({id:p.id,x:q.x,y:q.y,type:'forward_cache',project:p});}
-  return nodes;
+  return _storageNodeDescriptors(false).map(n=>({...n,free:Math.max(0,n.capacity-_protectedLotTotal(n.id))}));
 }
 function storageTargetFor(ant){
-  const nodes=storageDeliveryNodes();if(!nodes.length)return {...storagePos(),id:'main',type:'store'};
-  let remembered=nodes.find(n=>ant&&ant._deliveryNodeId===n.id);
-  if(remembered)return remembered;
-  let best=nodes[0],score=Infinity;
-  for(const n of nodes){
+  const nodes=storageDeliveryNodes();if(!nodes.length)return {...storagePos(),id:'main',type:'store',capacity:0,free:0};
+  // Prefer a real free shelf. Only when every node is full does the nearest node become the physical
+  // overflow drop point; this makes a connected forward cache useful without granting global magic room.
+  const withRoom=nodes.filter(n=>n.free>1e-7),candidates=withRoom.length?withRoom:nodes;
+  let remembered=candidates.find(n=>ant&&ant._deliveryNodeId===n.id);if(remembered)return remembered;
+  let best=candidates[0],score=Infinity;
+  for(const n of candidates){
     let d=ant?Math.hypot(ant.x-n.x,ant.y-n.y):0;
     // A surface load first enters through the founding shaft. Remote underground caches only compete
     // after the carrier is inside, which prevents a cache under the meadow from stealing surface trips.
@@ -3501,9 +3688,9 @@ function storageTargetFor(ant){
   if(ant)ant._deliveryNodeId=best.id;return best;
 }
 function projectWorldContext(){
-  const cap=capacidadAlmacen(),stock={...economyLedger.materials};
+  const cap=capacidadAlmacen(),stock={...economyLedger.materials},pressure=storagePressureSnapshot();
   return {storeBuilt:!!storageStructure(true),workers:workers.filter(w=>_entityInKnownWalkspace(w)).length,
-    gardens:fungusGardens.filter(g=>_entityInKnownWalkspace(g)).length,fillRatio:cap?economyLedger.food/cap:0,
+    gardens:fungusGardens.filter(g=>_entityInKnownWalkspace(g)).length,fillRatio:cap?pressure.total/cap:(pressure.total?2:0),
     depthCells:exploredDepth(),longHaul:exploredDepth()*CELL,collapseRisk:accidents,digs,stock,available:economyLedger.availableMaterials()};
 }
 function colonyProjectProposals(){return colonyProjects.proposals(projectWorldContext(),3);}
@@ -3627,6 +3814,7 @@ function _applyCompletedColonyProject(p){
   }
   for(const w of workers)if(_PROJECT_STATE_SET.has(w.state)){w.state='EXPLORAR';delete w.projectCargo;}
   economyLedger.releaseHold(p.id,'project complete');stats.xp+=24;colonyFitness+=.7;checkLevelUp();
+  if(p.type==='clay_jars'||p.type==='forward_cache')try{reconcileStoragePressure({silent:true});}catch(e){}
   pushEvent('build',`${def.name} COMPLETED`,`${(p.builtBy||[]).join(', ')||'Colony crew'} · ${def.effect}`);pushToast(at.x,at.y-18,'✓ '+def.name,'#2de67a',2.8);
   showNotify('ok',def.name+' COMPLETE',def.effect+' '+def.tradeoff);try{pintarInventario();}catch(e){}
 }
@@ -3681,7 +3869,8 @@ function releaseProjectCargoOnDeath(ant){
   delete ant.projectCargo;
 }
 window.colonyProjectsAPI={proposals:colonyProjectProposals,approve:approveColonyProject,arm:armColonyProject,cancel:cancelColonyProject,setReserve:setProjectReserve,
-  siteCheck:projectSiteCheck,work:workOnColonyProject,storageNodes:storageDeliveryNodes,isBracedCell,snapshot:()=>colonyProjects.snapshot()};
+  siteCheck:projectSiteCheck,work:workOnColonyProject,storageNodes:storageDeliveryNodes,storagePressure:storagePressureSnapshot,
+  reconcileStorage:reconcileStoragePressure,isBracedCell,snapshot:()=>colonyProjects.snapshot()};
 
 // UN CUADRO, SIEMPRE DEL MISMO TAMAÑO. El dueno lo pidio claro: las siluetas distintas (bote, losa,
 // monton) se leian mal a 16 px y no decian que eran. Todo es un cuadrado de 6x6 con su borde negro y su
@@ -5636,15 +5825,18 @@ function updateAnt(ant, dt){
       // no es el unico camino (antes, sin el click, la colonia solo huertea por un dado de 0,0016/tick junto
       // a la camara de la cria, amonton los jardines en un rincon y el resto del nido se quedaba sin cosecha).
       _votaHuerto(ant.x,ant.y,(kind==='mushroom'||kind==='seed'||kind==='grassSeed'||kind==='berry')?2:1);
-      ant.food=null;ant.targetFood=null;delete ant._deliveryNodeId;ant.deliveries++;deliveries++;economyLedger.creditFood(amt,`worker delivery: ${kind}`);
+      const _delivery=storeFoodDelivery(ant.food,_storeTarget),_safe=_delivery.accepted||0,_overflow=_delivery.overflow||0;
+      ant.food=null;ant.targetFood=null;delete ant._deliveryNodeId;ant.deliveries++;deliveries++;
       recordJobExperience(ant,'forage',Math.max(.5,amt));
       // Trophallaxis: the forager fills her crop and shares it later.
       ant.crop=Math.min(ant.cropMax||1.6,(ant.crop||0)+amt*.38);
       const xpGain=amt*14+7;stats.xp+=xpGain;
-      pushEvent('food',`${def.icon} ${ant.id} brought ${amt} ${def.name.toLowerCase()} → food reserve ${economyLedger.food}`,`TURN ${(steer??0).toFixed(2)} · INK [${(comm1??0).toFixed(1)},${(comm2??0).toFixed(1)}]`);
-      logAntHistory(ant,`delivered ${amt} ${def.name.toLowerCase()}`);ant.mood.joy=Math.min(1,ant.mood.joy+.12);
-      pushToast(_storeTarget.x,_storeTarget.y-18,`+${amt} ${def.icon} ${def.name}`,'#ffcc00',1.8);
-      setNarration(`<b>${ant.id} delivered ${def.name.toLowerCase()} ×${amt}.</b> Food reserve: <b>${economyLedger.food}</b>.`);
+      const _where=_delivery.node&&_delivery.node.type==='forward_cache'?'forward cache':'nest store';
+      const _pressureNote=_overflow>0?`${_safe} protected · ${_overflow} physical overflow at ${_where}`:`${_safe} protected at ${_where}`;
+      pushEvent('food',`${def.icon} ${ant.id} brought ${amt} ${def.name.toLowerCase()} → protected ${economyLedger.food}`,`${_pressureNote} · TURN ${(steer??0).toFixed(2)} · INK [${(comm1??0).toFixed(1)},${(comm2??0).toFixed(1)}]`);
+      logAntHistory(ant,`delivered ${amt} ${def.name.toLowerCase()}${_overflow>0?' · '+_overflow+' overflow':''}`);ant.mood.joy=Math.min(1,ant.mood.joy+.12);
+      pushToast(_storeTarget.x,_storeTarget.y-18,_overflow>0?`${def.icon} ${_safe} SAFE · ${_overflow} OVERFLOW`:`+${_safe} ${def.icon} ${def.name}`,_overflow>0?'#ff8f3d':'#ffcc00',2.1);
+      setNarration(`<b>${ant.id} delivered ${def.name.toLowerCase()} ×${amt}.</b> <b>${_safe}</b> protected${_overflow>0?`; <b>${_overflow}</b> remains physically outside the shelves`:''}.`);
       colonyFitness+=1.0; ant.fitness+=1.0;
       ant.fatigue=Math.max(0,ant.fatigue-14);
       // Topo: la superficie se reabastece segun el tamano de la colonia, no con un fijo de 3: con
@@ -5978,7 +6170,8 @@ function updateAnt(ant, dt){
         const take=Math.min(cap, targ.amount);
         if(targ.amount>take) targ.amount-=take; else {foods.splice(idx,1);}
         const kind=foodKind(targ),def=foodDef(targ);
-        ant.food={amount:take,ftype:kind};ant.targetFood=null;ant.blocked=0;colonyFitness+=.35;ant._cargaDesde=time;
+        ant.food={amount:take,ftype:kind,rot:Math.max(0,Number(targ.rot)||0),fresh:targ.fresh!=null?targ.fresh:1,
+          fromOverflow:!!targ.storedOverflow,overflowNodeId:targ.overflowNodeId||null};ant.targetFood=null;ant.blocked=0;colonyFitness+=.35;ant._cargaDesde=time;
         ant.commOut=[.9,.7];
         commInks.push({x:ant.x,y:ant.y,sym:'⬢',color:'#00e5ff',life:1,decay:.0014});
         pushToast(ant.x,ant.y-22,`⬢ ${def.icon} ${def.name}`,'#00e5ff',1.6);
@@ -7683,9 +7876,14 @@ function drawFarm(ctx,W,H,isMini=false){
     drawHoneyDrop(ctx,cx,cy,amt);
   }
   for(let f of foods){
-    const bob=Math.sin(time*0.03+f.pulse)*1.2;
+    const bob=f.storedOverflow?0:Math.sin(time*0.03+f.pulse)*1.2;
     const cx=f.x, cy=f.y+bob;
-    drawFoodItem(ctx,cx,cy,f);
+    let _atlasFood=false;
+    if(f.storedOverflow&&typeof colonyTexturePack!=='undefined'){
+      const _fk=foodKind(f),_sprite='overflow.'+(_fk==='grassSeed'?'grain':_fk);
+      _atlasFood=colonyTexturePack.draw(ctx,colonyTexturePack.has(_sprite)?_sprite:'overflow.mixed',Math.round(cx-10),Math.round(cy-10),20,20,{alpha:.98});
+    }
+    if(!_atlasFood)drawFoodItem(ctx,cx,cy,f);
     // indicador stockpile DF: verde si está a salvo en granero/despensa, no se pudre
     if(!isMini && isFoodInStockpile(f)){
       ctx.strokeStyle='rgba(45,230,122,0.55)'; ctx.lineWidth=1; ctx.strokeRect(Math.floor(cx-6), Math.floor(cy-6), 12, 12);
@@ -8412,6 +8610,12 @@ function tickStep(dt){
         if(Math.random()<0.28) pushEvent('death','☠️ '+def.name+' podrida en ['+Math.floor(f.x/CELL)+','+Math.floor(f.y/CELL)+']','No estaba en granero/despensa - Dwarf Fortress stockpile');
         foods.splice(i,1);
       }
+    }
+    // Capacity is live geometry. Consumption opens shelf space for adjacent overflow; flood/disconnection
+    // pushes typed protected lots back into the physical world at their own node.
+    _storagePressureTimer+=dt;
+    if(_storagePressureTimer>=STORAGE_RECONCILE_INTERVAL){
+      _storagePressureTimer=0;try{reconcileStoragePressure();}catch(e){console.warn('storage pressure',e);}
     }
     colonyFitness= workers.reduce((s,w)=>s+w.fitness,0)/Math.max(1,workers.length) + Math.min(7, deliveries*0.048 + Math.log2((deliveries||1)+1)*0.55); // tope 7, no escala infinita
     const _fCap=surfaceFoodCap(),_fW=Math.round(260*worldAreaRatio()),_knownFoodCount=foods.filter(f=>isFoodReachable(f)).length; // Topo: la pradera rinde según lo que quepa en el mapa
@@ -10454,7 +10658,7 @@ if(_topoHasWorld){
 
 // === SAVE PERSISTENTE - la granja sobrevive a recargar ===
 const SAVE_KEY='antFarm_fullSave_v2';
-const SAVE_VER='20261019g';
+const SAVE_VER='20261020h';
 const LS_ALIVE='antfarm_worldAlive';
 const LS_INGAME='antfarm_inGame';
 // grids a string de digitos: 8x menos bytes que JSON de arrays (BIG 96x48 entra en localStorage)
@@ -10503,6 +10707,7 @@ function serializeSave(force){
     if(!_topoHasWorld) return false;                       // no pisar una partida buena desde el menu
     if(!Array.isArray(soil) || soil.length===0) return false;
     if((!workers || workers.length===0) && (!queens || queens.length===0)) return false;
+    try{_syncProtectedLotsWithLedger();}catch(e){}
     const data={
       v:SAVE_VER, savedAt:Date.now(), day,
       time, gen, colonyIQ, colonyFood:economyLedger.food, digs, deliveries, accidents, rewardsFound, mutations, commsCount, worldAge,
@@ -10519,7 +10724,10 @@ function serializeSave(force){
       bandaMax, umbralesRotos, bonusCava,
       reliquias: Array.isArray(reliquias)? reliquias.map(x=>({tipo:x.tipo,piso:x.piso,dia:x.dia,gen:x.gen,lore:x.lore,bonus:x.bonus})) : [],
       umbral: umbral? {r:umbral.r, hp:Math.round(umbral.hp*10)/10, hpMax:umbral.hpMax, banda:umbral.banda} : null,
-      foods: Array.isArray(foods)? foods.slice(0,90).map(f=>({x:f.x,y:f.y,amount:f.amount,max:f.max,ftype:f.ftype,grounded:!!f.grounded})) : [],
+      foods: Array.isArray(foods)? foods.slice(0,120).map(f=>({x:f.x,y:f.y,amount:f.amount,max:f.max,ftype:f.ftype,grounded:!!f.grounded,
+        rot:Math.max(0,Number(f.rot)||0),fresh:f.fresh!=null?f.fresh:1,storedOverflow:!!f.storedOverflow,
+        overflowNodeId:f.overflowNodeId||null,overflowNodeType:f.overflowNodeType||null})) : [],
+      protectedFoodLots: protectedFoodLots.map(l=>({kind:l.kind,amount:l.amount,nodeId:l.nodeId,rot:l.rot||0,x:l.x,y:l.y,storedAt:l.storedAt||0})),
       mound: Array.isArray(mound)? mound.filter(m=>m && !m.isPuddle).slice(0,300).map(m=>({x:m.x,y:m.y,h:m.h})) : [],
       // Topo: JSON.stringify ya serializa profundo; los spreads ({...w}) copiaban cada hormiga DOS veces
       workers, queens, brood, fungusGardens, wastePiles, structures,
@@ -10605,7 +10813,10 @@ function deserializeSave(){
     brood = Array.isArray(data.brood)? data.brood : [];
     fungusGardens = data.fungusGardens||[]; wastePiles = data.wastePiles||[];
     structures = data.structures||[];
-    foods = Array.isArray(data.foods)? data.foods.map(f=>({...f, r:5+(f.amount||1)*2, pulse:Math.random()*3, rot:0, fresh:1, spawnDay:f.spawnDay||1, vy:0, grounded:f.grounded!==false})) : [];
+    foods = Array.isArray(data.foods)? data.foods.map(f=>{const rot=Math.max(0,Math.min(1,Number(f.rot)||0));return {...f,
+      r:5+Math.min(4,(f.amount||1))*2,pulse:Math.random()*3,rot,fresh:f.fresh!=null?Math.max(0,Math.min(1,Number(f.fresh)||0)):1-rot,
+      spawnDay:f.spawnDay||1,vy:0,grounded:f.grounded!==false,storedOverflow:!!f.storedOverflow,
+      overflowNodeId:f.overflowNodeId||null,overflowNodeType:f.overflowNodeType||null};}) : [];
     plants = Array.isArray(data.plants)? data.plants.map(p=>({c:p.c,x:p.x,y:p.y,type:p.type,growth:p.growth,maxGrowth:1,age:p.age||0,fruitCooldown:p.fc||0,variant:p.v||0})) : [];
     hiddenRewards = Array.isArray(data.hiddenRewards)? data.hiddenRewards.map(h=>({c:h.c,r:h.r,type:h.type,found:h.found,x:h.x,y:h.y,depthTier:h.tier||1})) : [];
     // --- la escalera vuelve como estaba (o se repone la losa: un guardado viejo no la tiene y sin losa
@@ -10635,6 +10846,10 @@ function deserializeSave(){
     // F saves have no colonyProjects field: the pure loader migrates them to empty rules and no worksite.
     restoreColonyProjects(data.colonyProjects);
     if(data.day) day = data.day; else day = Math.floor(time/DAY_LENGTH)+1;
+    // H migration: G stored one untyped, locationless number. Allocate it across operational nodes and
+    // materialise any amount beyond real capacity; H saves restore exact type, node and freshness lots.
+    _loadProtectedFoodLots(data.protectedFoodLots,economyLedger.food);
+    reconcileStoragePressure({silent:true});
     if(data.worldAge) worldAge = data.worldAge;
     deliveries = data.deliveries||deliveries; accidents = data.accidents||0; rewardsFound = data.rewardsFound||0;
     mutations = data.mutations||0; commsCount = data.commsCount||0;
@@ -11286,19 +11501,21 @@ function _colonyProjectsHtml(){
 }
 function pintarInventario(){
   const body=document.getElementById('invBody'); if(!body) return;
-  const celdas=storageCells(), p=storagePos(), cap=capacidadAlmacen(), sitio=storageStructure(false);
-  const miel=Math.max(0, Math.floor(economyLedger.food));
-  const lleno=Math.max(0, Math.min(100, Math.round(miel/Math.max(1,cap)*100)));
+  const celdas=storageCells(), p=storagePos(), sitio=storageStructure(false),pressure=storagePressureSnapshot(),cap=pressure.capacity;
+  const miel=Math.max(0, Math.floor(pressure.protected)),desborde=Math.max(0,Math.floor(pressure.overflow));
+  const lleno=cap>0?Math.max(0, Math.min(100, Math.round(pressure.protected/cap*100))):0;
+  const presion=cap>0?Math.max(0,Math.min(100,Math.round((pressure.total-cap)/cap*100))):(pressure.total?100:0);
   const graneros=granerosConstruidos();
   const cx=Math.floor(p.x/CELL), cy=Math.floor(p.y/CELL);
   let html='<section class="inv-overview-grid" aria-label="Storage overview">';
-  html += '<article class="inv-card inv-ration-card">'
-    + '<span class="inv-ration-label">RATION RESERVE</span>'
+  html += '<article class="inv-card inv-ration-card'+(desborde?' has-overflow':'')+'">'
+    + '<span class="inv-ration-label">STORAGE PRESSURE</span>'
     + '<div class="inv-ration-main"><span class="inv-honey-jar" aria-hidden="true"></span>'
-    + '<span class="inv-ration-copy"><b class="inv-ration-value">'+miel+'</b><span class="inv-ration-unit">rations stored</span></span>'
+    + '<span class="inv-ration-copy"><b class="inv-ration-value">'+miel+'</b><span class="inv-ration-unit">protected rations</span></span>'
+    + (desborde?'<span class="inv-overflow-readout"><b>'+desborde+'</b> OVERFLOW</span>':'')
     + '<span class="inv-capacity-readout"><b>'+cap+'</b>MAX</span></div>'
-    + '<div class="inv-meter" role="progressbar" aria-label="Ration capacity" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+lleno+'">'
-    + '<span class="inv-meter-fill" style="--inv-fill:'+lleno+'%"></span><span class="inv-meter-ticks" aria-hidden="true"></span></div></article>';
+    + '<div class="inv-meter" role="progressbar" aria-label="Protected ration capacity'+(desborde?' with '+desborde+' physical overflow':'')+'" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+lleno+'">'
+    + '<span class="inv-meter-fill" style="--inv-fill:'+lleno+'%"></span>'+(desborde?'<span class="inv-meter-overflow" style="--overflow-pressure:'+presion+'%"></span>':'')+'<span class="inv-meter-ticks" aria-hidden="true"></span></div></article>';
   html += '<article class="inv-card inv-cache-card">'
     + '<span class="inv-cell-map" aria-hidden="true"><i></i></span><span class="inv-cache-copy">'
     + '<span class="inv-card-eyebrow">CACHE SITE</span>'

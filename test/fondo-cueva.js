@@ -253,11 +253,16 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ok   ' + m); } else { fai
 
   // ── E) determinismo: repintar entero no mueve ni un pixel (si el ruido dependiera del reloj, parpadea) ──
   const det = await page.evaluate(() => {
+    // This block compares the painter with itself, not two different simulation states. At x32 an ant
+    // can finish a dig between the first read and the forced rebuild; that legitimately makes only the
+    // first signature stale (a != b == c) and says nothing about clock-dependent texture noise.
+    const estabaPausado=paused;paused=true;
     const g = soilCacheCanvas.getContext('2d');
     const firma = () => { const d = g.getImageData(0, 0, soilCacheCanvas.width, soilCacheCanvas.height).data; let h = 0; for (let i = 0; i < d.length; i += 4) h = (h * 31 + d[i] * 3 + d[i + 1] * 5 + d[i + 2] * 7) % 2147483647; return h; };
-    const a = firma();
+    soilCacheDirty = true; rebuildSoilCache(); const a = firma();
     soilCacheDirty = true; rebuildSoilCache(); const b = firma();
     soilCacheDirty = true; rebuildSoilCache(); const c = firma();
+    paused=estabaPausado;
     return { a, b, c };
   });
   ok(det.a === det.b && det.b === det.c, `repintar el mapa entero dos veces deja el lienzo IDENTICO (firma ${det.a} = ${det.b} = ${det.c}): la pared no depende del reloj`);

@@ -15,6 +15,21 @@
   function reservaSuperficie(areaRatio){return Math.max(2,Math.min(10,Math.round(5*n(areaRatio||1))));}
   function topeSuperficie(areaRatio){return Math.max(3,Math.min(14,Math.round(8*n(areaRatio||1))));}
   function reservaVitalComida(){return 5;}
+  // Storage pressure is deliberately pure: the world layer decides where a physical excess pile is
+  // placed, while this rule guarantees that a delivery can never inflate the protected balance past
+  // its real capacity. Fractions are supported because brood care consumes fractional rations.
+  function splitStorageDelivery(amount,protectedFood,capacity){
+    const incoming=n(amount),protectedNow=n(protectedFood),cap=n(capacity),free=Math.max(0,cap-protectedNow);
+    const accepted=Math.min(incoming,free),overflow=Math.max(0,incoming-accepted);
+    return {incoming,capacity:cap,protectedBefore:protectedNow,freeBefore:free,accepted,overflow,protectedAfter:protectedNow+accepted};
+  }
+  function storagePressureState(capacity,protectedFood,overflowFood){
+    const cap=n(capacity),protectedNow=n(protectedFood),overflow=n(overflowFood),total=protectedNow+overflow;
+    const fillRatio=cap>0?protectedNow/cap:(protectedNow>0?Infinity:0);
+    const pressureRatio=cap>0?total/cap:(total>0?Infinity:0);
+    return {capacity:cap,protected:protectedNow,overflow,total,free:Math.max(0,cap-protectedNow),fillRatio,pressureRatio,
+      full:cap>0&&protectedNow>=cap,pressured:overflow>0||protectedNow>cap};
+  }
   function puedePagar(materiales,coste){
     materiales=materiales||{}; coste=coste||{};
     return Object.keys(coste).every(k=>n(materiales[k])>=n(coste[k]));
@@ -176,5 +191,6 @@
     api.clearJournal();return api;
   }
 
-  return {ECONOMY_MATERIALS,MATERIAL_KEYS,reservaInicialComida,reservaSuperficie,topeSuperficie,reservaVitalComida,puedePagar,pagar,createEconomyLedger};
+  return {ECONOMY_MATERIALS,MATERIAL_KEYS,reservaInicialComida,reservaSuperficie,topeSuperficie,reservaVitalComida,
+    splitStorageDelivery,storagePressureState,puedePagar,pagar,createEconomyLedger};
 });

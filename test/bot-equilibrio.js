@@ -27,7 +27,9 @@ const FOTO = `JSON.stringify({
   entregas: deliveries, cavadas: digs,
   generacion: gen, iq: Math.round(colonyIQ),
   banda: bandaMax, losasRotas: umbralesRotos, reliquias: reliquias.length,
-  materiales: Object.values(worldMaterials).reduce((a,b)=>a+(b||0),0)
+  materiales: Object.values(worldMaterials).reduce((a,b)=>a+(b||0),0),
+  capacidad: capacidadAlmacen(), excedente: Math.round(overflowFoodAmount()*10)/10,
+  tienda: (()=>{const s=storageStructure(false);return s?{built:s.built!==false,abandoned:!!s.abandoned,physical:_storeSiteIsPhysical(s),c:s.c,r:s.r}:null;})()
 })`;
 let t = 1;
 sb.performance.now = () => t;
@@ -49,9 +51,9 @@ for (let f = 0; f < total; f++) {
 const seg = Number(process.hrtime.bigint() - t0) / 1e9;
 
 console.log(`\nbot de equilibrio v0 · semilla ${SEMILLA} · ${DIAS} dias simulados · ${seg.toFixed(1)} s reales (${(seg / DIAS).toFixed(1)} s por dia)`);
-console.log('  dia  obreras  comida  entregas  cavadas  gen  IQ   banda  losas  reliq  materiales');
+console.log('  dia  obreras  proteg  exced  cap  entregas  cavadas  gen  IQ   banda  losas  reliq  materiales  store');
 for (const h of historial)
-  console.log(`  ${String(h.dia).padStart(3)}  ${String(h.obreras).padStart(7)}  ${String(h.comida).padStart(6)}  ${String(h.entregas).padStart(8)}  ${String(h.cavadas).padStart(7)}  ${String(h.generacion).padStart(3)}  ${String(h.iq).padStart(4)}  ${String(h.banda).padStart(5)}  ${String(h.losasRotas).padStart(5)}  ${String(h.reliquias).padStart(5)}  ${String(h.materiales).padStart(10)}`);
+  console.log(`  ${String(h.dia).padStart(3)}  ${String(h.obreras).padStart(7)}  ${String(h.comida).padStart(6)}  ${String(h.excedente).padStart(5)} ${String(h.capacidad).padStart(4)}  ${String(h.entregas).padStart(8)}  ${String(h.cavadas).padStart(7)}  ${String(h.generacion).padStart(3)}  ${String(h.iq).padStart(4)}  ${String(h.banda).padStart(5)}  ${String(h.losasRotas).padStart(5)}  ${String(h.reliquias).padStart(5)}  ${String(h.materiales).padStart(10)}  ${h.tienda?(h.tienda.built?'B':'b')+(h.tienda.physical?'P':'x')+(h.tienda.abandoned?'A':''):'-'}`);
 
 const ult = historial[historial.length - 1] || {};
 ok(errores === 0, 'ningun cuadro lanza excepcion (' + errores + ' errores)');

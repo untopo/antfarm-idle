@@ -157,7 +157,7 @@ try {
   if (typeof continueEl.onclick !== 'function') bad('B: CONTINUE no tiene acción');
   else continueEl.onclick({ preventDefault() {}, stopPropagation() {} });
 
-  const after = vm.runInContext('({hasWorld:typeof _topoHasWorld!=="undefined"?_topoHasWorld:null, c:COLS,r:ROWS,ants:(typeof workers!=="undefined"?workers.length:-1),carved:(typeof soil!=="undefined"?soil.flat().filter(x=>x===0).length:-1),day:(typeof day!=="undefined"?day:-1),food:colonyFood,digs,gen,queen:queen?queen.name:null,splash:document.getElementById("splashScreen").style.display,menu:document.getElementById("mainMenu").style.display,started:document.body.classList.contains("game-started")})', B.ctx);
+  const after = vm.runInContext('(()=>{const p=storagePressureSnapshot();return {hasWorld:typeof _topoHasWorld!=="undefined"?_topoHasWorld:null, c:COLS,r:ROWS,ants:(typeof workers!=="undefined"?workers.length:-1),carved:(typeof soil!=="undefined"?soil.flat().filter(x=>x===0).length:-1),day:(typeof day!=="undefined"?day:-1),food:colonyFood,foodTotal:p.total,overflow:p.overflow,foodCap:p.capacity,digs,gen,queen:queen?queen.name:null,splash:document.getElementById("splashScreen").style.display,menu:document.getElementById("mainMenu").style.display,started:document.body.classList.contains("game-started")};})()', B.ctx);
 
   if (after.hasWorld !== true) bad('B: CONTINUE no activó el mundo (_topoHasWorld=' + after.hasWorld + ')');
   else ok('B: CONTINUE detectó la partida y activó el mundo');
@@ -168,8 +168,8 @@ try {
   if (after.ants < 5) bad('B: solo ' + after.ants + ' hormigas'); else ok('B: ' + after.ants + ' hormigas vivas');
   if (!after.queen) bad('B: reina null -> renderLoop crashearía'); else ok('B: reina ' + after.queen + ' recuperada');
   if (after.day !== 7) bad('B: día ' + after.day + ' en vez de 7'); else ok('B: día 7 recuperado sin resetear el tiempo');
-  if (after.digs !== 88 || after.gen !== 1 || after.food !== 31) bad('B: progreso perdido (food=' + after.food + ' digs=' + after.digs + ' gen=' + after.gen + ')');
-  else ok('B: recursos/progreso intactos · 🍯' + after.food + ' · ' + after.digs + ' digs · GEN' + after.gen);
+  if (after.digs !== 88 || after.gen !== 1 || after.foodTotal !== 31 || after.food > after.foodCap || after.overflow !== 31-after.food) bad('B: progreso perdido o abstracto (protected=' + after.food + ' overflow=' + after.overflow + ' total=' + after.foodTotal + ' digs=' + after.digs + ' gen=' + after.gen + ')');
+  else ok('B: recursos/progreso intactos · '+after.food+' protegidas + '+after.overflow+' físicas = 🍯'+after.foodTotal+' · '+after.digs+' digs · GEN'+after.gen);
   if (after.menu !== 'none' || !after.started) bad('B: CONTINUE no retiró el título ' + JSON.stringify({ menu: after.menu, started: after.started }));
   else ok('B: CONTINUE retira el título y entra a la granja');
   if (!saveAtGate) bad('B: el guardado desapareció mientras esperaba en el título');

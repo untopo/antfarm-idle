@@ -12,11 +12,23 @@ node dev-server.js 8017      # raiz: ant-farm-rpg/, sin cache (Cache-Control: no
 
 Servir con `no-store` importa: con HTML nuevo y `app.js` de la cache vieja el juego se comporta de
 forma distinta a como está escrito y no se puede depurar. `index.html`, `css/style.css` y los assets
-llevan **un solo** `?v=` (`20261019g`); al tocar CSS o JS se sube en todos los sitios a la vez.
+llevan **un solo** `?v=` (`20261020h`); al tocar CSS o JS se sube en todos los sitios a la vez.
 
 Depuración: `?debug=1` en la URL (o `localStorage.antfarm_debug='1'`) enciende el registro del juego
 (`tlog`) que está callado por defecto. En la consola: `_topoDbg()` devuelve día, obreras, comida,
 dimensiones y si está pausado.
+
+## Build H: presión de almacén
+
+La cifra de comida es la reserva **protegida** y nunca puede superar la capacidad física operativa
+(del alijo finito de fundación mientras se levanta el primer almacén, y de sus estantes después).
+Lo que no cabe queda como una pila tipada junto al nodo de descarga: bayas/hongos/manzanas se pudren,
+mientras miel y semillas mantienen sus reglas. Al liberarse un hueco, el excedente adyacente vuelve a
+los estantes; un `FORWARD CACHE` inundado o desconectado pierde sus seis plazas y materializa allí mismo
+lo que protegía. La hoja `NEST STORES → COLONY PROJECTS` reutiliza su medidor para mostrar protegido,
+capacidad y overflow, sin crear otra moneda o panel. Si el almacén se pierde físicamente, la colonia
+sólo puede mantener las cinco raciones vitales en sus buches sociales mientras reconstruye; el resto
+vuelve al mundo como excedente en el punto del fallo.
 
 ## Estructura real (lo que hay en el disco)
 
@@ -25,10 +37,13 @@ ant-farm-rpg/
 ├── index.html          ~940 líneas · pantallas (splash, menú, tamaños, cargar, ajustes, créditos,
 │                       onboarding, siembra), HUD, un único <script> inline: el vigía de arranque
 ├── css/style.css       tema del juego; css/startup.css contiene la familia voxel responsive de entrada
-├── js/app.js           ~10 000 líneas · TODO el motor (sin dependencias, sin build)
-├── assets/             sprites de hormigas/reina, hojas de texturas, fondo del menú
+├── js/app.js           ~11 000 líneas · motor de mundo, colonia, almacén y UI
+├── js/texture-pack.js  runtime del atlas: nombres estables, pivotes, nearest-neighbour y fallback
+├── assets/textures/colony-atlas.{png,json,manifest.js} · hoja única de 64 objetos voxel reutilizables
+├── scripts/generate-colony-atlas.py · fuente determinista de la hoja y ambos manifiestos
 └── docs/
     ├── ARCHITECTURE.md    contrato del flujo de creación, guardado, helpers de HUD
+    ├── TEXTURE_PACK.md    catálogo completo y procedimiento para añadir sprites sin coordenadas
     ├── JUGABILIDAD.md     reporte: qué falta, qué está mal, plan para calificar de jugable
     ├── INVENTARIO_GRAFICO.md · TEXTURAS_DEFINITIVAS.md
     ├── INCIDENTE-20261014.md   reversión de ficheros y qué se perdió
@@ -54,6 +69,8 @@ node test/browser-smoke.js    # solo el navegador real (creación, iframe sandbo
 | `test/create-farm-flow.js` | Flujo CREAR NUEVA GRANJA end-to-end con eventos reales y reloj falso: siembra, anti-reentrancia, diálogo propio, archivado, fallo a mitad → aviso y sin barra colgada. `confirm/alert/prompt` nativos lanzan si alguien los llama |
 | `test/world-size-rules.js` | Reglas por tamaño + proporción de coste; un hueco no da capacidad ni conservación sin estructura conectada y terminada |
 | `test/almacen-fisico.js` | Plano conectado, trabajo real, footprint transitable/protegido, posición estable, mejora in situ y reconstrucción sólo tras daño físico |
+| `test/storage-pressure.js` | Límite protegido real, excedente físico tipado, deterioro, consumo, cache inundado/desconectado y migración/round-trip H |
+| `test/texture-pack.js` | PNG RGBA 256², 64 rectángulos/pivotes válidos, paridad JSON/JS, sprites obligatorios, carga e integración sin coordenadas manuales |
 | `test/oficios-emergentes.js` | Constructoras, mineras profundas, exploradoras, recolectoras exteriores y nodrizas surgen por experiencia, edad, rasgos y necesidad; sin asignación manual |
 | `test/pages-root.js` | El artefacto contiene el juego en `/` y la ruta histórica sólo redirige, sin duplicar el código |
 | `test/save-roundtrip.js` | Guardar → recargar → mismo mundo, obreras y tesoros |

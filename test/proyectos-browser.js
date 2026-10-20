@@ -7,6 +7,7 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));let pass=0,fail=0;const ok=(c,m
 async function boot(page){
   await page.goto(`http://127.0.0.1:${PORT}/ant-farm-rpg/index.html`,{waitUntil:'load',timeout:30000});
   await page.waitForFunction('window._topoFlowReady===true',{timeout:20000});
+  await page.waitForFunction("window.colonyTexturePack&&colonyTexturePack.ready()&&colonyTexturePack.stats().sprites===64",{timeout:12000});
   await page.waitForFunction("document.getElementById('splashScreen').style.display==='none'",{timeout:16000}).catch(()=>{});
   await page.click('#btnMainCreate');await sleep(300);await page.click('#createSizeScreen [data-size="small"]');await sleep(350);
   await page.evaluate(()=>{const h=document.querySelector('.topo-dialog-host');if(h){const b=[...h.querySelectorAll('button')].find(x=>/^(YES|SÍ)$/i.test(x.textContent.trim()));if(b)b.click();}});
@@ -58,6 +59,24 @@ try{
   ok(siteClick&&placed.active&&placed.active.type==='forward_cache'&&placed.mapTool==='navigate','a real canvas click approves the chosen connected worksite');
   ok(placed.clay===siteClick.before.clay&&placed.wood===siteClick.before.wood&&placed.heldWood===2,'site approval commits cost without an early debit');
   await page.evaluate(()=>{colonyProjectsAPI.cancel();abrirInventario();});await sleep(120);
+
+  console.log('\n· texture atlas and STORAGE PRESSURE use the existing STORES card');
+  const pressure=await page.evaluate(()=>{
+    foods=foods.filter(f=>!f.storedOverflow);protectedFoodLots=[];
+    const node=storageDeliveryNodes().find(n=>n.id==='main'),cap=capacidadAlmacen();economyLedger.setFood(cap,'browser pressure fixture');
+    _loadProtectedFoodLots(null,cap);reconcileStoragePressure({silent:true});const delivered=storeFoodDelivery({amount:3,ftype:'berry',rot:.1},node);
+    pintarInventario();const card=document.querySelector('.inv-ration-card'),meter=document.querySelector('.inv-meter'),before=colonyTexturePack.stats().draws;
+    drawColonyProjectSites(ctx,false);const stats=colonyTexturePack.stats(),pile=foods.find(f=>f.storedOverflow&&f.ftype==='berry');
+    return{cap,delivered:{accepted:delivered.accepted,overflow:delivered.overflow},snapshot:storagePressureSnapshot(),pile:pile&&{node:pile.overflowNodeId,preserved:isFoodInStockpile(pile)},
+      cardClass:card&&card.className,text:card&&card.textContent.replace(/\s+/g,' ').trim(),meterLabel:meter&&meter.getAttribute('aria-label'),overflowChips:document.querySelectorAll('.inv-overflow-readout').length,
+      atlas:{status:stats.status,sprites:stats.sprites,width:colonyTexturePack.state.image&&colonyTexturePack.state.image.naturalWidth,drawn:stats.draws>before}};
+  });await sleep(120);
+  ok(pressure.delivered.accepted===0&&pressure.delivered.overflow===3&&pressure.snapshot.protected===pressure.cap&&pressure.snapshot.overflow===3,'full protected capacity keeps the complete typed delivery physical');
+  ok(pressure.pile&&pressure.pile.node==='main'&&!pressure.pile.preserved,'the browser world places an unprotected pile at the unloading node');
+  ok(pressure.overflowChips===1&&/STORAGE PRESSURE/.test(pressure.text)&&/PROTECTED RATIONS/.test(pressure.text.toUpperCase())&&/3 OVERFLOW/.test(pressure.text),'the original ration card and meter expose protected versus overflow once');
+  ok(/physical overflow/.test(pressure.meterLabel)&&/has-overflow/.test(pressure.cardClass),'the existing meter carries the pressure state without another screen');
+  ok(pressure.atlas.status==='ready'&&pressure.atlas.sprites===64&&pressure.atlas.width===256&&pressure.atlas.drawn,'the 256px named atlas loaded and rendered a completed colony object');
+  await page.screenshot({path:SHOTS+'/storage-pressure-desktop.png'});
 
   console.log('\n· portrait and short landscape: size check after the menu grew');
   await page.setViewport({width:390,height:844});await page.evaluate(()=>{if(document.getElementById('invSheet').getAttribute('data-open')!=='1')abrirInventario();_asentarInventario(document.getElementById('invSheet'));asentarHoja(document.getElementById('invSheet'));});await sleep(180);m=await metrics(page);

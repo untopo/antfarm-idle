@@ -16,7 +16,9 @@ check('app.js no escribe saldos por fuera de los métodos del libro',directFood.
   'comida '+directFood.length+' · materiales '+directMats.length);
 check('compras complejas ya no llaman al pagador suelto',!app.includes('pagar(economyLedger.materials'));
 const foodCredits=[...app.matchAll(/economyLedger\.creditFood\s*\(/g)];
-check('la reserva sólo aumenta mediante una entrega física etiquetada',foodCredits.length===1&&app.includes("creditFood(amt,`worker delivery: ${kind}`)"),foodCredits.length);
+check('la reserva sólo aumenta desde comida físicamente entregada o movida del excedente',foodCredits.length===2
+  &&app.includes("creditFood(split.accepted,`worker delivery: ${kind}`)")
+  &&app.includes("creditFood(take,`overflow moved onto ${node.type} shelves`)"),foodCredits.length);
 check('tesoros y mejoras sueltan comida física en vez de acreditarla',app.includes('releaseTreasureFood(rew,10')&&app.includes('construction never conjures four food rations'));
 
 vm.runInContext(`
