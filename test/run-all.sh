@@ -6,7 +6,7 @@ if [ -d /tmp/libs ]; then export LD_LIBRARY_PATH="/tmp/libs${LD_LIBRARY_PATH:+:$
 # Uso: bash test/run-all.sh
 cd "$(dirname "$0")/.." || exit 1
 fail=0
-for t in no-orphans pages-root create-farm-flow texture-pack storage-pressure economia-integracion proyectos-integracion proyectos-save core-agua core-agua-flujo core-mundo geologia-integracion agua-sucesion-integracion agua-visual vestigios-ambientales world-size-rules almacen-fisico conectividad-recursos niebla-profundidad oficios-emergentes brood-hatch foundacion-dias paron-fundacion exterior-emergente salida-superficie tandem-objetivo expansion-agua primera-losa save-roundtrip reload-simulation; do
+for t in no-orphans pages-root create-farm-flow texture-pack core-offline offline-integration offline-work-integration offline-sizes storage-pressure economia-integracion proyectos-integracion proyectos-save core-agua core-agua-flujo core-mundo geologia-integracion agua-sucesion-integracion agua-visual vestigios-ambientales world-size-rules almacen-fisico conectividad-recursos niebla-profundidad oficios-emergentes brood-hatch foundacion-dias paron-fundacion exterior-emergente salida-superficie tandem-objetivo expansion-agua primera-losa save-roundtrip reload-simulation; do
   printf '\n=== test/%s.js ===\n' "$t"
   if node "test/$t.js" > /tmp/_t.out 2>&1; then
     tail -n 3 /tmp/_t.out
@@ -40,6 +40,7 @@ node --check ant-farm-rpg/core/mundo.js && echo "mundo.js OK"
 node --check ant-farm-rpg/core/agua.js && echo "agua.js OK"
 node --check ant-farm-rpg/core/economia.js && echo "economia.js OK"
 node --check ant-farm-rpg/core/proyectos.js && echo "proyectos.js OK"
+node --check ant-farm-rpg/core/offline.js && echo "offline.js OK"
 node -e '
 const fs=require("fs");
 const h=fs.readFileSync("ant-farm-rpg/index.html","utf8");

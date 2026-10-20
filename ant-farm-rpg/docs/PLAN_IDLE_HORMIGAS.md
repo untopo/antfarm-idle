@@ -181,6 +181,19 @@ red entrenada.
      de iteraciones. El resumen de regreso lista qué pasó, en orden.
 - Si se pierde la pestaña, no pasa nada: el delta se calcula al volver.
 
+**Primera implementación integrada (Build K):**
+- `core/offline.js` es puro y usa delta más eventos discretos; nunca llama al bucle de cuadros ni dibuja.
+- Se liquida una sola vez después de cargar, y también al volver de una pestaña oculta, con recibo persistido
+  contra duplicaciones. El tope ya tiene los cuatro escalones físicos 4 → 8 → 12 → 24 h; la cámara activa
+  el de 8 h y los flags persistentes de linaje/última etapa quedan listos para sus sistemas respectivos.
+- Continúan recolección alcanzable, consumo de cría, puestas sostenibles, metamorfosis, carga y construcción
+  del almacén fundador o de la obra aprobada, la losa ya atacada y sólo los frentes que estaban asignados. Al completar algo no se
+  elige automáticamente el siguiente proyecto, frente, losa ni mejora.
+- Senescencia, clima, derrumbes, podredumbre e incidentes quedan fuera de esta primera liquidación: la
+  ausencia no puede matar ni castigar al jugador mientras esos sistemas no tengan resolución agregada justa.
+- La pantalla única de regreso sigue deliberadamente separada: se conectará al informe comprobable sólo
+  después de estabilizar saldos, migración y no duplicación.
+
 ### 3.4 Anti-trampas (medio alcance)
 - Como en Idle Deepcore o Idle Miner, el juego es de un solo jugador en un navegador. La tabla de tiempo
   se puede alterar cambiando el reloj del equipo (la objeción de GeekExtreme). Se acepta el riesgo, con un

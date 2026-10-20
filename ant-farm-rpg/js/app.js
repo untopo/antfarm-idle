@@ -2997,6 +2997,8 @@ function topoCreateFreshWorld(cols, rows){
   if(typeof W!=='undefined'){ W=COLS*CELL; H=ROWS*CELL; const cv=document.getElementById('farmCanvas'); if(cv){ cv.width=W; cv.height=H; } }
   if(typeof soilCacheCanvas!=='undefined'){ try{ soilCacheCanvas.width=W; soilCacheCanvas.height=H; }catch(e){} }
   _topoHasWorld=true;
+  // Un nido nuevo no hereda recibos ni ampliaciones offline de la granja que se acaba de archivar.
+  try{_loadedSaveSavedAt=0;_offlineUnlocks={lineage:false,lateStage:false};_lastOfflineReceipt=null;_lastOfflineReport=null;_offlineHiddenSavedAt=0;_offlineAppliedStamps.clear();}catch(e){}
   // limpiar previos por si había restos
   try{ workers.length=0; queens.length=0; foods.length=0; protectedFoodLots.length=0; brood.length=0; mound.length=0; hiddenRewards.length=0; particles.length=0; pheromones.length=0; commInks.length=0;_loadExploration([]); }catch(e){}
   // Topo: al sobre-escribir un mundo habia que limpiar TAMBIEN lo que se hereda del suelo (jardines
@@ -8382,23 +8384,8 @@ let last=performance.now();
 let lastRealWall=Date.now();
 let lastSpawn=0;
 let _lastSaveReal=Date.now();
-// offline catch-up at startup: if page was closed, advance time based on real time
-try{
-  const savedAt = parseInt(localStorage.getItem('antfarm_lastReal')||'0',10);
-  const savedTime = parseFloat(localStorage.getItem('antfarm_time')||'NaN');
-  if(savedAt && !isNaN(savedTime) && Date.now()-savedAt < 86400000*7){
-    const offlineMs = Date.now()-savedAt;
-    const offlineDt = offlineMs*0.06*1.0; // at x1
-    const maxOffline = DAY_LENGTH*2.2; // max 2.2 días offline
-    const add = Math.min(offlineDt, maxOffline);
-    if(add> DAY_LENGTH*0.02){
-      time+=add;
-      tlog('[offline] +'+(add/DAY_LENGTH).toFixed(2)+'d por '+Math.floor(offlineMs/1000)+'s fuera');
-      // que no parezca trampa: notificar
-      setTimeout(()=>{ try{ pushEvent('evo','⏳ Tiempo offline '+(add/DAY_LENGTH).toFixed(2)+'d','La colonia siguió mientras no mirabas'); }catch(e){} }, 900);
-    }
-  }
-}catch(e){}
+// El regreso offline se aplica una sola vez DESPUÉS de deserializar el estado físico. El módulo puro
+// core/offline.js calcula delta + eventos; este arranque no toca ya ni el reloj ni la economía.
 function tickStep(dt){
   if(paused) return;
   time+=dt;
@@ -10747,9 +10734,15 @@ if(_topoHasWorld){
 
 // === SAVE PERSISTENTE - la granja sobrevive a recargar ===
 const SAVE_KEY='antFarm_fullSave_v2';
-const SAVE_VER='20261020j';
+const SAVE_VER='20261020k';
 const LS_ALIVE='antfarm_worldAlive';
 const LS_INGAME='antfarm_inGame';
+let _loadedSaveSavedAt=0;
+let _offlineUnlocks={lineage:false,lateStage:false};
+let _lastOfflineReceipt=null;
+let _lastOfflineReport=null;
+let _offlineHiddenSavedAt=0;
+const _offlineAppliedStamps=new Set();
 // grids a string de digitos: 8x menos bytes que JSON de arrays (BIG 96x48 entra en localStorage)
 // One base-20 character per cell keeps saves compact while preserving every physical type (0–18).
 // Decimal saves from earlier builds are a strict subset, so this is also their migration path.
@@ -10799,6 +10792,7 @@ function serializeSave(force){
     try{_syncProtectedLotsWithLedger();}catch(e){}
     const data={
       v:SAVE_VER, savedAt:Date.now(), day,
+      offline:{v:1,unlocks:{lineage:!!_offlineUnlocks.lineage,lateStage:!!_offlineUnlocks.lateStage},receipt:_lastOfflineReceipt?{..._lastOfflineReceipt}:null},
       time, gen, colonyIQ, colonyFood:economyLedger.food, digs, deliveries, accidents, rewardsFound, mutations, commsCount, worldAge,
       ROWS, COLS, SURFACE_ROW, worldSeed,
       ancientSites:Array.isArray(ancientSites)?ancientSites.map(s=>({id:s.id,c:s.c,r:s.r,depth:s.depth,w:s.w,h:s.h,style:s.style,kind:s.kind,biome:s.biome,damage:s.damage,flood:s.flood,cycle:s.cycle,scar:s.scar,repairStyle:s.repairStyle,repairRate:s.repairRate,oddity:s.oddity||0,muralSeed:s.muralSeed})):[],
@@ -10856,6 +10850,9 @@ function deserializeSave(){
     if(!raw) return false;
     const data=JSON.parse(raw);
     if(!data || !Array.isArray(data.soil) || data.soil.length===0) return false;
+    _loadedSaveSavedAt=Math.max(0,Number(data.savedAt)||0);
+    _offlineUnlocks={lineage:!!(data.offline&&data.offline.unlocks&&data.offline.unlocks.lineage),lateStage:!!(data.offline&&data.offline.unlocks&&data.offline.unlocks.lateStage)};
+    _lastOfflineReceipt=data.offline&&data.offline.receipt&&typeof data.offline.receipt==='object'?{...data.offline.receipt}:null;
     // 1) dimensiones primero: W/H/canvas/soilCache deben coincidir con el mapa guardado
     COLS = data.COLS||64; ROWS = data.ROWS||36;
     if(data.SURFACE_ROW) SURFACE_ROW = data.SURFACE_ROW;
@@ -10957,6 +10954,248 @@ function deserializeSave(){
   }catch(e){ console.warn('load fail',e); return false; }
 }
 
+// === OFFLINE AGREGADO — adaptador entre el núcleo puro y el mundo físico =========================
+// El núcleo sólo recibe tasas y trabajos ya abiertos. Aquí se traducen sus deltas a comida física,
+// cría, obra, frentes y losa. No se llama tickStep y no se elige una obra, excavación o mejora nueva.
+function _offlineProgressFlags(){
+  let firstChamber=false;
+  try{firstChamber=!!storageStructure(true)||countChambers()>=3;}catch(e){}
+  return {firstChamber,lineage:!!_offlineUnlocks.lineage,lateStage:!!_offlineUnlocks.lateStage};
+}
+function _offlineKnownWorker(w){
+  try{return !!w&&(w.health||0)>20&&!w._magmaRetreat&&_entityInKnownWalkspace(w);}catch(e){return !!w&&(w.health||0)>20;}
+}
+function _offlineFoodSources(){
+  const out=[],seen=new Set(),add=(item,owner)=>{
+    if(!item||seen.has(item)||Math.max(0,Number(item.amount)||0)<=1e-7)return;
+    seen.add(item);out.push({item,owner:owner||null,kind:foodKind(item),rot:Math.max(0,Number(item.rot)||0)});
+  };
+  for(const f of foods||[])if(f&&!f.storedOverflow&&(Number(f.y)||0)<=SURFACE_Y+CELL*3){
+    let reachable=false;for(const w of workers||[])if(_offlineKnownWorker(w)){try{if(isFoodReachable(f,w)){reachable=true;break;}}catch(e){}}
+    if(reachable)add(f,null);
+  }
+  for(const w of workers||[])if(w&&w.food)add(w.food,w);
+  return out;
+}
+function _offlineQueenRate(q){
+  if(!q)return 0;
+  const ageFactor=Math.max(.25,1-((q.age||0)/Math.max(1,q.maxAge||DAY_LENGTH*16))*.7);
+  const healthyBeds=(fungusGardens||[]).filter(f=>(f.health||0)>.62&&_entityInKnownWalkspace(f)).length;
+  const evo=1+gen*.13+Math.max(0,colonyIQ-108)*.009+(q.personality&&q.personality.fertilidad?(q.personality.fertilidad-50)*.006:0)+healthyBeds*.12+(inventions.fungus ? .22 : 0);
+  const mouths=1+Math.min(2.2,Math.max(0,workers.length-2)*.16);
+  return .00305*ageFactor*(1+(q.traits&&q.traits.cuidado||50)/240)*evo*mouths;
+}
+function _offlineProjectInput(known){
+  const byId=new Map(known.map(w=>[String(w.id),w])),a=colonyProjects.activeRef();
+  if(!a){
+    const site=storageStructure(false);
+    if(!site||site.built!==false)return {kind:'none',model:null,ref:null,crew:[],initialWork:0};
+    const crew=(site.builders||[]).map(id=>byId.get(String(id))).filter(Boolean);let siteOK=false;
+    try{siteOK=_storeSiteIsPhysical(site);}catch(e){}
+    let workRate=0;for(const w of crew){const trait=w.traits&&w.traits.construccion||40,xp=_jobBook(w).build||0;workRate+=.74+trait/220+Math.min(.24,xp*.018)+(w.tool==='trowel' ? .20 : 0);}
+    const workNeeded=site.workNeeded||STORE_WORK_REQUIRED,mainAfter=8+_storeFootprint(site).length*2+Math.max(0,(site.level||1)-1)*12+colonyProjects.completedCount('clay_jars')*12;
+    const capacityAfter=Math.max(economyLedger.food,mainAfter+operationalColonyProjects('forward_cache').length*6);
+    return {kind:'store',model:{id:'STORE-'+site.c+'-'+site.r,enabled:siteOK&&crew.length>0,foodFloor:_reservaVital()+1,capacityAfter,haulRemaining:0,haulRate:0,work:site.work||0,workNeeded,workRate},ref:site,crew,initialWork:site.work||0};
+  }
+  const ids=new Set((a.crew||[]).map(String));
+  for(const w of known)if(w.projectCargo&&w.projectCargo.projectId===a.id)ids.add(String(w.id));
+  const crew=[...ids].map(id=>byId.get(id)).filter(Boolean);
+  let siteOK=false;try{siteOK=a.type==='clay_jars'?!!storageStructure(true):_projectSiteOperational(a);}catch(e){}
+  const haulRemaining=Object.keys(a.cost||{}).reduce((n,k)=>n+Math.max(0,Math.floor((a.cost[k]||0)-(a.delivered&&a.delivered[k]||0))),0);
+  const haulRate=crew.length/(DAY_LENGTH*.03);
+  let workRate=0;
+  for(const w of crew){const trait=w.traits&&w.traits.construccion||40,xp=_jobBook(w).build||0;workRate+=.58+trait/230+Math.min(.28,xp*.02)+(w.tool==='trowel' ? .20 : 0);}
+  const enabled=siteOK&&crew.length>0,baseCapacity=capacidadAlmacen();
+  const capacityAfter=(a.type==='clay_jars'?Math.max(economyLedger.food,baseCapacity+12):a.type==='forward_cache'?Math.max(economyLedger.food,baseCapacity+6):0);
+  return {kind:'colony',model:{id:a.id,enabled,foodFloor:_reservaVital()+1,capacityAfter,haulRemaining,haulRate,work:a.work||0,workNeeded:a.workNeeded||0,workRate},ref:a,crew,initialWork:a.work||0};
+}
+function _offlineSlabInput(known,excluded){
+  if(!umbral)return null;
+  const crew=known.filter(w=>w&&!(excluded&&excluded.has(String(w.id)))&&w.digTarget&&w.digTarget.r===umbral.r&&soilType[umbral.r]&&soilType[umbral.r][w.digTarget.c]===17&&(w.state==='CAVANDO'||w._umbralLead||w._umbralSupport));
+  let perDay=0;
+  for(const w of crew)perDay+=6+(w.role==='EXCAVADORA' ? .9 : 0)+(w.tool==='pick' ? .8 : 0)+(inventions.masonry ? .6 : 0)+Math.min(.8,gen*.04);
+  return {id:'slab-'+umbral.r+'-'+umbral.banda,enabled:crew.length>0,hp:umbral.hp,hpMax:umbral.hpMax,rate:perDay/DAY_LENGTH};
+}
+function _offlineDigInput(known,excluded){
+  const groups=new Map();
+  for(const w of known){
+    if(excluded&&excluded.has(String(w.id)))continue;
+    const t=w&&w.digTarget;if(!t||w.state!=='CAVANDO'||!soil[t.r]||soil[t.r][t.c]!==1||!soilType[t.r])continue;
+    const mt=soilType[t.r][t.c];if(mt===17||mt===15||(mt===7&&(gen<8||!inventions.masonry)))continue;
+    try{if(!puedeAbrirSuperficie(t.c,t.r))continue;}catch(e){continue;}
+    const key=t.r+','+t.c;
+    if(!groups.has(key))groups.set(key,{id:'dig-'+key,c:t.c,r:t.r,type:mt,progress:0,needed:Infinity,members:[]});
+    const g=groups.get(key);g.progress=Math.max(g.progress,Math.max(0,Number(w.digProgress)||0));g.needed=Math.min(g.needed,Math.max(1,Number(w.digNeeded)||10));g.members.push(w);
+  }
+  const models=[];
+  for(const g of groups.values()){
+    if(!Number.isFinite(g.needed))g.needed=10;
+    models.push({id:g.id,enabled:true,progress:g.progress,needed:g.needed,rate:(g.needed/(DAY_LENGTH*.04))*Math.max(1,g.members.length),payload:{c:g.c,r:g.r,type:g.type}});
+  }
+  return {groups:new Map([...groups.values()].map(g=>[g.id,g])),models};
+}
+function _offlineContext(now){
+  const progress=_offlineProgressFlags();
+  const window=computeOfflineWindow({savedAt:_loadedSaveSavedAt,now,progress,minAwayMs:30000});
+  const known=(workers||[]).filter(_offlineKnownWorker),sources=_offlineFoodSources();
+  const nodes=storageDeliveryNodes(),foodCapacity=Math.max(economyLedger.food,nodes.reduce((n,x)=>n+Math.max(0,Number(x.capacity)||0),0));
+  const foodStates=new Set(['BUSCAR','IR_COMIDA','RECOGER','VOLVER_COMIDA','DELIVER_FOOD']),busy=new Set();
+  const activeProject=colonyProjects.activeRef();if(activeProject)for(const id of activeProject.crew||[])busy.add(String(id));
+  const pendingStore=storageStructure(false);if(pendingStore&&pendingStore.built===false)for(const id of pendingStore.builders||[])busy.add(String(id));
+  for(const w of known)if(w.digTarget||w.projectCargo||w.buildTarget||_PROJECT_STATE_SET.has(w.state))busy.add(String(w.id));
+  let foragers=known.filter(w=>w.food||w.targetFood||foodStates.has(w.state)||antProfession(w)==='RECOLECTORA_EXTERIOR');
+  // Buscar comida es una política autónoma ya abierta, no una decisión nueva del jugador. Si el guardado
+  // cayó entre dos viajes, conserva una fracción prudente de la fuerza que el bucle habría vuelto a enviar.
+  const availableForage=known.filter(w=>!busy.has(String(w.id)));
+  if(!foragers.length&&availableForage.length)foragers=availableForage.slice(0,Math.max(1,Math.ceil(availableForage.length*.25)));
+  let forageRate=0;
+  for(const w of foragers){const xp=_jobBook(w).forage||0;forageRate+=(.55+Math.min(.45,xp*.025)+(w.tool==='basket'?.22:0))/DAY_LENGTH;}
+  const broodInput=brood.map((b,i)=>({id:'existing-'+i,type:b.type,progress:b.progress||0,isQueen:!!b.isQueen,waiting:!!b._capWaiting,payload:{kind:'existing',index:i}}));
+  const queenRefs=new Map(),queenInput=[];
+  queens.forEach((q,i)=>{const id='queen-'+i+'-'+String(q.id||i);queenRefs.set(id,q);queenInput.push({id,progress:q.progress||0,rate:_offlineQueenRate(q),enabled:_entityInKnownWalkspace(q)&&(q.health||0)>18,royalNext:!!q._royalNext,payload:{index:i}});});
+  const project=_offlineProjectInput(known),projectIds=new Set(project.crew.map(w=>String(w.id))),dig=_offlineDigInput(known,projectIds),slab=_offlineSlabInput(known,projectIds);
+  const input={window,dayLength:DAY_LENGTH,gameUnitsPerMs:.06,maxIterations:4096,
+    food:{stored:economyLedger.food,capacity:foodCapacity,reserve:_reservaVital(),surface:sources.reduce((n,s)=>n+Math.max(0,Number(s.item.amount)||0),0),forageRate},
+    workers:{count:workers.length,maxPopulation:getMaxPopulation()},broodCapacity:capacidadCria(),careCapacity:availableForage.length?Math.max(1,availableForage.length*3):0,
+    brood:broodInput,queens:queenInput,eggCost:3,eggFoodFloor:_reservaVital(),eggBroodSupport:1.9,larvaFoodPerProgress:.025,
+    project:project.model,slab,digs:dig.models};
+  return {now,progress,window,input,known,sources,queenRefs,existingBrood:brood.slice(),project,dig};
+}
+function _offlineTakeFood(sources,amount){
+  let left=Math.max(0,Number(amount)||0);const chunks=[];
+  for(const src of sources){
+    if(left<=1e-7)break;const have=Math.max(0,Number(src.item.amount)||0),take=Math.min(have,left);if(take<=0)continue;
+    src.item.amount=have-take;left-=take;chunks.push({kind:src.kind,rot:src.rot,amount:take});
+    if(src.item.amount<=1e-7){
+      if(src.owner&&src.owner.food===src.item){src.owner.food=null;if(src.owner.state==='VOLVER_COMIDA')src.owner.state='EXPLORAR';}
+      for(const w of workers)if(w.targetFood===src.item){w.targetFood=null;w._excursion=false;if(w.state==='IR_COMIDA'||w.state==='RECOGER')w.state='EXPLORAR';}
+    }
+  }
+  for(let i=foods.length-1;i>=0;i--)if(!foods[i]||Math.max(0,Number(foods[i].amount)||0)<=1e-7)foods.splice(i,1);
+  return {taken:Math.max(0,(Number(amount)||0)-left),chunks};
+}
+function _offlineDeliverFood(chunks,amount){
+  let left=Math.max(0,Number(amount)||0),accepted=0,ci=0,chunkLeft=chunks[0]?chunks[0].amount:0;
+  while(left>1e-7&&ci<chunks.length){
+    if(chunkLeft<=1e-7){ci++;chunkLeft=chunks[ci]?chunks[ci].amount:0;continue;}
+    const nodes=storageDeliveryNodes().filter(n=>n.free>1e-7);if(!nodes.length)break;
+    const give=Math.min(left,chunkLeft,nodes[0].free),r=storeFoodDelivery({ftype:chunks[ci].kind,amount:give,rot:chunks[ci].rot},nodes[0]);
+    if(!r||r.accepted<=1e-7)break;accepted+=r.accepted;left-=r.accepted;chunkLeft-=r.accepted;
+  }
+  return accepted;
+}
+function _offlineApplyFood(result,ctx){
+  const before=economyLedger.food,taken=_offlineTakeFood(ctx.sources,result.food.harvested),target=Math.max(0,Number(result.food.stored)||0);
+  if(target<before-1e-7)economyLedger.debitFood(before-target,{floor:0,partial:true,reason:'offline brood and egg care'});
+  else if(target>before+1e-7)_offlineDeliverFood(taken.chunks,target-before);
+  _syncProtectedLotsWithLedger();
+  return {before,after:economyLedger.food,harvested:taken.taken,consumed:Math.max(0,before+taken.taken-economyLedger.food)};
+}
+function _offlineConsumeProjectCargo(kind,amount,projectId){
+  let left=amount;
+  for(const w of workers){const c=w.projectCargo;if(!c||c.projectId!==projectId||c.kind!==kind)continue;const take=Math.min(left,Math.max(0,Math.floor(c.amount||1)));c.amount-=take;left-=take;if(c.amount<=0)delete w.projectCargo;if(left<=0)break;}
+}
+function _offlineMoveProjectUnits(count){
+  let moved=0;
+  while(moved<count){const a=colonyProjects.activeRef();if(!a)break;let kind=Object.keys(a.cost).find(k=>(a.inTransit[k]||0)>0);
+    if(kind){const d=colonyProjects.deliver(kind,1,{time});if(!d.ok)break;_offlineConsumeProjectCargo(kind,d.amount,a.id);moved+=d.amount;continue;}
+    kind=Object.keys(a.cost).find(k=>colonyProjects.outstanding(k)>0);if(!kind)break;
+    const p=colonyProjects.pickup(kind,1,{time});if(!p.ok)break;const paid=economyLedger.consumeHeldMaterial(a.id,kind,p.amount,{reason:a.name+' offline hauling'});
+    if(paid!==p.amount){colonyProjects.returnTransit(kind,p.amount);break;}const d=colonyProjects.deliver(kind,paid,{time});if(!d.ok)break;moved+=d.amount;
+  }
+  return moved;
+}
+function _offlineApplyProject(result,ctx){
+  if(!result.project||!ctx.project.ref)return {kind:'none',hauled:0,work:0,completed:false};
+  const effort=Math.max(0,(Number(result.project.work)||0)-ctx.project.initialWork);
+  if(ctx.project.kind==='store'){
+    const site=ctx.project.ref,needed=site.workNeeded||STORE_WORK_REQUIRED;site.work=Math.min(needed,(site.work||0)+effort);site.buildProgress=Math.min(1,site.work/needed);
+    for(const w of ctx.project.crew)recordJobExperience(w,'build',effort/Math.max(1,needed*ctx.project.crew.length));
+    let completed=false;
+    if(site.built===false&&site.buildProgress>=1){
+      site.built=true;site.buildProgress=1;site.builtAt=time+result.totalGameUnits;site.age=0;site.builtBy=[...new Set((site.builders||[]).map(String))];
+      const at=_storeAnchor(site);if(at)pantryPos={x:at.x,y:at.y};for(const w of workers)if(w.state==='BUILD_STORE')w.state='EXPLORAR';
+      reconcileStoragePressure({silent:true});colonyFitness+=.45;stats.xp+=18;checkLevelUp();pushEvent('build','NEST STORE completed while you were away',(site.builtBy.join(', ')||'Colony crew')+' finished the connected cache');completed=true;
+    }
+    return {kind:'store',hauled:0,work:effort,completed};
+  }
+  const hauled=_offlineMoveProjectUnits(Math.max(0,Math.floor(result.project.hauled||0))),a=colonyProjects.activeRef();
+  if(!a||!colonyProjects.allDelivered())return {kind:'colony',hauled,work:0,completed:false};
+  if(effort<=1e-7)return {kind:'colony',hauled,work:0,completed:false};
+  const workerId=ctx.project.crew[0]&&ctx.project.crew[0].id||'COLONY';const done=colonyProjects.addWork(effort,workerId,{time});
+  if(done.completed)_applyCompletedColonyProject(done.project);
+  return {kind:'colony',hauled,work:effort,completed:!!done.completed};
+}
+function _offlineAdvanceVisualStructures(gameUnits){
+  let completed=0;
+  for(const s of structures){
+    if(!s||s.abandoned||s.type==='store')continue;const before=Number(s.buildProgress);
+    s.age=(s.age||0)+Math.max(0,gameUnits)*2;s.buildProgress=Math.min(1,s.age/(DAY_LENGTH*.007));
+    if((!Number.isFinite(before)||before<1)&&s.buildProgress>=1)completed++;
+  }
+  return completed;
+}
+function _offlineBuildGeneratedBrood(rec,ctx,cache){
+  if(cache.has(rec.id))return cache.get(rec.id);
+  const q=ctx.queenRefs.get(rec.payload&&rec.payload.queenId)||queens[0];if(!q)return null;
+  let best=ctx.known[0]||workers[0];for(const w of ctx.known)if((w.deliveries||0)>(best&&best.deliveries||0))best=w;
+  let genome=q.genome;
+  try{const child=best?crossover(q.genome,best.genome):q.genome;genome=mutateGenome(child,.13,.55).genome;}catch(e){try{genome=JSON.parse(JSON.stringify(q.genome));}catch(_e){}}
+  const pos=broodPositionNear(q),b={type:rec.type,progress:rec.progress||0,genome,time:0,isQueen:!!rec.isQueen,faction:q.faction,parents:[q.name||q.id,best?best.id:'-'],parentGenomes:[q.genome&&q.genome.id||'-',best&&best.genome&&best.genome.id||'-'],x:pos.x,y:pos.y,hunger:0};
+  q.eggsLaid=(q.eggsLaid||0)+1;if(!q.children)q.children=[];if(genome&&genome.id)q.children.push(genome.id);if(q.children.length>24)q.children.shift();cache.set(rec.id,b);return b;
+}
+function _offlineHatchBrood(b){
+  if(!b||!b.genome)return false;const anchor=queens[0]||storagePos();
+  if(b.isQueen){
+    const faction=b.faction!==undefined?b.faction:(queens[0]?queens[0].faction:0),meta=genPersonalName({faction,role:'REINA',affinity:'NODRIZA',caste:'media',parents:[b.genome.id],genome:b.genome,isQueen:true,rank:'LÍDER',ageDays:0,idCode:'Q'+(queens.length+1)+'-'+Math.random().toString(36).slice(2,4).toUpperCase()});
+    const q=ensureQueenMeta({x:(anchor.x||pantryPos.x)+(Math.random()-.5)*16,y:(anchor.y||pantryPos.y)+(Math.random()-.5)*8,genome:b.genome,progress:0,state:'GRÁVIDA',age:0,maxAge:getQueenMaxAge(),generation:gen+1,faction,health:100,name:meta.name,personalName:meta.name,nameMeaning:meta.meaning,nameStage:meta.stage});
+    queens.push(q);enforceQueenCap('offline royal brood');queen=queens[0]||q;pushEvent('birth','👑 A queen hatched while you were away',meta.name);return true;
+  }
+  if(workers.length>=getMaxPopulation())return false;
+  const ant=makeAnt(b.genome,{x:(anchor.x||pantryPos.x)+(Math.random()-.5)*18,y:(anchor.y||pantryPos.y)+(Math.random()-.5)*10},{faction:b.faction!==undefined?b.faction:(queens[0]?queens[0].faction:0)});
+  if(gen>=2){ant.digNeeded=Math.max(7,ant.digNeeded-Math.floor(gen*.42)-Math.floor(colonyIQ/55));ant.fitness+=gen*.06+colonyIQ*.002;}
+  workers.push(ant);if(gen===0&&(ant.genome&&ant.genome.gen||0)>=1){gen=1;lastGenTime=time;colonyIQ=Math.max(colonyIQ,103);}stats.xp+=20;pushEvent('birth','🐣 '+ant.id+' hatched while you were away','GEN'+(ant.genome&&ant.genome.gen||0));return true;
+}
+function _offlineApplyBrood(result,ctx){
+  const byId=new Map(),generated=new Map();ctx.existingBrood.forEach((b,i)=>byId.set('existing-'+i,b));
+  const hatchEvents=result.events.filter(e=>e.kind==='hatch'),laidAt=new Map(result.events.filter(e=>e.kind==='egg_laid').map(e=>[e.id,e.atGameUnits])),survivors=[];
+  for(const rec of result.brood){const existing=byId.get(rec.id);let b=existing;if(!b)b=_offlineBuildGeneratedBrood(rec,ctx,generated);if(!b)continue;b.type=rec.type;b.progress=rec.progress;b._capWaiting=!!rec.waiting;b.time=existing?(b.time||0)+result.totalGameUnits:Math.max(0,result.totalGameUnits-(laidAt.get(rec.id)||0));survivors.push(b);}
+  brood=survivors;let workerHatches=0,queenHatches=0;
+  for(const e of hatchEvents){let b=byId.get(e.id);if(!b)b=_offlineBuildGeneratedBrood(e.record,ctx,generated);if(!b)continue;if(_offlineHatchBrood(b)){if(b.isQueen)queenHatches++;else workerHatches++;}}
+  for(const qr of result.queens){const q=ctx.queenRefs.get(qr.id);if(q){q.progress=qr.progress;q._royalNext=!!qr.royalNext;}}
+  return {workerHatches,queenHatches,waiting:result.brood.filter(b=>b.waiting).length};
+}
+function _offlineCompleteDig(group){
+  if(!group||!soil[group.r]||soil[group.r][group.c]!==1||!soilType[group.r]||soilType[group.r][group.c]!==group.type)return false;
+  const mt=group.type;soil[group.r][group.c]=0;soilType[group.r][group.c]=0;markSoilDirty(group.c,group.r);digs++;stats.xp+=8;colonyFitness+=.35;
+  let kind='',chance=0,amount=1;if(mt===8||mt===9||mt===10){kind=mt===8?'cobre':mt===9?'hierro':'oro';const pick=group.members.some(w=>w.tool==='pick');amount=1+(pick?1:0)+(colonyIQ>132?1:0);chance=1;}
+  else if(mt===2){kind='clay';chance=.72;}else if(mt===3){kind='sand';chance=.62;}else if(mt===4){kind='stone';chance=.55;}else if(mt===1){kind='fiber';chance=.22;}
+  if(kind&&worldHash(worldSeed,group.c,group.r,173)<chance)economyLedger.creditMaterial(kind,amount,'offline excavation');
+  if(worldHash(worldSeed,group.c,group.r,174)<.52)addWaste(group.c*CELL+8,group.r*CELL+8,mt);
+  for(const w of group.members){if(w.digTarget&&w.digTarget.c===group.c&&w.digTarget.r===group.r){w.digTarget=null;w.digProgress=0;w.state='EXPLORAR';recordJobExperience(w,'dig',1);}}
+  checkRewardDiscovery(group.c,group.r);return true;
+}
+function _offlineApplyDigs(result,ctx){let completed=0;for(const d of result.digs||[])if(d.completed&&_offlineCompleteDig(ctx.dig.groups.get(d.id)))completed++;if(completed)checkLevelUp();return completed;}
+function _applyOfflineAfterLoad(now){
+  if(typeof computeOfflineWindow!=='function'||typeof advanceOffline!=='function'||!_loadedSaveSavedAt)return null;
+  const stamp=String(worldSeed)+'|'+String(_loadedSaveSavedAt);
+  if(_offlineAppliedStamps.has(stamp)||(_lastOfflineReceipt&&Number(_lastOfflineReceipt.sourceSavedAt)===_loadedSaveSavedAt))return null;
+  const ctx=_offlineContext(Number(now)||Date.now());if(ctx.window.creditedMs<=0){_lastOfflineReport={v:1,window:ctx.window,skipped:true};window.__lastOfflineReport=_lastOfflineReport;return _lastOfflineReport;}
+  _offlineAppliedStamps.add(stamp);if(_offlineAppliedStamps.size>64)_offlineAppliedStamps.delete(_offlineAppliedStamps.values().next().value);
+  const result=advanceOffline(ctx.input),projectDelta=_offlineApplyProject(result,ctx),foodDelta=_offlineApplyFood(result,ctx),broodDelta=_offlineApplyBrood(result,ctx),structuresCompleted=_offlineAdvanceVisualStructures(result.totalGameUnits);
+  let slabCompleted=false;if(result.slab&&umbral){umbral.hp=Math.max(0,Number(result.slab.hp)||0);if(result.slab.completed){slabCompleted=abrirUmbral();}else markSoilDirty();}
+  const digsCompleted=_offlineApplyDigs(result,ctx);
+  time+=result.totalGameUnits;day=Math.floor(time/DAY_LENGTH)+1;
+  _lastOfflineReceipt={v:1,sourceSavedAt:_loadedSaveSavedAt,appliedAt:ctx.now,creditedMs:ctx.window.creditedMs,capHours:ctx.window.capHours};
+  _lastOfflineReport={...result,applied:{food:foodDelta,brood:broodDelta,project:projectDelta,structuresCompleted,slabCompleted,digsCompleted},receipt:{..._lastOfflineReceipt}};window.__lastOfflineReport=_lastOfflineReport;
+  const hours=(ctx.window.creditedMs/3600000).toFixed(ctx.window.creditedMs<3600000?1:0),changes=broodDelta.workerHatches+broodDelta.queenHatches+digsCompleted+structuresCompleted+(projectDelta.completed?1:0)+(slabCompleted?1:0);
+  pushEvent('evo','⏳ '+hours+'h of offline progress',changes+' completed events · bottleneck: '+String(result.bottleneck||'none').replace(/_/g,' '));
+  tlog('[offline] '+hours+'h · '+result.iterations+' aggregate events · '+result.bottleneck);
+  try{serializeSave(true);}catch(e){console.warn('offline save receipt',e);}
+  return _lastOfflineReport;
+}
+window.__antOffline={apply:_applyOfflineAfterLoad,flags:_offlineProgressFlags,last:()=>_lastOfflineReport};
+
 // Entry from a saved farm is explicit: title menu -> CONTINUE or LOAD. Reload never auto-resumes.
 function topoResumeGame(opts){
   const silent = opts && opts.silent;
@@ -10969,11 +11208,8 @@ function topoResumeGame(opts){
     ['splashScreen','mainMenu','createSizeScreen','loadScreen','settingsScreen','creditsScreen','onboardingModal','onboardingLegacy','worldGenScreen'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display='none'; });
     localStorage.setItem(LS_INGAME,'1');
   }catch(e){}
-  // progreso offline a ritmo normal (sin acelerar)
-  try{
-    const meta=topoHasSave();
-    if(meta && meta.savedAt){ const add=Math.min(DAY_LENGTH*2.2, (Date.now()-meta.savedAt)*0.06); if(add>DAY_LENGTH*0.02){ time+=add; day=Math.floor(time/DAY_LENGTH)+1; } }
-  }catch(e){}
+  // Una sola aplicación agregada, ya con mundo, economía, cría y trabajos deserializados.
+  try{_applyOfflineAfterLoad(Date.now());}catch(e){console.warn('offline aggregate',e);}
   try{ detectarEntrada(); }catch(e){ console.warn('entrada', e.message); } // el sitio elegido se respeta
   try{ checkWorldExpansion(); }catch(e){}
   try{ clampView(); updateColonyUI(); _updateBothAntCounts(); }catch(e){}
@@ -10986,7 +11222,16 @@ window.topoResumeGame=topoResumeGame;
 let _lastAutoSave=0;
 setInterval(()=>{ try{ if(_topoHasWorld){ if(serializeSave()) _lastAutoSave=Date.now(); } }catch(e){} }, 4200);
 window.addEventListener('beforeunload', ()=>{ try{ if(_topoHasWorld){ localStorage.setItem(LS_INGAME,'1'); serializeSave(); }else localStorage.removeItem(LS_INGAME); }catch(e){} });
-document.addEventListener('visibilitychange', ()=>{ if(document.hidden){ try{ serializeSave(); }catch(e){} } else { try{ last=performance.now(); lastRealWall=Date.now(); }catch(e){} } });
+document.addEventListener('visibilitychange', ()=>{
+  if(document.hidden){
+    try{if(_topoHasWorld&&serializeSave(true)){const meta=topoHasSave();_offlineHiddenSavedAt=meta&&meta.savedAt||0;}}catch(e){}
+  }else{
+    try{
+      if(_topoHasWorld&&_offlineHiddenSavedAt){_loadedSaveSavedAt=_offlineHiddenSavedAt;_offlineHiddenSavedAt=0;_applyOfflineAfterLoad(Date.now());}
+      last=performance.now();lastRealWall=Date.now();
+    }catch(e){console.warn('offline visibility resume',e);}
+  }
+});
 window.addEventListener('pagehide', ()=>{ try{ serializeSave(); }catch(e){} });
 // borrar partida (consola o boton de la pantalla de carga)
 window._clearSave=()=>{ try{ localStorage.removeItem(SAVE_KEY); localStorage.removeItem(LS_ALIVE); localStorage.removeItem(LS_INGAME); localStorage.removeItem('antfarm_lastReal'); localStorage.removeItem('antfarm_time'); }catch(e){} location.reload(); };
@@ -11539,6 +11784,7 @@ setTimeout(_updateBothAntCounts, 1800);
 // lo mismo dos veces, y el detalle no se apila encima del perfil de una hormiga (uno u otro).
 function _ecoTxt(id, v){ const e=document.getElementById(id); if(e && e.textContent!==String(v)) e.textContent=String(v); }
 let _invAbierto=false, _invResizeCableado=false, _invKeysCableado=false;
+let _invScrollUntil=0, _invPaintTimer=0;
 function updateEcoHud(){
   try{
     _ecoTxt('velFoodCount', Math.max(0, Math.floor(economyLedger.food)));
@@ -11590,6 +11836,11 @@ function _colonyProjectsHtml(){
 }
 function pintarInventario(){
   const body=document.getElementById('invBody'); if(!body) return;
+  // A delivery may refresh this sheet while a real wheel gesture is still being routed by Chromium.
+  // Replacing innerHTML in that instant cancels the gesture halfway and leaves the lower rows unreachable
+  // until the player wheels again. Let the gesture settle, then perform one coalesced repaint.
+  const wait=_invScrollUntil-performance.now();
+  if(_invAbierto&&wait>0){clearTimeout(_invPaintTimer);_invPaintTimer=setTimeout(()=>{_invPaintTimer=0;if(_invAbierto)pintarInventario();},Math.ceil(wait)+16);return;}
   const celdas=storageCells(), p=storagePos(), sitio=storageStructure(false),pressure=storagePressureSnapshot(),cap=pressure.capacity;
   const miel=Math.max(0, Math.floor(pressure.protected)),desborde=Math.max(0,Math.floor(pressure.overflow));
   const lleno=cap>0?Math.max(0, Math.min(100, Math.round(pressure.protected/cap*100))):0;
@@ -11746,6 +11997,10 @@ function initInventarioHud(){
   const sh=document.getElementById('invSheet');
   if(sh && !sh.dataset.wired){ sh.dataset.wired='1'; sh.onclick=(e)=>{ if(e.target===sh) cerrarInventario(); }; }
   const body=document.getElementById('invBody');
+  if(body&&!body.dataset.scrollGuard){
+    body.dataset.scrollGuard='1';const hold=()=>{_invScrollUntil=performance.now()+300;};
+    body.addEventListener('wheel',hold,{passive:true});body.addEventListener('scroll',hold,{passive:true});
+  }
   if(body&&!body.dataset.projectWired){
     body.dataset.projectWired='1';body.addEventListener('click',e=>{
       const reserve=e.target.closest&&e.target.closest('[data-reserve-kind][data-reserve-delta]');

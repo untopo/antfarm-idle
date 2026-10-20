@@ -133,8 +133,12 @@ const BARRIDO = `(raiz)=>{
   // the real scroll range instead of a stale pixel guess; Chrome still has to route that gesture to the
   // panel and clamp it at the bottom (we never assign scrollTop here).
   const recorrido=await page.evaluate(`(()=>{const b=document.getElementById('invBody');return b.scrollHeight-b.clientHeight+120})()`);
+  // A real colony can deliver food while the wheel gesture is still in flight. Force those live refreshes:
+  // rebuilding the sheet must not cancel the gesture or throw the player hundreds of pixels from the end.
+  await page.evaluate(()=>{ window.__invScrollStress=setInterval(()=>{ try{ worldMaterials.stone=worldMaterials.stone===71?72:71;pintarInventario(); }catch(e){} },20); });
   await page.mouse.wheel({ deltaY: recorrido });
   await sleep(320);
+  await page.evaluate(()=>{clearInterval(window.__invScrollStress);delete window.__invScrollStress;});
   const despues = await page.evaluate(`(()=>{
     const b=document.getElementById('invBody'), sh=document.getElementById('invSheet');
     const rb=b.getBoundingClientRect(), rs=sh.getBoundingClientRect();
