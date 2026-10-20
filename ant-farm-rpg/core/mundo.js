@@ -108,6 +108,26 @@ function worldBiomeAt(seed,c,depth){
   return WORLD_BIOMES.stone_fault;
 }
 
+// Caves uncovered behind a slab belong to the world seed too. Using Math.random here used to make the
+// same saved world reveal a different room and could erase almost an entire ore seam on one run. Loot
+// choice may still be discovered later, but the physical void and its candidate sites never reroll.
+function worldCavesForRange(seed,cols,oldRows,newRows){
+  const s=worldSeed32(seed),w=Math.max(12,Math.floor(Number(cols)||12));
+  const lo=Math.max(0,Math.floor(Number(oldRows)||0)),hi=Math.max(lo+3,Math.floor(Number(newRows)||lo+3));
+  const roomSpan=Math.max(1,hi-lo-2),count=1+Math.floor(worldHash(s,lo,hi,1601)*2),out=[];
+  for(let i=0;i<count;i++){
+    const rx=5+Math.floor(worldHash(s,lo+i,hi,1602)*Math.max(1,w-10));
+    const ry=Math.min(hi-3,lo+1+Math.floor(worldHash(s,lo+i,hi,1603)*roomSpan));
+    const rxr=3+Math.floor(worldHash(s,lo+i,hi,1604)*3),ryr=2+Math.floor(worldHash(s,lo+i,hi,1605)*2),loot=[];
+    for(let a=0;a<6;a++) loot.push({
+      c:rx-3+Math.floor(worldHash(s,lo+i*11+a,hi,1610+a)*7),
+      r:Math.min(hi-2,ry+1+Math.floor(worldHash(s,lo+i*13+a,hi,1620+a)*3))
+    });
+    out.push({rx,ry,rxr,ryr,loot});
+  }
+  return out;
+}
+
 const WORLD_STYLE_PALETTES=[
   ['#9b3f2b','#d58a4f','#39251e'], ['#486f78','#89a9a4','#293d42'], ['#72518c','#b08ac1','#2b2134'],
   ['#8a7438','#c7ad63','#352e1e'], ['#4f7650','#88a96f','#263628']
@@ -185,5 +205,5 @@ function worldSitesForRange(profile,cols,startDepth,endDepth){
 
 if(typeof module!=='undefined'&&module.exports){
   module.exports={WORLD_DEPOSITS,WORLD_BIOMES,worldSeed32,worldMix32,worldHash,worldNoise2,worldBandAt,
-    worldGeologyHost,worldDepositAt,worldBiomeAt,createWorldProfile,worldSitesForRange};
+    worldGeologyHost,worldDepositAt,worldBiomeAt,worldCavesForRange,createWorldProfile,worldSitesForRange};
 }

@@ -905,27 +905,23 @@ function expandWorld(addRows, silencioso){
       }
     }
   }
-  // LA CUEVA: el hueco vacio ya es premio (Core Keeper, Dwarf Fortress). Una o dos camaras grandes en la
-  // banda nueva, con botin dentro - asi «bajar» se ve como un sitio, no como un numero.
-  const _nc=1+((Math.random()*2)|0);
-  for(let i=0;i<_nc;i++){
-    const rx=5+Math.floor(Math.random()*Math.max(1,COLS-10));
-    const ry=Math.min(newRows-3, oldRows+1+Math.floor(Math.random()*Math.max(1,newRows-oldRows-2)));
-    const rxr=3+Math.floor(Math.random()*3), ryr=2+Math.floor(Math.random()*2);
+  ROWS=newRows;
+  // LA CUEVA: el hueco vacio ya es premio (Core Keeper, Dwarf Fortress). Its shape is part of the
+  // world seed, so reopening the same depth cannot reroll the room or accidentally wipe a whole seam.
+  // Mineral blocks survive as exposed inclusions instead of disappearing for free inside the void.
+  const _caves=worldCavesForRange(worldSeed,COLS,oldRows,newRows);
+  for(const cave of _caves){
+    const {rx,ry,rxr,ryr}=cave;
     for(let y=ry-ryr;y<=ry+ryr;y++){
       if(y<=SURFACE_ROW+1||y>=newRows-1) continue;
       for(let x=rx-rxr;x<=rx+rxr;x++){
         if(x<1||x>=COLS-1||!soil[y]) continue;
-        const dx=(x-rx)/rxr, dy=(y-ry)/ryr;
-        if(dx*dx+dy*dy<=1 && soil[y][x]===1){ soil[y][x]=0; if(soilType[y]) soilType[y][x]=0; markSoilDirty(x,y); }
+        const dx=(x-rx)/rxr,dy=(y-ry)/ryr,t=soilType[y]&&soilType[y][x];
+        if(dx*dx+dy*dy<=1&&soil[y][x]===1&&!_isDepositType(t)){soil[y][x]=0;if(soilType[y])soilType[y][x]=0;markSoilDirty(x,y);}
       }
     }
-    for(let a=0;a<6;a++){
-      const cc=rx-3+Math.floor(Math.random()*7), rr=ry+1+Math.floor(Math.random()*3);
-      if(spawnSmartTreasure(cc,rr)) break;
-    }
+    for(const p of cave.loot) if(spawnSmartTreasure(p.c,p.r))break;
   }
-  ROWS=newRows;
   materializeWorldHistory(oldRows,newRows-2);
   // El alto lógico, el lienzo visible y el cache tienen que crecer juntos. Antes solo crecían las
   // matrices: H seguía en la fila de la primera losa, la física sujetaba a todas en y=H-12 y la
@@ -3444,6 +3440,58 @@ function nearestPhero(from){
   }
   return bestGuide||bestRecruit||best;
 }
+let _surfaceTickWorkforce=null,_surfaceTickChoice=undefined;
+function _surfaceExcursionLimit(workerCount){
+  const n=Math.max(0,Math.floor(Number(workerCount)||0));
+  if(n<6)return 0;
+  return n<10?1:Math.max(1,Math.floor(n/4));
+}
+function _surfaceExcursionFood(ant){
+  let best=null,bestD=Infinity;
+  for(const f of foods){
+    if(!f||f.y>=SURFACE_Y||!isFoodReachable(f,ant))continue;
+    const d=dist(ant,f);if(d<=CELL*22&&d<bestD){best=f;bestD=d;}
+  }
+  return best;
+}
+function _surfaceExcursionScore(ant){
+  const t=ant.traits||{},e=_jobBook(ant),p=antProfession(ant),age=Math.max(0,(ant.age||0)/DAY_LENGTH);
+  let score=(t.exploracion||40)*.52+(t.recoleccion||40)*.18;
+  score+=Math.log1p(Math.max(0,e.explore||0))*15+Math.log1p(Math.max(0,e.forage||0))*10;
+  score+=p==='EXPLORADORA'?30:p==='RECOLECTORA_EXTERIOR'?18:0;
+  score+=ant.affinity==='EXPLORADORA'?10:ant.affinity==='RECOLECTORA'?5:0;
+  score+=Math.min(10,age*6)+(ant.health||100)*.025-(ant.fatigue||0)*.42;
+  // Prefer an equally capable worker already near the entrance. The ID term makes ties deterministic.
+  score-=Math.max(0,(ant.y||SURFACE_Y)-SURFACE_Y)*.018;
+  for(const ch of String(ant.id||''))score+=ch.charCodeAt(0)*.000001;
+  return score;
+}
+function _surfaceExcursionChoice(workforce){
+  const known=Array.isArray(workforce)?workforce:workers.filter(w=>_entityInKnownWalkspace(w));
+  const limit=_surfaceExcursionLimit(known.length);
+  if(!limit||economyLedger.food<=4)return null;
+  // A reservation counts from assignment, not only after she is six cells away. Otherwise every worker
+  // updated in the same frame could reserve the same supposedly single expedition.
+  const active=known.filter(w=>w._excursion&&(w.targetFood||w.food)).length;
+  if(active>=limit)return null;
+  let best=null,bestScore=-Infinity,bestFood=null;
+  for(const w of known){
+    if(!w||w.isQueen||w.food||w.targetFood||w.digTarget||w.wasteTarget||w.projectCargo||w.buildTarget)continue;
+    if(w.state!=='EXPLORAR'&&w.state!=='BUSCAR')continue;
+    if((w.age||0)<=DAY_LENGTH*.35||(w.fatigue||0)>=42||(w.health||0)<=35||(w._excursionHasta||0)>=time)continue;
+    const food=_surfaceExcursionFood(w);if(!food)continue;
+    const score=_surfaceExcursionScore(w);
+    if(score>bestScore){best=w;bestScore=score;bestFood=food;}
+  }
+  return best?{ant:best,food:bestFood,score:bestScore,active,limit}:null;
+}
+function _beginSurfaceExcursion(ant,workforce,preselected){
+  const choice=preselected===undefined?_surfaceExcursionChoice(workforce):preselected;
+  if(!choice||choice.ant!==ant||!workers.includes(ant)||!foods.includes(choice.food)||!isFoodReachable(choice.food,ant))return null;
+  ant.targetFood=choice.food;ant._excursion=true;ant._excursionHasta=time+DAY_LENGTH*.9;
+  if(Math.random()<.22)pushToast(ant.x,ant.y-12,'\u{1F9ED}','#8fbf5f',1.3);
+  return choice;
+}
 function nearestWorker(from,excludeId){
   let best=null,bd=Infinity;
   for(const w of workers){
@@ -4721,7 +4769,15 @@ function showAntProfile(ant){
   hudStyle('profileFactionDot', facCol);
   const ageD=(ant.age/DAY_LENGTH).toFixed(1), maxD=(ant.maxAge/DAY_LENGTH).toFixed(1);
   hudText('profileId', `${antDisplayName(ant)} (${ant.id}) - ${ageD}d / ${maxD}d - ❤ ${Math.floor(ant.health)}%${ant.isQueen?' 👑':''}`); document.getElementById('profileId').title=ant.nameMeaning||'';
-  hudText('profileRole', `${ant.role} - F${ant.faction} - GEN-${ant.genome.gen} - ${ant.genome.id}`);
+  const _roleLine=`${ant.role} · F${ant.faction} · G${ant.genome.gen} · ${ant.genome.id}`,_roleEl=document.getElementById('profileRole');
+  hudText('profileRole',_roleLine);_roleEl.title=_roleLine;
+  const _fitRoleLine=()=>{
+    _roleEl.style.fontSize='17px';
+    if(_roleEl.clientWidth>0&&_roleEl.scrollWidth>_roleEl.clientWidth){
+      const px=Math.max(14,17*_roleEl.clientWidth/_roleEl.scrollWidth*.97);_roleEl.style.fontSize=px.toFixed(1)+'px';
+    }
+  };
+  _fitRoleLine();
   // mood icons
   const moodEl=document.getElementById('profileMoodIcons');
   moodEl.innerHTML='';
@@ -4833,7 +4889,7 @@ function showAntProfile(ant){
   const prevAnt = modal.getAttribute('data-ant');
   if(isOpen && prevAnt===ant.id){
     // misma hormiga, solo refrescar y pulso
-    modal.style.transform='translateY(0) scaleY(1)'; modal.style.opacity='1';
+    modal.style.transform='translateY(0) scaleY(1)';modal.style.opacity='1';_fitRoleLine();
     return;
   }
   if(isOpen){
@@ -4851,7 +4907,7 @@ function showAntProfile(ant){
   modal.style.transformOrigin='top';
   modal.style.transform='translateY(-12px) scaleY(0)';
   modal.style.opacity='0';
-  modal.style.display='block';
+  modal.style.display='block';_fitRoleLine();
   modal.setAttribute('data-open','1');
   modal.setAttribute('data-ant', ant.id);
   void modal.offsetWidth;
@@ -4969,7 +5025,9 @@ function updateAnt(ant, dt){
   // Un objetivo deja de existir para la colonia en cuanto una pared corta su componente. No basta con
   // que el objeto siga dentro de `foods`: perseguir su coordenada mantendría a la obrera mordiendo roca
   // y un tándem podría transmitir conocimiento de una cavidad que nadie ha conectado.
-  const _knownWorkforce=workers.filter(w=>_entityInKnownWalkspace(w));
+  // The main tick computes this once for the whole colony. Standalone calls (tests and debug tools)
+  // retain the exact behaviour by falling back to a local snapshot.
+  const _knownWorkforce=(typeof _surfaceTickWorkforce!=='undefined'&&_surfaceTickWorkforce)||workers.filter(w=>_entityInKnownWalkspace(w));
   if(ant.targetFood&&(!foods.includes(ant.targetFood)||!isFoodReachable(ant.targetFood,ant))){
     const mate=ant.tandemPartner&&workers.find(w=>w.id===ant.tandemPartner);
     ant.targetFood=null; ant._routeNext=null; ant._routeUntil=0;
@@ -5879,35 +5937,11 @@ function updateAnt(ant, dt){
     return;
   }
   if(ant.targetFood&&(!foods.includes(ant.targetFood)||!isFoodReachable(ant.targetFood,ant))) ant.targetFood=null;
-  // EXCURSION (Topo: «las hormigas tienen que ser aventureras, no se si es su personalidad actual»). Subir al
-  // prado no puede depender solo del hambre: medido con la colonia a 27 obreras y 197 raciones en el
-  // almacen, `enSuperficie 0 de 27` y 19 gotas de miel tiradas por el cesped - una colonia que come bien ya
-  // no explora nunca, se queda abajo y deja el techo lleno de migajas. Las ganas las pone el rasgo EXPL
-  // (18..100) y el oficio; un cupo de una de cada cuatro evita dejar el nido vacio.
-  if(!ant.isQueen && !ant.food && !ant.targetFood && !ant.digTarget && !ant.wasteTarget
-     && economyLedger.food > 4 && (ant._excursionHasta||0) < time
-     // ...y es una salida de ADULTA, no de fundadora: con la colonia corta de manos o la hormiga cansada, la
-     // excursion cuesta la colonia entera (medido: la semilla 2 se apagaba al dia 4 con 8 obreras despues de
-     // mandarla a una gota a 200 px, cuando antes llegaba al dia 21). Solo sale la que sobra, la que esta
-     // fresca, y hasta una gota que se pueda traer en un rato.
-     && _knownWorkforce.length>=10&&ant.fatigue<42&&(ant.age||0)>DAY_LENGTH*.35){
-    let _fuera=0;
-    for(const _w of _knownWorkforce){if(_w._excursion&&dist(_w,storagePos())>CELL*6) _fuera++;}
-    const _cupo=Math.max(1,Math.floor(_knownWorkforce.length/4));
-    const _ganas = (ant.traits && ant.traits.exploracion ? ant.traits.exploracion : 40)
-                 + (antProfession(ant)==='EXPLORADORA'?32:antProfession(ant)==='RECOLECTORA_EXTERIOR'?18:0)
-                 + (ant.affinity==='EXPLORADORA'? 12:0) + (colonyIQ>140? 10:0);
-    if(_fuera < _cupo && _ganas >= 70){
-      let _fx=null, _fd=Infinity;
-      for(const _x of foods){ if(!isFoodReachable(_x,ant)) continue; const _dd=dist(ant,_x); if(_dd<_fd){ _fd=_dd; _fx=_x; } }
-      if(_fx && _fd > CELL*22) _fx=null;   // demasiado lejos para un paseo: que la recoja otra u otro dia
-      if(_fx){
-        ant.targetFood=_fx; ant._excursion=true; ant._excursionHasta = time + DAY_LENGTH*0.9;
-        if(Math.random()<0.22) pushToast(ant.x, ant.y-12, '\u{1F9ED}', '#8fbf5f', 1.3);
-      } else ant._excursionHasta = time + DAY_LENGTH*0.3;   // no hay nada arriba: lo intenta mas tarde
-    }
-  }
-  if(ant._excursion && !ant.targetFood && dist(ant, storagePos()) < 24) ant._excursion=false;
+  // A voluntary surface trip becomes visible while the colony is still small. It is not a manual job:
+  // one rested adult is selected from traits, learned work, age and the colony's current need. Hunger
+  // still overrides this below and may mobilise more workers; the voluntary slot never empties the nest.
+  _beginSurfaceExcursion(ant,_knownWorkforce,typeof _surfaceTickChoice!=='undefined'?_surfaceTickChoice:undefined);
+  if(ant._excursion&&!ant.targetFood&&dist(ant,storagePos())<24)ant._excursion=false;
   // Topo: despensa vacia = hay que salir a por miel, aunque el manjar este fuera del radio de los
   // sensores (90px). Las fundadoras no tienen rol RECOLECTORA hasta que la colonia evoluciona, asi
   // que sin este impulso se quedaban en el tunel y la colonia nunca juntaba los 3 de la despensa
@@ -8583,8 +8617,13 @@ function tickStep(dt){
       // depresión severa puede llevar a muerte
       if(w.mood.sadness>0.92 && w.mood.joy<0.12 && Math.random()<0.0004) handleDeath(w,'tristeza');
     }
-    // actualizar cada hormiga (si sigue viva)
-    for(let w of [...workers]) updateAnt(w, dt);
+    // Update the colony from one shared connected-workforce snapshot. Surface selection ranks the whole
+    // group once per simulation step; recomputing that O(workers × food) vote inside every ant made deep,
+    // mature colonies pay it dozens of times per frame.
+    _surfaceTickWorkforce=workers.filter(w=>_entityInKnownWalkspace(w));
+    _surfaceTickChoice=_surfaceExcursionChoice(_surfaceTickWorkforce);
+    for(let w of [...workers]) updateAnt(w,dt);
+    _surfaceTickWorkforce=null;_surfaceTickChoice=undefined;
     updateSociety(dt);
     // Complex structures animate from age. The founding store is different: only recorded worker effort
     // advances its buildProgress, so leaving the game running without builders cannot create it.
@@ -10708,7 +10747,7 @@ if(_topoHasWorld){
 
 // === SAVE PERSISTENTE - la granja sobrevive a recargar ===
 const SAVE_KEY='antFarm_fullSave_v2';
-const SAVE_VER='20261020i';
+const SAVE_VER='20261020j';
 const LS_ALIVE='antfarm_worldAlive';
 const LS_INGAME='antfarm_inGame';
 // grids a string de digitos: 8x menos bytes que JSON de arrays (BIG 96x48 entra en localStorage)

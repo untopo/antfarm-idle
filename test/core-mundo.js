@@ -68,6 +68,11 @@ for(let d=0;d<35;d++) for(let x=0;x<64;x++){
 }
 check(stable,'abrir profundidad nueva no rerrollea ninguna celda anterior');
 
+const cavesA=M.worldCavesForRange(424242,48,28,37),cavesB=M.worldCavesForRange(424242,48,28,37);
+check(JSON.stringify(cavesA)===JSON.stringify(cavesB),'la misma losa revela siempre la misma cueva física');
+check(JSON.stringify(cavesA)!==JSON.stringify(M.worldCavesForRange(424243,48,28,37)),'otra semilla cambia las cámaras de la banda nueva');
+check(cavesA.length>=1&&cavesA.length<=2&&cavesA.every(q=>q.rx>=1&&q.rx<47&&q.ry>=29&&q.ry<36&&q.loot.length===6),'las cámaras y candidatos de botín quedan dentro de la ampliación');
+
 const profile=M.createWorldProfile(778899,96);
 const p2=M.createWorldProfile(778899,96);
 check(JSON.stringify(profile)===JSON.stringify(p2)&&profile.styles.length>=2,'el perfil histórico oculto es determinista y tiene estilos coherentes');

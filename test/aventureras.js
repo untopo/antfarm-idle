@@ -63,14 +63,18 @@ window._gota = () => {
     lejosDelPozo:Math.round(Math.abs(f.x-(CENTER_COL*CELL+8))) });
 };
 window._foto = () => {
-  let fuera=0, maxBlk=0, obj=0;
+  let fuera=0, maxBlk=0, obj=0, worst=null; const over={};
   for(const w of workers){
     if(w.y < SURFACE_Y) { fuera++; }
-    if((w.blocked||0) > maxBlk) maxBlk = w.blocked;
+    if((w.blocked||0) > maxBlk){ maxBlk=w.blocked||0; worst=w; }
+    if((w.blocked||0)>60) over[w.state]=(over[w.state]||0)+1;
     if(w.targetFood) obj++;
   }
+  const wd=worst?{id:worst.id,state:worst.state,x:Math.round(worst.x),y:Math.round(worst.y),
+    water:Math.round(waterAtPixel(worst.x,worst.y)*100)/100,target:!!worst.targetFood,food:!!worst.food,
+    dig:!!worst.digTarget,project:!!worst.projectCargo}:null;
   return JSON.stringify({ dia:Math.floor(time/DAY_LENGTH)+1, ob:workers.length, fuera:fuera, obj:obj,
-    maxBlk:Math.round(maxBlk), miel:foods.length, desp:Math.round(colonyFood*10)/10, atascos:antsAtascados });
+    maxBlk:Math.round(maxBlk), worst:wd, over, miel:foods.length, desp:Math.round(colonyFood*10)/10, atascos:antsAtascados });
 };
 `, ctx);
 
@@ -86,10 +90,11 @@ const gota = JSON.parse(sb._gota());
 ok(gota.pisable, 'una gota caida lejos del pozo es alcanzable',
   `a ${gota.lejosDelPozo} px del agujero, en (${gota.x},${gota.y})`);
 
-const DIAS = 6, TICKS_DIA = 460, MUESTRA = 46;
+const DIAS = Math.max(1, Number(process.env.AVENTURERAS_DIAS || 6)), TICKS_DIA = 460, MUESTRA = 46;
+const SEMILLAS = String(process.env.AVENTURERAS_SEEDS || '1,2,3').split(',').map(Number).filter(Number.isFinite);
 const fueraDias = [];
 const shareDias = [];
-for (const semilla of [1, 2, 3]) {
+for (const semilla of SEMILLAS) {
   vm.runInContext(`
     (function(s){ let a=s>>>0; Math.random=function(){ a=(a+0x6D2B79F5)>>>0; let t=a; t=Math.imul(t^(t>>>15),t|1); t^=t+Math.imul(t^(t>>>7),t|61); return ((t^(t>>>14))>>>0)/4294967296; }; })(${semilla});
     topoCreateFreshWorld(48,28); paused=false; gameSpeed=64; antsAtascados=0;
@@ -97,15 +102,17 @@ for (const semilla of [1, 2, 3]) {
   let t = 1;
   const diasFuera = new Set();
   vm.runInContext('window._arribaTicks=0; window._ticks=0;', ctx);
-  let peor = 0, muestras = 0, rescates = 0, ult = null;
+  let peor = 0, peorDetalle = null, muestras = 0, rescates = 0, ult = null;
   for (let k = 0; k < DIAS * TICKS_DIA; k++) {
     sb.performance.now = () => t; t += 42; sb._paso();
     if (k % MUESTRA !== MUESTRA - 1) continue;
     const f = JSON.parse(sb._foto());
     muestras++; ult = f;
     if (f.fuera > 0) diasFuera.add(f.dia);
-    peor = Math.max(peor, f.maxBlk);
+    if(f.maxBlk>peor){peor=f.maxBlk;peorDetalle={...f.worst,over:f.over,dia:f.dia};}
   }
+  // antsAtascados is a cumulative count of rescue digs, not a live queue or a blocked-duration metric.
+  // Keep it labelled as cumulative so a large healthy-colony total is never mistaken for one trapped ant.
   rescates = ult ? ult.atascos : 0;
   const comp = JSON.parse(vm.runInContext('JSON.stringify({a:window._arribaTicks, t:window._ticks})', ctx));
   const share = comp.t ? comp.a / comp.t : 0;
@@ -113,8 +120,9 @@ for (const semilla of [1, 2, 3]) {
   fueraDias.push(diasFuera.size);
   shareDias.push(semillaShare);
   console.log(`  semilla ${semilla}: ${(semillaShare*100).toFixed(2)}% del tiempo-hormiga arriba del cesped · ${diasFuera.size}/${DIAS} dias con alguien arriba · peor racha de golpes ${peor} · `
-    + `rescates ${rescates} · dia ${ult ? ult.dia : '?'}: ${ult ? ult.ob : 0} obreras, ${ult ? ult.desp : 0} raciones, `
+    + `rescates acumulados ${rescates} · dia ${ult ? ult.dia : '?'}: ${ult ? ult.ob : 0} obreras, ${ult ? ult.desp : 0} raciones, `
     + `${ult ? ult.miel : 0} gotas en el mapa`);
+  if(peorDetalle)console.log('    diagnóstico peor racha: '+JSON.stringify(peorDetalle));
   ok(peor < 500, `semilla ${semilla}: ninguna pasa el dia encajada`, 'peor racha ' + peor);
 }
 const totalFuera = fueraDias.reduce((a, b) => a + b, 0);

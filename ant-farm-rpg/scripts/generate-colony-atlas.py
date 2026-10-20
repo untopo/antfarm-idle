@@ -568,7 +568,7 @@ def main() -> None:
     manifest = {
         "meta": {
             "name": "ANT FARM · COLONY OBJECTS",
-            "version": "20261020i",
+            "version": "20261020j",
             "image": "colony-atlas.png",
             "width": atlas.width,
             "height": atlas.height,
