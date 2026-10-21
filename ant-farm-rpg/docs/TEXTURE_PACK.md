@@ -109,7 +109,10 @@ colonyTexturePack.drawVariant(ctx, 'project.tunnel_braces', 'reinforced', x, y, 
 | `food.fungus_chunk` | `192,128 32×32` | `16,27` |  |
 | `food.nectar` | `224,128 32×32` | `16,27` |  |
 
-### TOOLS
+### LEGACY TOOL SLOTS (ARCHIVED, NOT RENDERED IN BUILD M)
+
+The atlas rectangles remain stable for old packs, but gameplay migrates `pick/basket/trowel` into body
+adaptations and never draws a human implement. New visuals belong inside `_hormigaVoxel` anatomy.
 
 | Stable name | Rect | Pivot | Purpose |
 |---|---:|---:|---|
@@ -148,7 +151,10 @@ colonyTexturePack.drawVariant(ctx, 'project.tunnel_braces', 'reinforced', x, y, 
 | `state.storage_pressure` | `192,224 32×32` | `16,27` |  |
 | `state.reserved` | `224,224 32×32` | `16,27` | Reserved transparent slot for a compatible future sprite. |
 
-### STRUCTURES AND CULTIVATION (BUILD I)
+### STRUCTURES AND CULTIVATION (BUILD I ATLAS; LEGACY STRUCTURES ARE SAVE SCENERY)
+
+`workshop/granary/bridge/tower` keep stable atlas names for old saves, but Build M does not construct them
+or spend materials on them. Functional new work uses the store/project sprites and explicit project cards.
 
 | Stable name | Rect | Purpose |
 |---|---:|---|

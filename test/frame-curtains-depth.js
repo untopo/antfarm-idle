@@ -65,6 +65,14 @@ function curtainMeasure(id){
     console.log('\n· every existing right sheet is the same curtain under the clock');
     for(const size of [{width:1568,height:744,label:'desktop'},{width:390,height:844,label:'portrait'},{width:844,height:390,label:'short landscape'}]){
       const p=await browser.newPage();p.on('pageerror',e=>errors.push(size.label+': '+e.message));await boot(p,size,false);
+      if(size.label==='portrait'){
+        const toolbar=await p.evaluate(()=>{const bar=document.getElementById('velAntBar').getBoundingClientRect(),clock=document.getElementById('calendarWidget').getBoundingClientRect();
+          const ids=['btnVelPause','btnVel1','btnVel2','btnVel4','btnVel8','btnVel16','btnFood','btnPhero','btnRoster','btnInventory'];
+          const rects=ids.map(id=>{const r=document.getElementById(id).getBoundingClientRect();return{id,left:r.left,right:r.right,top:r.top,bottom:r.bottom};});
+          return{rects,bar:{left:bar.left,right:bar.right,top:bar.top,bottom:bar.bottom},clockTop:clock.top,overflow:document.getElementById('velAntBar').scrollWidth-document.getElementById('velAntBar').clientWidth};});
+        ok(toolbar.rects.every(r=>r.left>=0&&r.right<=size.width&&r.top>=0&&r.bottom<=size.height)&&toolbar.overflow<=0,'portrait: every live toolbar action is physically reachable',toolbar.rects.map(r=>r.id+':'+Math.round(r.left)+'…'+Math.round(r.right)).join(' · '));
+        ok(toolbar.bar.bottom<=toolbar.clockTop,'portrait: the wrapped toolbar remains above the clock',`${toolbar.bar.bottom.toFixed(0)} ≤ ${toolbar.clockTop.toFixed(0)}`);
+      }
       const cases=[['inventory','abrirInventario()','invSheet'],['roster','abrirRoster()','rosterSheet'],['worker profile','showAntProfile(workers[0])','antProfile'],['queen profile','showQueenProfile(queens[0])','queenProfile']];
       for(const [name,open,id] of cases){
         await p.evaluate(open);await sleep(250);const m=await p.evaluate(curtainMeasure,id);

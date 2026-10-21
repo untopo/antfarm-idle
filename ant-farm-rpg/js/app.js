@@ -233,6 +233,13 @@ window.economyLedger=economyLedger;
 // Material balances remain exclusively in economyLedger; project holds are promises against that ledger.
 const colonyProjects=createColonyProjects();
 window.colonyProjects=colonyProjects;
+// Nuptial Flight is the first reset layer. Its pure book is loaded before app.js; this adapter keeps
+// one earned-only amber wallet and a tiny run receipt alongside the physical farm.
+let lineageState=normalizeLineageState();
+let lineageRun={relicsFound:0};
+let _lineageFx=lineageEffects(lineageState);
+function _setLineageState(next){lineageState=normalizeLineageState(next);_lineageFx=lineageEffects(lineageState);return lineageState;}
+window.getLineageState=()=>lineageSnapshot(lineageState);
 let colonyFitness=0, colonyIQ=100; let lastCoup=0;
 let selectedAntIndex=0;
 let selectedQueenIndex=0;
@@ -281,22 +288,69 @@ function getInventionReq(name){
 }
 
 let worldAge=0;
-// === ESTRUCTURAS COMPLEJAS Y HERRAMIENTAS ===
+// Legacy structure records remain loadable, but Build M never constructs them automatically. New
+// functional infrastructure lives in player-approved COLONY PROJECTS, where cost and effect are explicit.
 let structures=[]; // {c,r,type,w,h,builtBy,age}
 const STRUCTURE_DEFS={
-  // The founding store is a passable timber-and-earth frame built by workers inside an already
-  // connected chamber. It is never a magic radius around an arbitrary empty cell.
-  store:{w:3,h:2, need:{}, iq:0, gen:0, name:'NEST STORE', color:'#b47a35', bonus:'stable physical storage'},
-  workshop:{w:2,h:2, need:{wood:3, stone:2}, iq:135, gen:4, name:'TALLER', color:'#8a6a3a', bonus:'fabrica herramientas'},
-  granary:{w:3,h:2, need:{clay:2, fiber:2}, iq:132, gen:4, name:'GRANERO', color:'#c2a080', bonus:'+12 almacén'},
-  bridge:{w:3,h:1, need:{wood:2, fiber:1}, iq:130, gen:4, name:'PUENTE', color:'#6b4a1f', bonus:'cruza huecos'},
-  tower:{w:2,h:3, need:{stone:4, wood:2}, iq:142, gen:5, name:'TORRE', color:'#7a7a7a', bonus:'vigía'},
+  store:{w:3,h:2,need:{},iq:0,gen:0,name:'NEST STORE',color:'#b47a35',bonus:'physical protected storage'},
+  workshop:{w:2,h:2,need:{},iq:999,gen:999,name:'LEGACY WORKSHOP',color:'#8a6a3a',bonus:'scenery only · no current effect'},
+  granary:{w:3,h:2,need:{},iq:999,gen:999,name:'LEGACY GRANARY',color:'#c2a080',bonus:'migrates into the nest store'},
+  bridge:{w:3,h:1,need:{},iq:999,gen:999,name:'LEGACY BRIDGE',color:'#6b4a1f',bonus:'scenery only · no path effect'},
+  tower:{w:2,h:3,need:{},iq:999,gen:999,name:'LEGACY TOWER',color:'#7a7a7a',bonus:'scenery only · no current effect'}
 };
-const TOOL_DEFS={
-  pick:{need:{stone:2}, iq:126, gen:3, name:'PICO', bonusDig:0.34, icon:'⛏'},
-  basket:{need:{fiber:2}, iq:128, gen:3, name:'CESTA', bonusCarry:1, icon:'🧺'},
-  trowel:{need:{clay:1, stone:1}, iq:132, gen:4, name:'PALETA', bonusBuild:0.28, icon:'🪝'},
+const BODY_ADAPTATION_DEFS={
+  mandibles:{need:{stone:2},iq:126,gen:3,invention:'stone',name:'STONE-EDGED MANDIBLES',mark:'MD',effect:'+38% DIG · BEDROCK FROM GEN 6 MASONRY',detail:'One selected worker excavates faster, bites threshold slabs harder, and can cut bedrock two generations early once deep masonry is known.'},
+  carry:{need:{fiber:2},iq:128,gen:3,invention:'fiber',name:'FIBER CARRY BINDINGS',mark:'CB',effect:'+1 CARRY CAPACITY',detail:'One selected forager can bring one additional food ration home on each physical pickup.'},
+  foreclaws:{need:{clay:1,stone:1},iq:132,gen:4,invention:'clay',name:'CLAY-GRIP FORECLAWS',mark:'FC',effect:'+24% BUILD · +28% FLOOD WORK',detail:'One selected builder completes stores and approved projects faster and handles flood-control work more effectively.'}
 };
+const LEGACY_TOOL_ADAPTATION={pick:'mandibles',basket:'carry',trowel:'foreclaws'};
+function _adaptationBook(ant){
+  if(!ant)return {};
+  if(!ant.adaptations||typeof ant.adaptations!=='object'||Array.isArray(ant.adaptations))ant.adaptations={};
+  const legacy=LEGACY_TOOL_ADAPTATION[ant.tool];
+  if(legacy)ant.adaptations[legacy]=true;
+  // Old saves keep their earned effect, but the human-looking implement is retired from rendering.
+  if(ant.tool){delete ant.tool;delete ant.toolBonus;}
+  return ant.adaptations;
+}
+function antHasAdaptation(ant,type){
+  if(!ant)return false;
+  const book=ant.adaptations;
+  if(book&&typeof book==='object'&&!Array.isArray(book)&&!ant.tool)return !!book[type];
+  return !!_adaptationBook(ant)[type];
+}
+function _adaptationUnlocked(type){
+  const d=BODY_ADAPTATION_DEFS[type];return !!(d&&gen>=d.gen&&colonyIQ>=d.iq&&inventions[d.invention]);
+}
+function _adaptationCandidate(type){
+  let best=null,bestScore=-Infinity;
+  for(const w of workers){
+    if(!w||(w.health||0)<=20||antHasAdaptation(w,type))continue;
+    const t=w.traits||{},e=_jobBook(w),p=antProfession(w);let score=0;
+    if(type==='mandibles')score=(t.construccion||40)*.7+(e.dig||0)*16+(p==='MINERA_PROFUNDA'?45:0);
+    else if(type==='carry')score=(t.recoleccion||40)*.7+(t.exploracion||40)*.25+(e.forage||0)*16+(p==='RECOLECTORA_EXTERIOR'?45:0);
+    else score=(t.construccion||40)*.65+(t.cuidado||40)*.18+(e.build||0)*16+(p==='CONSTRUCTORA'?45:0);
+    score+=(w.health||100)*.03-(w.fatigue||0)*.18;
+    for(const ch of String(w.id||''))score+=ch.charCodeAt(0)*.000001;
+    if(score>bestScore){best=w;bestScore=score;}
+  }
+  return best;
+}
+function approveBodyAdaptation(type){
+  const d=BODY_ADAPTATION_DEFS[type],ant=d&&_adaptationCandidate(type);
+  if(!d)return {ok:false,reason:'unknown'};
+  if(!_adaptationUnlocked(type)){showNotify('warn','ADAPTATION LOCKED','The colony has not learned the required material practice yet.');return {ok:false,reason:'locked'};}
+  if(!ant){showNotify('warn','EVERY WORKER ADAPTED','A new adult must emerge before another '+d.name.toLowerCase()+' treatment is useful.');return {ok:false,reason:'complete'};}
+  if(!economyLedger.payMaterials(d.need,'player-approved '+type+' adaptation')){
+    showNotify('warn','NOT ENOUGH AVAILABLE MATERIAL','Project commitments and KEEP reserves are protected.');return {ok:false,reason:'materials'};
+  }
+  _adaptationBook(ant)[type]=true;recordJobExperience(ant,type==='carry'?'forage':type==='mandibles'?'dig':'build',.35);
+  const name=antDisplayName(ant);pushEvent('evo',name+' develops '+d.name,d.effect+' · player-approved material use');
+  pushToast(ant.x,ant.y-18,d.mark+' ADAPTED','#ffcc33',2.1);showNotify('ok',d.name,name+' was selected by need, traits and experience.');
+  try{serializeSave(true);}catch(e){}try{pintarInventario();updateEcoHud();}catch(e){}
+  return {ok:true,antId:ant.id,type};
+}
+window.approveBodyAdaptation=approveBodyAdaptation;
 
 // ===== LA ESCALERA =====
 // Topo pidio que cavar hacia abajo valga la pena: cada capa mas dura, cada capa con su material, y un
@@ -361,14 +415,25 @@ function colocarUmbral(){
   markSoilDirty();
   tlog('[UMBRAL] losa en fila '+r+' ('+NOMBRE_BANDA(b)+') guarda '+NOMBRE_BANDA(guarda)+' · hp '+umbral.hp);
 }
+function _canExcavateMaterial(type,ant){
+  if(type===15)return false; // magma is a hazard to route around, never a mineable wall
+  if(type===7){
+    // Evolution alone remains the eventual, impossible-to-lose route. A worker whose stone-edged jaws
+    // were explicitly approved can work bedrock two generations earlier once deep masonry is known.
+    const evolved=gen>=8&&colonyIQ>=148&&!!inventions.masonry;
+    const adapted=!!ant&&gen>=6&&colonyIQ>=145&&!!inventions.masonry&&antHasAdaptation(ant,'mandibles');
+    return evolved||adapted;
+  }
+  return true;
+}
 function puedeGolpearUmbral(){
   if(!umbral) return false;
   if(workers.length<3) return false;
-  if(umbral.guarda>=5 && !inventions.masonry) return false;  // del marmol en adelante hace falta canteria
+  if(umbral.guarda>=6 && !inventions.masonry) return false;  // BLACK MARBLE onward needs deep masonry
   return true;
 }
 function _reclutaFrenteUmbral(lider,u){
-  if(!lider||lider.id==='TEST'||!u||!workers||workers.length<2||!_entityInKnownWalkspace(lider)) return;
+  if(!lider||lider.id==='TEST'||!u||!workers||workers.length<2) return;
   const crewCap=Math.min(8,Math.max(4,Math.floor(workers.length*0.24)));
   const leaderCounted=!!(lider.digTarget&&lider.digTarget.r===u.r&&soilType[u.r]&&soilType[u.r][lider.digTarget.c]===17);
   // The biter clears digTarget for the few lines that call golpearUmbral(), then restores it. Count her
@@ -377,7 +442,9 @@ function _reclutaFrenteUmbral(lider,u){
   const slots=Math.max(0,crewCap-already); if(!slots) return;
   // The ant that discovered the slab remains the lead biter. Helpers make the collective work visible,
   // but must not demote the leader to the deliberately slow support rate or recruit the whole colony.
-  const libres=workers.filter(w=>w!==lider&&_entityInKnownWalkspace(w)&&!(w.digTarget&&w.digTarget.r===u.r)&&w.health>20&&(w.fatigue||0)<82&&!w.food&&!w._magmaRetreat&&w.state!=='CONTROLAR_AGUA'&&Math.abs(((w.y/CELL)|0)-u.r)<=2)
+  // Presence within two rows is the physical eligibility check: a stale reachability cache or fatigue at
+  // the instant of recruitment cannot erase a short shift that the player can already see at the slab.
+  const libres=workers.filter(w=>w!==lider&&!(w.digTarget&&w.digTarget.r===u.r)&&w.health>20&&!w.food&&!w.projectCargo&&!w.wasteTarget&&!w._magmaRetreat&&w.state!=='CONTROLAR_AGUA'&&Math.abs(((w.y/CELL)|0)-u.r)<=2)
     .sort((a,b)=>Math.hypot(a.x-lider.x,a.y-lider.y)-Math.hypot(b.x-lider.x,b.y-lider.y));
   let n=0;
   for(const w of libres){
@@ -404,14 +471,14 @@ function golpearUmbral(ant){
     }else if(!ant._umbralLead) ant._umbralSupport=true;
   }
   const exc = (ant && ant.role==='EXCAVADORA')? 0.55 : 0;
-  const golpe = 1 + exc + (inventions.masonry?0.6:0) + Math.min(1.4, (typeof gen!=='undefined'?gen:0)*0.07)
+  const golpe = 1 + exc + (inventions.masonry?0.6:0) + (ant&&antHasAdaptation(ant,'mandibles')?.42:0) + Math.min(1.4, (typeof gen!=='undefined'?gen:0)*0.07)
               + Math.max(0,((typeof colonyIQ!=='undefined'?colonyIQ:100)-100))/200 + bonusCava;
   u.hp = Math.max(0, u.hp - golpe);
   _reclutaFrenteUmbral(ant,u);
   const c = (ant && Number.isFinite(ant.x))? Math.floor(ant.x/CELL) : u.c0;
   try{
     for(let i=0;i<4;i++) particles.push({x:c*CELL+6, y:u.r*CELL+8, vx:(Math.random()-0.5)*2.4, vy:-Math.random()*1.8, life:1, decay:0.035, color:'#c8c8d8', bloque:true});
-    if(ant && Math.random()<0.35) pushToast(c*CELL+8, u.r*CELL-4, '⛏', '#c8c8d8', 0.8);
+    if(ant && Math.random()<0.35) pushToast(c*CELL+8, u.r*CELL-4, '><', '#c8c8d8', 0.8);
     markSoilDirty(c, u.r);
     if(ant) logAntHistory(ant, 'muerde la losa ('+Math.round(u.hp)+' por aguantar)');
   }catch(e){}
@@ -450,6 +517,7 @@ function anotarReliquia(def, c, r){
   if(reliquias.some(x=>x.tipo===def.reliquia)) return false;      // cada maravilla, una sola vez
   reliquias.push({tipo:def.reliquia, nombre:def.reliquia, piso:r-SURFACE_ROW, dia:Math.floor(day||0),
                   gen:(typeof gen!=='undefined'?gen:0), lore:def.lore||'', bonus:def.bonus||0.02});
+  lineageRun.relicsFound=Math.max(0,(lineageRun.relicsFound||0)+1);
   bonusCava = Math.min(0.30, reliquias.reduce((a,x)=>a+(x.bonus||0),0));
   return true;
 }
@@ -812,7 +880,14 @@ function initSoil(){
         const cl=JSON.parse(JSON.stringify(base));
         cl.id=String(base.id||'A')+'F'+String(i).padStart(2,'0'); cl.personalName=cl.id;
         cl.x=4*CELL+((i*37)%Math.max(1,COLS-8))*CELL+3; cl.y=(SURFACE_ROW+4)*CELL+((i*53)%12)*CELL+4;
-        cl.state='IDLE'; cl.selected=false; cl._renderX=cl.x; cl._renderY=cl.y; cl._debugFake=true;
+        // A debug worker is a new idle worker, not a snapshot of whichever errand the template happened
+        // to be doing. Copying its honey/soil/project cargo made identical browser tests alternate
+        // between thirty available workers and thirty impossible duplicates of one carried item.
+        cl.state='IDLE'; cl.selected=false; cl.food=null; cl.targetFood=null; cl.wasteTarget=null;
+        cl.projectCargo=null; cl.projectTask=null; cl.floodTarget=null; cl.buildTarget=null;
+        cl.digTarget=null; cl.digProgress=0; cl.tandemPartner=null; cl.fatigue=0; cl.blocked=0;
+        delete cl._umbralSupport; delete cl._umbralLead; delete cl._obraUmbralHasta; delete cl._magmaRetreat;
+        cl._renderX=cl.x; cl._renderY=cl.y; cl._debugFake=true;
         workers.push(cl);
       }
       return workers.length;
@@ -855,10 +930,9 @@ function excavateChamber(centerC, centerR, w, h, ant){
     const nx=dx/(rx+0.6), ny=dy/(ry+0.6);
     if(nx*nx+ny*ny > 1+ (Math.random()*0.18-0.09)) continue;
     if(soil[nr][nc]===1){
-      // dureza según tipo, si es muy duro y no tienen pico, no puede
+      // hardness follows geology; reinforced mandibles improve hard-rock work
       const t=soilType[nr][nc];
-      if(t===7 && gen<7) continue;
-      if(t===15 || t===17) continue;              // el fuego y la losa no se allanan: hay que ganarselos
+      if(!_canExcavateMaterial(t,ant) || t===17) continue; // bedrock needs its full late gate; magma/slab remain intact
       soil[nr][nc]=0; soilType[nr][nc]=0; carved++;
     }
   }
@@ -1458,13 +1532,13 @@ function _sealFloodCell(ant,target){
   // The three founding-shaft columns are the colony's only route to food and the first slab. There the
   // ants build a permeable-to-ants roof/grate; elsewhere they can safely pack the whole breach with soil.
   const passable=Math.abs(target.c-CENTER_COL)<=1||target.r<=SURFACE_ROW+1||(typeof isStoreCell==='function'&&isStoreCell(target.c,target.r));
-  let kind=1;
+  const kind=1;
   if(passable){
     floodBarriers.add(target.c+','+target.r);
     // The grate protects the route; it does not move the physical store or its supplies.
   } else {
+    // Emergency packing reuses loose excavated earth. It never reaches into player-owned material stock.
     soil[target.r][target.c]=1;
-    if(economyLedger&&economyLedger.debitMaterial('clay',1,{reason:'emergency flood barrier',survival:true})===1) kind=2;
     if(soilType[target.r]) soilType[target.r][target.c]=kind;
   }
   if(trapped>0&&typeof displaceWaterMass==='function') displaceWaterMass(water,soil,target.c,target.r,trapped,floodBarriers);
@@ -1638,10 +1712,19 @@ function updateEcosystem(dt){
 function checkInventions(){
   // desbloqueos reales por inteligencia + materiales + trabajo
   if(!inventions.stone && gen>=3 && colonyIQ>=124 && digs>=18){
-    inventions.stone=true; pushImportant('invention','🔨 Invento: cantería','Ya usan PIEDRA para reforzar túneles'); notifyCanon('🔨 CANTERÍA', '¡Inventaron mampostería de piedra!', 6000); pushToast(W/2,H/2-18,'🔨 PIEDRA','#8a8a8a',2.5);
+    inventions.stone=true; pushImportant('invention','▦ Invention: stonework','The colony can shape stone and approve reinforced mandible edges.'); notifyCanon('▦ STONEWORK','Stone practice learned.',6000); pushToast(W/2,H/2-18,'▦ STONE','#8a8a8a',2.5);
   }
   if(!inventions.clay && gen>=4 && colonyIQ>=128 && digs>=28 && worldAge>1.0){
     inventions.clay=true; pushImportant('invention','🏺 Invento: cerámica de arcilla','Tapial + arcilla apisonada'); notifyCanon('🏺 ARCILLA', '¡Dominan la arcilla!', 6000); pushToast(W/2,H/2-18,'🏺 ARCILLA','#c2a080',2.5);
+  }
+  // This key used to be advertised by the slab panel and persisted in saves, but no gameplay path ever
+  // turned it on. Deep thresholds were therefore a permanent wall disguised as a GEN/IQ requirement.
+  // Masonry is learned from both earlier material traditions; it is not bought or assigned to an ant.
+  if(!inventions.masonry && gen>=6 && colonyIQ>=145 && inventions.stone && inventions.clay){
+    inventions.masonry=true;
+    pushImportant('invention','▦ Invention: deep masonry','Stone cutting and fired clay now brace work below quartzite.');
+    notifyCanon('▦ DEEP MASONRY','The colony can open black-marble thresholds and work bedrock at sufficient evolution.',6200);
+    pushToast(W/2,H/2-18,'▦ MASONRY','#b9afc6',2.5);
   }
   if(!inventions.fiber && gen>=4 && colonyIQ>=132 && plants.length>=8 && deliveries>=35){
     inventions.fiber=true; pushImportant('invention','🧵 Invento: tejido de fibras','Trenzan briznas y hojas para techar'); notifyCanon('🧵 FIBRA', '¡Tejen fibra vegetal!', 6000); pushToast(W/2,H/2-18,'🧵 FIBRA','#7ad35f',2.5);
@@ -1649,7 +1732,8 @@ function checkInventions(){
   if(!inventions.wood && gen>=5 && colonyIQ>=138 && worldAge>2.0 && plants.some(p=>p.type==='sapling' && p.growth>0.85)){
     inventions.wood=true; pushImportant('invention','🪵 Invento: carpintería','Usan RAMAS del arbolito para apuntalar'); notifyCanon('🪵 MADERA', '¡Carpintería básica!', 6000); pushToast(W/2,H/2-18,'🪵 MADERA','#8b5a2b',2.5);
   }
-  if(!inventions.fungus && gen>=5 && colonyIQ>=140 && worldAge>2.4 && plants.some(p=>p.type==='mushroom'||(p.type==='caveMush'&&isNestCellConnected(p.cr??p.c,p.rr??Math.floor(p.y/CELL))))){ 
+  if(!inventions.fungus && gen>=5 && colonyIQ>=140 && worldAge>2.4 && plants.some(p=>p.type==='mushroom'||(p.type==='caveMush'&&isNestCellConnected(p.cr??p.c,p.rr??Math.floor(p.y/CELL))))){
+
     inventions.fungus=true; pushImportant('invention','🍄 Invento: cultivo de hongos','Granja subterránea de hongos'); notifyCanon('🍄 CULTIVO', '¡Granja de hongos subterránea!', 6000); pushToast(W/2,H/2-18,'🍄 CULTIVO','#6a9a7a',2.5);
   }
 }
@@ -1705,65 +1789,16 @@ function canBuildStructure(type){
   if(type==='tower' && !inventions.stone) return false;
   return true;
 }
-function tryBuildComplexStructure(ant, site){
-  // prioriza estructuras útiles según necesidad de colonia
-  let candidates=[];
-  const existingStore=storageStructure(true);
-  if(canBuildStructure('granary') && existingStore && economyLedger.food>8 && (existingStore.level||1)<3) candidates.push('granary');
-  if(canBuildStructure('workshop') && structures.filter(s=>s.type==='workshop').length < 1) candidates.push('workshop');
-  if(canBuildStructure('bridge') && Math.random()<0.12) candidates.push('bridge');
-  if(canBuildStructure('tower') && workers.length>=9 && structures.filter(s=>s.type==='tower').length < 1) candidates.push('tower');
-  if(!candidates.length) return false;
-  const type = candidates[Math.floor(Math.random()*candidates.length)];
-  const def=STRUCTURE_DEFS[type];
-  if(type==='granary'){
-    const store=storageStructure(true); if(!store) return false;
-    if(!economyLedger.payMaterials(def.need,'store upgrade')) return false;
-    store.level=Math.min(3,(store.level||1)+1); store.upgradedBy=ant.id; store.upgradedAt=time;
-    const a=_storeAnchor(store); pantryPos={x:a.x,y:a.y};
-    pushEvent('build',`🏗 ${ant.id} upgrades the NEST STORE`,`Level ${store.level} · same stable site [${store.c},${store.r}]`);
-    pushToast(a.x,a.y-18,'▣ STORE +','#ffcc33',2.2);
-    // More shelves preserve and hold supplies; construction never conjures four food rations.
-    recordJobExperience(ant,'build',1.5);ant.fitness+=1.2;colonyFitness+=.9;return true;
-  }
-  // verifica espacio libre  (site es celda única, expandimos)
-  for(let dy=0; dy<def.h; dy++) for(let dx=0; dx<def.w; dx++){
-    const cc=site.c+dx, rr=site.r+dy;
-    if(rr<0||rr>=ROWS||cc<0||cc>=COLS||soil[rr][cc]===1||(typeof isStoreCell==='function'&&isStoreCell(cc,rr))||(typeof isProjectSiteCell==='function'&&isProjectSiteCell(cc,rr,true))||(typeof isBracedCell==='function'&&isBracedCell(cc,rr))) return false;
-  }
-  if(!_structureKeepsNestConnected(site,def)) return false;
-  // consume materiales
-  if(!economyLedger.payMaterials(def.need,'structure '+type)) return false;
-  // ocupa celdas como suelo especial pero marca estructura
-  for(let dy=0; dy<def.h; dy++) for(let dx=0; dx<def.w; dx++){
-    const cc=site.c+dx, rr=site.r+dy;
-    soil[rr][cc]=1; if(soilType[rr]) soilType[rr][cc]= (type==='granary'?2: type==='workshop'?4: type==='tower'?4:3);
-    decoSet.add(dkey(cc,rr));
-  }
-  structures.push({c:site.c, r:site.r, w:def.w, h:def.h, type, builtBy:ant.id, age:0, buildProgress:0});
-  markSoilDirty();
-  pushEvent('build',`🏗 ${ant.id} construye ${def.name} [${site.c},${site.r}]`,`${def.bonus} - GEN${gen} IQ${colonyIQ}`);
-  notifyCanon('🏗 ESTRUCTURA', `${def.name} construido por ${ant.id}`, 6000);
-  pushToast(site.c*CELL+8, site.r*CELL+8, '🏗 '+def.name, def.color, 2.2);
-  for(let i=0;i<12;i++) particles.push({x:site.c*CELL+8,y:site.r*CELL+8,vx:(Math.random()-0.5)*2,vy:-Math.random()*1.6,life:1,decay:0.03,color:def.color});
-  recordJobExperience(ant,'build',1.25); ant.fitness+=1.2; colonyFitness+=0.9;
-  return true;
+function tryBuildComplexStructure(){
+  // Retired in Build M: the simulation may not spend the player's material stock on structures.
+  // Functional colony projects are started explicitly from NEST STORES; decorative bridges,
+  // workshops and towers remain as legacy-save scenery only. Their removal also preserves the old
+  // food invariant: construction never conjures four food rations.
+  return false;
 }
-function tryCraftTool(ant){
-  if(ant.tool) return false; // ya tiene
-  const opts=[];
-  if(inventions.stone && gen>=TOOL_DEFS.pick.gen && colonyIQ>=TOOL_DEFS.pick.iq && economyLedger.canAffordMaterials(TOOL_DEFS.pick.need)) opts.push('pick');
-  if(inventions.fiber && gen>=TOOL_DEFS.basket.gen && colonyIQ>=TOOL_DEFS.basket.iq && economyLedger.canAffordMaterials(TOOL_DEFS.basket.need)) opts.push('basket');
-  if(inventions.clay && gen>=TOOL_DEFS.trowel.gen && colonyIQ>=TOOL_DEFS.trowel.iq && economyLedger.canAffordMaterials(TOOL_DEFS.trowel.need)) opts.push('trowel');
-  if(!opts.length) return false;
-  const t=opts[Math.floor(Math.random()*opts.length)];
-  const def=TOOL_DEFS[t];
-  if(!economyLedger.payMaterials(def.need,'tool '+t)) return false;
-  ant.tool=t; ant.toolBonus=def;
-  pushEvent('evo',`🔧 ${ant.id} forja ${def.name} ${def.icon}`,`Herramienta - ${t}`);
-  pushToast(ant.x, ant.y-14, def.icon+' '+def.name, '#ffcc00', 1.8);
-  ant.fitness+=0.7;
-  return true;
+function tryCraftTool(){
+  // Retired in Build M. Body adaptations are purchased only through approveBodyAdaptation().
+  return false;
 }
 function drawStructures(ctx,W,H,isMini){
   if(isMini) return;
@@ -2018,8 +2053,9 @@ function canMoveIgnoreTarget(x,y,target){const r=7;function ok(px,py){const c=Ma
 const _wsCache={rev:-1,at:-1e9,open:0,chambers:0,frontier:[]};
 function worldStats(){
   const now=performance.now();
-  if(_wsCache.rev===_soilRev && now-_wsCache.at<4000) return _wsCache;
-  if(now-_wsCache.at<24) return _wsCache; // anti-thrash: max ~40 reconstrucciones/segundo
+  // Soil revision is the cache key. Returning the previous revision for 24 wall-clock milliseconds
+  // made accelerated colonies choose already-open cells (and made outcomes depend on CPU speed).
+  if(_wsCache.rev===_soilRev)return _wsCache;
   // Sólo existe para la colonia el componente que nace en la boca. Las bolsas procedurales de aire
   // siguen físicamente en el mapa, pero no regalan cámaras, capacidad de cría ni frentes de excavación
   // antes de que una galería real las conecte.
@@ -2083,12 +2119,13 @@ function _juntaGota(sx, sy, amt, ftype, alAire){
     // comparten prado/subsuelo y el tramo entre ambas es aire físico; la roca nunca transporta comida.
     if((g.y<SURFACE_Y)!==(sy<SURFACE_Y)||!_openResourceSegment(g.x,g.y,sx,sy,false)) continue;
     g.amount=Math.min(_GOTA_TOPE, (g.amount||1)+amt); g.max=Math.max(g.max||1, g.amount); g.r=5+g.amount*2;
-    return;
+    return g;
   }
-  foods.push({x:sx,y:sy,amount:amt,max:amt,r:5+amt*2,pulse:Math.random()*Math.PI*2, ftype, rot:0, fresh:1, spawnDay:1, vy:0, grounded:!!alAire});
+  const drop={x:sx,y:sy,amount:amt,max:amt,r:5+amt*2,pulse:Math.random()*Math.PI*2, ftype, rot:0, fresh:1, spawnDay:1, vy:0, grounded:!!alAire};
+  foods.push(drop);return drop;
 }
-function spawnFoodAt(x,y,amt=1, ftype='honey'){ _juntaGota(clamp(x,16,W-16), clamp(y, 8, H-8), amt, ftype, false); }
-function spawnFoodSurface(x,amt=1, ftype='honey'){ _juntaGota(clamp(x+(Math.random()*20-10),20,W-20), SURFACE_Y-8, amt, ftype, true); }
+function spawnFoodAt(x,y,amt=1, ftype='honey'){ return _juntaGota(clamp(x,16,W-16), clamp(y, 8, H-8), amt, ftype, false); }
+function spawnFoodSurface(x,amt=1, ftype='honey'){ return _juntaGota(clamp(x+(Math.random()*20-10),20,W-20), SURFACE_Y-8, amt, ftype, true); }
 if(_topoHasWorld){ for(let i=0;i<4;i++){ const typ=['honey','berry','seed','mushroom'][i%4]; spawnFoodSurface(Math.random()*(W-160)+80,1+Math.floor(Math.random()*2), typ); } } else { tlog('[TOPO] foods diferidos'); }
 function pushToast(x,y,txt,color='#ffcc00',dur=2.2){toasts.push({x,y,txt,color,life:1,decay:1/dur/60,vy:-0.5}); if(toasts.length>10) toasts.shift();}
 // === DIÁLOGOS DEL JUEGO ===
@@ -2627,7 +2664,7 @@ function workOnStore(ant,dt,speed){
   if(near){
     if(!ant.jobExperience) ant.jobExperience={build:0,dig:0,forage:0,explore:0,nurse:0};
     const trait=ant.traits&&ant.traits.construccion||40,experience=ant.jobExperience.build||0;
-    const effort=dt*(.74+trait/220+Math.min(.24,experience*.018))*(ant.tool==='trowel'?1.24:1);
+    const effort=dt*(.74+trait/220+Math.min(.24,experience*.018))*(antHasAdaptation(ant,'foreclaws')?1.24:1);
     site.work=(site.work||0)+effort; site.buildProgress=Math.min(1,site.work/(site.workNeeded||STORE_WORK_REQUIRED));
     recordJobExperience(ant,'build',effort/(site.workNeeded||STORE_WORK_REQUIRED));
     ant.fatigue=Math.min(100,(ant.fatigue||0)+_fatUnidad*dt*.7);
@@ -2976,7 +3013,7 @@ function makeAnt(genome, pos=null, opts={}){
     faction: opts.faction!==undefined? opts.faction : (queens[0]?.faction||0),
     belief: null, aggression: 0.12 + Math.random()*0.18 + traits.comunica*0.0015, crimes:0, followers:0,
     genome:g, traits, role, affinity, rank, hierarchy, profession:'OBRERA', professionSince:0, jobAge:0, lastJob:'NADA',
-    jobExperience:{build:0,dig:0,forage:0,explore:0,nurse:0},
+    jobExperience:{build:0,dig:0,forage:0,explore:0,nurse:0},adaptations:{},
     deliveries:0, digsDone:0, commsSent:0, lastInk:0, lastPhero:0, blocked:0, selected:false, digTarget:null, digProgress:0, digNeeded:14, commOut:[0,0], sensors:{}, nnHidden:[], nnOut:[],
     parents: opts.parents||[], children:[], history:[], birthDay: day, deathDay:null }
 }
@@ -2990,17 +3027,24 @@ if(_topoHasWorld){
   if(workers[0]) workers[0].selected=true;
 } else { tlog('[TOPO] workers diferidos'); }
 
-// TOPO: crea mundo solo cuando eliges tamaño — nada existe antes
-function topoCreateFreshWorld(cols, rows){
-  tlog('[TOPO] topoCreateFreshWorld', cols, rows);
+// TOPO: crea mundo solo cuando eliges tamaño — nada existe antes. A normal NEW FARM owns a fresh
+// lineage; Nuptial Flight is the only caller allowed to carry amber, finite upgrades, and relics on.
+function topoCreateFreshWorld(cols, rows, options){
+  const createOpts=options&&typeof options==='object'?options:{};
+  const carriedLineage=Object.prototype.hasOwnProperty.call(createOpts,'lineage')?createOpts.lineage:null;
+  _setLineageState(carriedLineage?carriedLineage:freshLineageState());
+  lineageRun={relicsFound:0};
+  const carriedRelics=Array.isArray(createOpts.relics)?createOpts.relics.map(x=>({...x})):[];
+  tlog('[TOPO] topoCreateFreshWorld', cols, rows, createOpts.nuptial?'nuptial':'new');
   COLS=cols; ROWS=rows; if(typeof CENTER_COL!=='undefined') CENTER_COL=Math.floor(COLS/2);
   if(typeof W!=='undefined'){ W=COLS*CELL; H=ROWS*CELL; const cv=document.getElementById('farmCanvas'); if(cv){ cv.width=W; cv.height=H; } }
   if(typeof soilCacheCanvas!=='undefined'){ try{ soilCacheCanvas.width=W; soilCacheCanvas.height=H; }catch(e){} }
   _topoHasWorld=true;
-  // Un nido nuevo no hereda recibos ni ampliaciones offline de la granja que se acaba de archivar.
-  try{_loadedSaveSavedAt=0;_offlineUnlocks={lineage:false,lateStage:false};_lastOfflineReceipt=null;_lastOfflineReport=null;_offlineHiddenSavedAt=0;_offlineReturnPending=[];_offlineAppliedStamps.clear();_offlinePresentedStamps.clear();}catch(e){}
+  // A new physical nest never inherits an offline receipt. A completed flight, however, is the
+  // permanent LINEAGE milestone that raises the offline cap from 8 to 12 hours.
+  try{_loadedSaveSavedAt=0;_offlineUnlocks={lineage:lineageState.flights>0,lateStage:false};_lastOfflineReceipt=null;_lastOfflineReport=null;_offlineHiddenSavedAt=0;_offlineReturnPending=[];_offlineAppliedStamps.clear();_offlinePresentedStamps.clear();}catch(e){}
   // limpiar previos por si había restos
-  try{ workers.length=0; queens.length=0; foods.length=0; protectedFoodLots.length=0; brood.length=0; mound.length=0; hiddenRewards.length=0; particles.length=0; pheromones.length=0; commInks.length=0;_loadExploration([]); }catch(e){}
+  try{ workers.length=0; queens.length=0; foods.length=0; protectedFoodLots.length=0; brood.length=0; mound.length=0; hiddenRewards.length=0; particles.length=0; pheromones.length=0; commInks.length=0;toasts.length=0;events.length=0;_loadExploration([]); }catch(e){}
   // Topo: al sobre-escribir un mundo habia que limpiar TAMBIEN lo que se hereda del suelo (jardines
   // de hongo, monticulos de residuo, estructuras, charcos): quedaban residuos del mapa anterior en
   // el nuevo - el "residuo al sobre escribir un mundo" que señalo el dueño.
@@ -3008,12 +3052,20 @@ function topoCreateFreshWorld(cols, rows){
   try{ if(typeof water!=='undefined' && water) water.forEach(r=>r.fill(0)); }catch(e){}
   try{ _waterActive=false; floodBarriers.clear(); floodControl.target=null; floodControl.workerId=null; floodControl.scan=0; floodControl.worldKey=''; }catch(e){}
   try{ window._foodlessTimer=0; window._jobTimer=0; window._hierTimer=0; window._lastLeader=null; }catch(e){}
-  day=1; time=DAY_LENGTH*0.28; deliveries=0; digs=0; gen=0; worldAge=0;
+  day=1;time=DAY_LENGTH*.28;deliveries=0;digs=0;accidents=0;rewardsFound=0;gen=0;mutations=0;commsCount=0;worldAge=0;
+  colonyFitness=0;colonyIQ=100;lastCoup=0;stats={nivel:1,xp:0,xpToNext:360};materialUso={};_huertoVotos={};_huertoVotosN=0;
+  useAnthro=false;anthroStyle=0;antsAtascados=0;selectedAntIndex=0;selectedQueenIndex=0;nextAntFaction=0;
+  fitnessHistory=[0];lastMutInfo='- founding nest -';importantHistory=[];_hasNewHistory=false;lastGenTime=0;_lastGenHint=0;
+  _pantryTimer=0;_queenMoveTimer=0;_storagePressureTimer=0;_lastStoragePressureEvent=-Infinity;projectPlacementType=null;decoSet.clear();
+  weather={type:'clear',intensity:0,timer:0,nextChange:800+Math.random()*1200,rainParticles:[]};lightningTimer=0;isNight=false;
+  inventions={stone:false,clay:false,fiber:false,wood:false,fungus:false,masonry:false};
+  bandaMax=0;umbralesRotos=0;umbral=null;reliquias=carriedRelics;
+  bonusCava=Math.min(.30,reliquias.reduce((sum,x)=>sum+(Number(x.bonus)||0),0));
   worldSeed=worldSeed32(Math.floor(Math.random()*4294967296));
   worldProfile=createWorldProfile(worldSeed,COLS); ancientSites=[]; ancientMasonry=[]; _generatedSiteIds=new Set(); rebuildAncientIndexes();
   resetColonyProjects();
   economyLedger.setFood(Math.max(2,Math.round(startReserveFood()/2)),'fresh world reserve');
-  economyLedger.replaceMaterials({},'fresh world reset'); colonyFitness=0;
+  economyLedger.replaceMaterials({},'fresh world reset');
   try{ initSoil(); }catch(e){ console.error('initSoil fresh',e); }
   // Topo: la despensa y la lengua son de ESTE mundo. Antes la despensa se quedaba en las coordenadas
   // del mapa de referencia (64x36) y en un 48x28 caia dentro de tierra intacta -> miel "almacenada"
@@ -3026,7 +3078,7 @@ function topoCreateFreshWorld(cols, rows){
       if(_big){ pantryPos.x=_big.x; pantryPos.y=_big.y; }
     }
   }catch(e){ console.warn('pantry fresh', e.message); }
-  try{ society=Object.assign({}, society, { factions:[{id:0,name:'Colonia fundadora',color:'#ffcc00',members:1,belief:'-',leader:null}], nextFaction:1, wars:0, cults:0, crimes:0, languages:{}, langEvo:0 }); }catch(e){}
+  try{ society={factions:[{id:0,name:'Founding colony',color:'#ffcc00',members:1,belief:'-',leader:null}],nextFaction:1,wars:0,cults:0,crimes:0,mood:{joy:.55,anger:.08,fear:.05,sadness:.06,loyalty:.72,stress:.12},languages:{},langEvo:0}; }catch(e){}
   // 4 comidas iniciales variadas
   try{ const _sf=startSurfaceFood(); for(let i=0;i<_sf;i++){ const typ=['honey','berry','seed','mushroom'][i%4]; spawnFoodSurface(Math.random()*(W-160)+80,1+Math.floor(Math.random()*2), typ); } }catch(e){}
   // reina + 5 obreras
@@ -3048,6 +3100,7 @@ function topoCreateFreshWorld(cols, rows){
   // first moments of play. Founding provisions are laid beside that stable site, not in a roaming void.
   try{ ensureStoreBlueprint(); }catch(e){ console.warn('store blueprint fresh',e.message); }
   try{ detectarEntrada(); }catch(e){}
+  try{ setMapTool('navigate');pheromonePainting=false;lastGuidePoint=null;guidePointsAdded=0;suppressCanvasClick=false;activeGuideTrail=0; }catch(e){}
   markSoilDirty();try{refreshExploration(true);}catch(e){}
   // ajuste anti-extinción aplicado al nacer el mundo (antes corría en load y crasheaba)
   try{
@@ -3172,7 +3225,7 @@ function assignEmergentProfessions(emit=true){
     const old=antProfession(w);
     if(old!==p){
       w.profession=p; w.professionSince=time; w.jobAge=0; w.lastJob=p;
-      if(emit) pushEvent('evo',`🔧 ${w.id} learns ${PROFESSION_LABELS[p]}`,`Experience, age, traits and colony demand`);
+      if(emit) pushEvent('evo',`◆ ${w.id} learns ${PROFESSION_LABELS[p]}`,`Experience, age, traits and colony demand`);
     } else { w.profession=p; }
     w.role=_legacyRoleForProfession(p);
   }
@@ -3408,6 +3461,10 @@ function _openResourceSegment(x0,y0,x1,y1,avoidWater=true){
 }
 function canCollectFood(ant,food){
   if(!isFoodReachable(food,ant)) return false;
+  // Surface food must be collected by a body that has actually crossed the grass line. The generous
+  // pickup radius used underground previously let a worker grab meadow honey from inside the shaft:
+  // the ledger showed a delivery, but the player quite correctly never saw an ant come outside.
+  if(food.y<SURFACE_Y&&ant.y>SURFACE_Y-2)return false;
   const radius=Number.isFinite(food.r)?food.r+14:16;
   return dist(ant,food)<radius&&_openResourceSegment(ant.x,ant.y,food.x,food.y,true);
 }
@@ -3445,14 +3502,23 @@ function nearestPhero(from){
 let _surfaceTickWorkforce=null,_surfaceTickChoice=undefined;
 function _surfaceExcursionLimit(workerCount){
   const n=Math.max(0,Math.floor(Number(workerCount)||0));
-  if(n<6)return 0;
+  // A new SMALL farm starts with four adult founder workers. Requiring six meant that the first
+  // honey shown by onboarding could sit on the meadow for minutes while every visible ant stayed
+  // underground. Keep a safe pair in the nest, but let one founder answer an actual surface source.
+  if(n<3)return 0;
   return n<10?1:Math.max(1,Math.floor(n/4));
 }
 function _surfaceExcursionFood(ant){
-  let best=null,bestD=Infinity;
+  let best=null,bestRank=Infinity;
   for(const f of foods){
     if(!f||f.y>=SURFACE_Y||!isFoodReachable(f,ant))continue;
-    const d=dist(ant,f);if(d<=CELL*22&&d<bestD){best=f;bestD=d;}
+    const d=dist(ant,f),placed=!!f.playerPlaced;
+    // Wild forage stays local so a founding worker does not cross an entire large map by chance.
+    // Honey deliberately placed by the player is already constrained to explored, open ground and
+    // remains a valid expedition anywhere on the connected meadow. Prefer that explicit signal.
+    if(!placed&&d>CELL*(22+(_lineageFx.wildForageRangeCells||0)))continue;
+    const rank=d-(placed?Math.max(W,CELL*24):0);
+    if(rank<bestRank){best=f;bestRank=rank;}
   }
   return best;
 }
@@ -3478,9 +3544,12 @@ function _surfaceExcursionChoice(workforce){
   if(active>=limit)return null;
   let best=null,bestScore=-Infinity,bestFood=null;
   for(const w of known){
-    if(!w||w.isQueen||w.food||w.targetFood||w.digTarget||w.wasteTarget||w.projectCargo||w.buildTarget)continue;
+    if(!w||w.isQueen||w._lateralRelayPending||w.food||w.targetFood||w.digTarget||w.wasteTarget||w.projectCargo||w.buildTarget)continue;
     if(w.state!=='EXPLORAR'&&w.state!=='BUSCAR')continue;
-    if((w.age||0)<=DAY_LENGTH*.35||(w.fatigue||0)>=42||(w.health||0)<=35||(w._excursionHasta||0)>=time)continue;
+    // `workers` contains adults only: brood does not enter this array until eclosion. The old 0.35-day
+    // hard gate therefore made every founder look like a larva even though she could build and dig.
+    // Age still influences the ranking below, while health, fatigue and colony need remain hard gates.
+    if((w.fatigue||0)>=42||(w.health||0)<=35||(w._excursionHasta||0)>=time)continue;
     const food=_surfaceExcursionFood(w);if(!food)continue;
     const score=_surfaceExcursionScore(w);
     if(score>bestScore){best=w;bestScore=score;bestFood=food;}
@@ -3490,9 +3559,84 @@ function _surfaceExcursionChoice(workforce){
 function _beginSurfaceExcursion(ant,workforce,preselected){
   const choice=preselected===undefined?_surfaceExcursionChoice(workforce):preselected;
   if(!choice||choice.ant!==ant||!workers.includes(ant)||!foods.includes(choice.food)||!isFoodReachable(choice.food,ant))return null;
-  ant.targetFood=choice.food;ant._excursion=true;ant._excursionHasta=time+DAY_LENGTH*.9;
-  if(Math.random()<.22)pushToast(ant.x,ant.y-12,'\u{1F9ED}','#8fbf5f',1.3);
+  ant.targetFood=choice.food;ant._excursion=true;ant._excursionHasta=time+DAY_LENGTH*.9;ant._surfaceMarkedAt=time;
+  // Every dispatch is legible: this marker announces a route, but the worker must still walk the full
+  // connected shaft, cross the meadow, pick up food and physically return before stock changes.
+  pushToast(ant.x,ant.y-12,'↑ MEADOW ROUTE','#8fbf5f',2.0);
   return choice;
+}
+
+// A colony needs two simultaneous instincts: one narrow deep front and one exploratory side branch.
+// Previously `_hayFrenteActivo` let the vertical pioneer monopolise all deterministic digging, so an
+// early nest looked like a ruler-straight bore and most buried rewards were never approached. This
+// vote reserves one lateral scout (two in a mature colony) without letting the player assign a worker.
+let _lateralTickChoice=undefined;
+function _finishLateralLoad(ant){
+  if(!ant||!ant._lateralScout)return;
+  const side=ant._lateralTargetSide===-1?-1:(ant._lateralTargetSide===1?1:0);
+  if(!ant._lateralFirstSide){ant._lateralFirstSide=side||1;ant._lateralRelayPending=true;}
+  else if(side&&side!==ant._lateralFirstSide){delete ant._lateralFirstSide;delete ant._lateralRelayPending;}
+  else ant._lateralRelayPending=true;
+  delete ant._lateralTargetSide;
+  if(ant._lateralRelayPending){
+    ant._lateralRelayUntil=time+DAY_LENGTH*.08;
+    ant._excursionHasta=Math.max(ant._excursionHasta||0,ant._lateralRelayUntil);
+  }
+}
+function _lateralExcavationChoice(workforce){
+  const known=Array.isArray(workforce)?workforce:workers.filter(w=>_entityInKnownWalkspace(w));
+  // One young-colony scout completes paired left/right relays; only a mature workforce sustains two.
+  // That leaves founders available for food and brood instead of filling all four with excavation.
+  const limit=known.length>=12?2:1;
+  // Digging spends no ration. Keep one side scout even at the protected floor; the independently
+  // selected surface carrier and the other founders still own the food emergency.
+  if(known.length<4||economyLedger.food<_reservaVital())return null;
+  const store=storageStructure(false);if(store&&store.built===false)return null; // finish the founding cache first
+  const active=known.filter(w=>w._lateralScout&&(w.digTarget||(w.food&&w.food.isSoil)||w.state==='VOLVER_TIERRA')).length;
+  if(active>=limit)return null;
+  const surfaceAnt=_surfaceTickChoice&&_surfaceTickChoice.ant;
+  const builders=new Set(store&&store.built===false&&Array.isArray(store.builders)?store.builders:[]);
+  let best=null,bestScore=-Infinity;
+  for(const w of known){
+    if(!w||w===surfaceAnt||w.isQueen||w._pozoPrincipal||builders.has(w.id)||w.food||w.targetFood||w.digTarget||w.wasteTarget||w.projectCargo||w.buildTarget||w.floodTarget)continue;
+    if(w.state!=='EXPLORAR'&&w.state!=='BUSCAR')continue;
+    const relay=(w._lateralRelayUntil||0)>time;
+    if((w.health||0)<=40||(w.fatigue||0)>=(relay?82:62)||w._magmaRetreat)continue;
+    const t=w.traits||{},e=_jobBook(w),p=antProfession(w);
+    let score=(t.exploracion||40)*.42+(t.construccion||40)*.34+Math.log1p((e.explore||0)+(e.dig||0))*13;
+    score+=p==='MINERA_PROFUNDA'?18:p==='EXPLORADORA'?15:p==='CONSTRUCTORA'?8:0;
+    score+=(w.health||100)*.03-(w.fatigue||0)*.35+Math.min(8,(w.age||0)/DAY_LENGTH*5);
+    if((w._lateralRelayUntil||0)>time)score+=48;
+    for(const ch of String(w.id||''))score+=ch.charCodeAt(0)*.000001;
+    if(score>bestScore){best=w;bestScore=score;}
+  }
+  return best?{ant:best,active,limit,score:bestScore}:null;
+}
+function _lateralFrontChoice(ant,frontier){
+  if(!ant||!Array.isArray(frontier)||!frontier.length)return null;
+  // Balance the two connected wings. No hidden treasure coordinate enters the score: scouts find
+  // things by opening ground, not by omnisciently walking straight to a reward. A second simultaneous
+  // scout takes the opposite wing so a larger colony does not form another one-sided file.
+  let idHash=0;for(const ch of String(ant.id||''))idHash=(idHash*33+ch.charCodeAt(0))|0;
+  let leftOpen=0,rightOpen=0;for(const p of nestReachableData().cells){if(p[0]<CENTER_COL-1)leftOpen++;else if(p[0]>CENTER_COL+1)rightOpen++;}
+  let side=leftOpen===rightOpen?((Math.abs(idHash)&1)?1:-1):(leftOpen<rightOpen?-1:1);
+  if(leftOpen===rightOpen&&workers.some(w=>w!==ant&&w._lateralScout&&w.digTarget))side*=-1;
+  const preferred=frontier.filter(p=>(p.c-CENTER_COL)*side>1),choices=preferred.length?preferred:frontier;
+  const ar=(ant.y/CELL)|0,candidates=[];
+  for(const p of choices){
+    if(!p||p.r<SURFACE_ROW+3||p.r>=ROWS-1||Math.abs(p.c-CENTER_COL)<=1)continue;
+    if(!soil[p.r]||soil[p.r][p.c]!==1||!puedeAbrirSuperficie(p.c,p.r))continue;
+    const type=soilType[p.r]&&soilType[p.r][p.c];
+    if(type===17||!_canExcavateMaterial(type,ant))continue;
+    const lateral=side*(p.c-CENTER_COL),spread=Math.abs(p.c-CENTER_COL),travel=Math.hypot((p.c+.5)*CELL-ant.x,(p.r+.5)*CELL-ant.y)/CELL;
+    const score=lateral*2.8+spread*.85+Math.min(24,p.r-SURFACE_ROW)*.22-Math.abs(p.r-ar)*.48-travel*.12;
+    candidates.push({p,score,travel});
+  }
+  candidates.sort((a,b)=>b.score-a.score||a.travel-b.travel||b.p.r-a.p.r||a.p.c-b.p.c);
+  for(const c of candidates.slice(0,18)){
+    if(c.travel<=2.2||routeStepToDig(ant,c.p))return {r:c.p.r,c:c.p.c};
+  }
+  return null;
 }
 function nearestWorker(from,excludeId){
   let best=null,bd=Infinity;
@@ -3530,14 +3674,14 @@ function _reservaVital(){ try{ return reservaVitalComida(); }catch(e){ return 5;
 // justo cuando las fundadoras empezaban a morir de viejas).
 function _sostieneCriar(){ try{ return Math.max(_reservaVital()+3, 3+1.9*brood.length); }catch(e){ return 8; } }
 const _MAT_DEFS = [
-  {k:'stone', n:'STONE',  col:'#9a9a9a', col2:'#6e6e6e', icon:'\u{1FAA8}', sirve:'walls and pickaxe tools'},
-  {k:'clay',  n:'CLAY',   col:'#c47a52', col2:'#8f5433', icon:'\u{1F9F1}', sirve:'walls, granaries, and jars'},
-  {k:'sand',  n:'SAND',   col:'#e8cf8a', col2:'#b99f5f', icon:'\u231B', sirve:'foundations and tunnel drainage'},
-  {k:'fiber', n:'FIBER',  col:'#8fbf5f', col2:'#5d8438', icon:'\u{1F33F}', sirve:'baskets, ropes, and padding'},
-  {k:'wood',  n:'WOOD',   col:'#a97a44', col2:'#7a5528', icon:'\u{1FAB5}', sirve:'scaffolds, bridges, and roofs'},
-  {k:'cobre', n:'COPPER', col:'#c8703a', col2:'#7c3f1c', icon:'\u{1F7E0}', sirve:'points, sheets, and something shiny'},
-  {k:'hierro',n:'IRON',   col:'#b9bcc6', col2:'#5f6470', icon:'\u2699\u{FE0E}', sirve:'hard frames: picks, supports, and armor'},
-  {k:'oro',   n:'GOLD',   col:'#e8c14b', col2:'#8a6a12', icon:'\u{1F7E1}', sirve:'rustproof: offerings, ornaments, and contacts'}
+  {k:'stone', n:'STONE',  col:'#9a9a9a', col2:'#6e6e6e', icon:'\u{1FAA8}', sirve:'mandible edges and approved projects'},
+  {k:'clay',  n:'CLAY',   col:'#c47a52', col2:'#8f5433', icon:'\u{1F9F1}', sirve:'foreclaw grips and approved projects'},
+  {k:'sand',  n:'SAND',   col:'#e8cf8a', col2:'#b99f5f', icon:'\u231B', sirve:'stockpiled · no approved use yet'},
+  {k:'fiber', n:'FIBER',  col:'#8fbf5f', col2:'#5d8438', icon:'\u{1F33F}', sirve:'carry bindings and approved projects'},
+  {k:'wood',  n:'WOOD',   col:'#a97a44', col2:'#7a5528', icon:'\u{1FAB5}', sirve:'approved caches and tunnel braces'},
+  {k:'cobre', n:'COPPER', col:'#c8703a', col2:'#7c3f1c', icon:'\u{1F7E0}', sirve:'stockpiled · no approved use yet'},
+  {k:'hierro',n:'IRON',   col:'#b9bcc6', col2:'#5f6470', icon:'\u2699\u{FE0E}', sirve:'stockpiled · no approved use yet'},
+  {k:'oro',   n:'GOLD',   col:'#e8c14b', col2:'#8a6a12', icon:'\u{1F7E1}', sirve:'stockpiled · no approved use yet'}
 ];
 function storagePos(){
   // A blueprint fixes the intended location; a completed store makes it operational. Neither the
@@ -3560,7 +3704,7 @@ function _mainProtectedCapacity(){
   // The founding store is a framed, sealed room: water can block workers temporarily without erasing
   // shelves or jars (the physical-storage contract already keeps floods from demolishing it). Remote
   // forward caches are the vulnerable exception and must be dry cell-for-cell to contribute their +6.
-  return 8+storageCells().length*2+granerosConstruidos()*12+colonyProjects.completedCount('clay_jars')*12;
+  return 8+storageCells().length*2+granerosConstruidos()*12+colonyProjects.completedCount('clay_jars')*12+(_lineageFx.protectedStorageBonus||0);
 }
 function capacidadAlmacen(){
   return _mainProtectedCapacity()+operationalColonyProjects('forward_cache').length*6;
@@ -3762,20 +3906,46 @@ function storageDeliveryNodes(){
   return _storageNodeDescriptors(false).map(n=>({...n,free:Math.max(0,n.capacity-_protectedLotTotal(n.id))}));
 }
 function storageTargetFor(ant){
-  const nodes=storageDeliveryNodes();if(!nodes.length)return {...storagePos(),id:'main',type:'store',capacity:0,free:0};
+  const nodes=storageDeliveryNodes();
+  if(!nodes.length){
+    // A collapse may abandon the framed store while carriers are already on the meadow. They return
+    // physically to the living queen and hand over to the bounded social crop instead of orbiting an
+    // unusable blueprint forever. Any excess becomes a real pile there until a store is rebuilt.
+    const q=queens.find(x=>(x.health||0)>0),anchor=q?{x:q.x,y:q.y}:storagePos(),capacity=_emergencyCropCapacity();
+    return {...anchor,id:'emergency_crop',type:'social_crop',capacity,operational:!!q,free:Math.max(0,capacity-_protectedLotTotal('emergency_crop'))};
+  }
   // Prefer a real free shelf. Only when every node is full does the nearest node become the physical
   // overflow drop point; this makes a connected forward cache useful without granting global magic room.
   const withRoom=nodes.filter(n=>n.free>1e-7),candidates=withRoom.length?withRoom:nodes;
-  let remembered=candidates.find(n=>ant&&ant._deliveryNodeId===n.id);if(remembered)return remembered;
-  let best=candidates[0],score=Infinity;
-  for(const n of candidates){
+  const remembered=candidates.find(n=>ant&&ant._deliveryNodeId===n.id);
+  let best=remembered||candidates[0],score=remembered?-Infinity:Infinity;
+  if(!remembered)for(const n of candidates){
     let d=ant?Math.hypot(ant.x-n.x,ant.y-n.y):0;
     // A surface load first enters through the founding shaft. Remote underground caches only compete
     // after the carrier is inside, which prevents a cache under the meadow from stealing surface trips.
     if(ant&&ant.y<SURFACE_Y+8&&n.type==='forward_cache')d+=Math.abs(n.y-SURFACE_Y)*.75;
     if(d<score){score=d;best=n;}
   }
-  if(ant)ant._deliveryNodeId=best.id;return best;
+  if(ant)ant._deliveryNodeId=best.id;
+  // A store anchor describes the structure, not necessarily an open standing tile: emergent walls can
+  // occupy its centre while the surrounding shelves remain valid. Return the nearest connected open
+  // footprint cell but retain the node id/capacity, so a carrier walks to a real shelf instead of
+  // pathfinding forever toward a solid decorative block.
+  if(best.type==='store'){
+    const footprint=storageCells(),seen=new Set(),open=[];
+    for(const p of footprint)for(const [dc,dr] of [[0,0],[-1,0],[1,0],[0,-1],[0,1]]){
+      const c=p.c+dc,r=p.r+dr,k=c+','+r;if(seen.has(k))continue;seen.add(k);
+      if(c>=0&&c<COLS&&r>SURFACE_ROW&&r<ROWS&&soil[r]&&soil[r][c]===0&&isNestCellConnected(c,r)&&waterAtCell(c,r)<WATER_AVOID_LEVEL)open.push({c,r});
+    }
+    if(open.length){
+      open.sort((a,b)=>{
+        const ax=(a.c+.5)*CELL,ay=(a.r+.5)*CELL,bx=(b.c+.5)*CELL,by=(b.r+.5)*CELL;
+        return ant?Math.hypot(ant.x-ax,ant.y-ay)-Math.hypot(ant.x-bx,ant.y-by):Math.hypot(best.x-ax,best.y-ay)-Math.hypot(best.x-bx,best.y-by);
+      });
+      best={...best,x:(open[0].c+.5)*CELL,y:(open[0].r+.5)*CELL};
+    }
+  }
+  return best;
 }
 function projectWorldContext(){
   const cap=capacidadAlmacen(),stock={...economyLedger.materials},pressure=storagePressureSnapshot();
@@ -3855,7 +4025,7 @@ function approveColonyProject(type,site){
   projectPlacementType=null;_assignColonyProjectCrew(true);
   pushEvent('build',`PROJECT APPROVED · ${def.name}`,`${Object.entries(def.cost).map(([k,v])=>v+' '+k.toUpperCase()).join(' · ')} committed; workers will collect every unit`);
   const p=colonyProjectAnchor(result.project);pushToast(p.x,p.y-14,def.name,def.color,2.4);
-  showNotify('ok',def.name,'Materials are committed, not spent. The selected crew must carry and build it.');
+  showNotify('ok',def.name+' APPROVED','Cost committed. Workers must carry every unit, then build it. When complete: '+def.effect,6500);
   try{pintarInventario();}catch(e){}return result;
 }
 function armColonyProject(type){
@@ -3863,7 +4033,9 @@ function armColonyProject(type){
   const check=colonyProjects.canStart(type,economyLedger.availableMaterials(),def.placement==='store'?{c:0,r:0}:{c:1,r:SURFACE_ROW+1});
   if(!check.ok){showNotify('warn','PROJECT HELD',_projectStartMessage(check.reason));return false;}
   if(def.placement==='store'){approveColonyProject(type,null);return true;}
-  projectPlacementType=type;try{cerrarInventario();}catch(e){}setMapTool('project');return true;
+  projectPlacementType=type;try{cerrarInventario(false,false);}catch(e){}setMapTool('project');
+  const centre=screenToWorld(VIEW_W/2,VIEW_H/2);mouse.x=centre.x;mouse.y=centre.y;
+  try{canvas.focus({preventScroll:true});}catch(e){}return true;
 }
 function cancelColonyProject(){
   const a=colonyProjects.activeRef();if(!a)return false;
@@ -3945,7 +4117,7 @@ function workOnColonyProject(ant,dt,speed){
   ant.state='BUILD_PROJECT';
   if(dist(ant,site)<12){
     const trait=ant.traits&&ant.traits.construccion||40,xp=_jobBook(ant).build||0;
-    const effort=dt*(.58+trait/230+Math.min(.28,xp*.02))*(ant.tool==='trowel'?1.24:1);
+    const effort=dt*(.58+trait/230+Math.min(.28,xp*.02))*(antHasAdaptation(ant,'foreclaws')?1.24:1);
     const result=colonyProjects.addWork(effort,ant.id,{time});recordJobExperience(ant,'build',effort/Math.max(1,a.workNeeded));
     ant.fatigue=Math.min(100,(ant.fatigue||0)+_fatUnidad*dt*.74);
     if(Math.random()<.2)particles.push({x:site.x+(Math.random()-.5)*18,y:site.y+(Math.random()-.5)*10,vx:(Math.random()-.5),vy:-.4,life:.7,decay:.05,color:projectDefinition(a.type).color});
@@ -4478,13 +4650,10 @@ function updateFungus(dt){
       f.health -= dt*0.00010;
       if(f.health<0.22 && Math.random()<0.006) f.size=Math.max(0.6, f.size-0.04);
     } else {
-      // Workers clean it for free, but food mass cannot appear from care alone. Fibre is substrate.
+      // Routine cleaning improves health but may not spend inventory or create food mass. Physical plant
+      // scraps carried into this chamber (_huertoVotos below), or an approved FUNGUS BED, provide feed.
       if(Math.random()<0.018*tenders){
-        if(Math.random()<.5&&economyLedger.debitMaterial('fiber',1,{reason:'fungus garden substrate'})===1){
-          f.fed=Math.min(24,f.fed+1);f.size=Math.min(4.2,f.size+.018);
-        }
         f.health=Math.min(1,f.health+.035);
-        // trofalaxia indirecta: las que estan comiendo hongo recargan buche
         workers.filter(w=>_tocaJardin(w,24)).forEach(w=>w.crop=Math.min(w.cropMax,(w.crop||0)+0.07));
         if(Math.random()<0.06) particles.push({x:f.x,y:f.y-8,vx:(Math.random()-0.5)*0.6,vy:-0.7,life:0.9,decay:0.022,color:'#e8d5a3'});
       }
@@ -4763,6 +4932,7 @@ function closeAntProfile(immediate=false){
 }
 function showAntProfile(ant){
   if(!ant||!isExploredPixel(ant.x,ant.y))return false;
+  try{cerrarLineage(true);}catch(e){}
   try{cerrarInventario(true);}catch(e){}
   try{cerrarRoster(true);}catch(e){} // one right curtain: profiles never overlap another sheet
   const modal=document.getElementById('antProfile');
@@ -5019,11 +5189,12 @@ function getSensorsForAnt(ant){
 // LOCOMOCIÓN ACELERADA: cada rama conserva su velocidad de simulación, pero canAntMove() muestrea el
 // segmento completo. A x16/x64 se recorren más píxeles por tick, nunca una pared o una celda inundada.
 // Los trayectos con objetivo usan routeStep(), de modo que acelerar reduce espera, no geometría.
+function _restRecoveryAmount(dt){return _fatUnidad*Math.max(0,Number(dt)||0)*14*(_lineageFx.restRecoveryMultiplier||1);}
 function updateAnt(ant, dt){
-  // La marca de la primera cuadrilla dura toda la obra, no solo una calada. Así la obrera que ya está
-  // abajo encadena el siguiente bloque en vez de ser sustituida por otra que vuelve a empezar desde el
-  // nido. Al abrir la primera losa se retira el encargo para siempre.
-  if(ant._pozoPrincipal && umbralesRotos>0) ant._pozoPrincipal=false;
+  // The deep marker survives between slabs: every newly expanded band eventually receives another
+  // downward shift. abrirUmbral clears it at the actual boundary so the next pioneer is re-elected.
+  // A lateral marker lasts through the visible soil return, then becomes available to another scout.
+  if(ant._lateralScout&&!ant.digTarget&&!(ant.food&&ant.food.isSoil)&&ant.state!=='VOLVER_TIERRA')ant._lateralScout=false;
   // Un objetivo deja de existir para la colonia en cuanto una pared corta su componente. No basta con
   // que el objeto siga dentro de `foods`: perseguir su coordenada mantendría a la obrera mordiendo roca
   // y un tándem podría transmitir conocimiento de una cavidad que nadie ha conectado.
@@ -5165,24 +5336,21 @@ function updateAnt(ant, dt){
         const coste = haciaAire + (dr>0? 0.5:0) + Math.random()*0.3;
         if(coste<_bc){ _bc=coste; _cavar={r,c}; }
       }
-      if(_cavar){
+      if(_cavar&&!ant.food){
         // si ya estaba cavando ESA celda, no le borres el progreso: solo cambia de objetivo si es otra
         if(!ant.digTarget || ant.digTarget.r!==_cavar.r || ant.digTarget.c!==_cavar.c){ ant.digTarget=_cavar; ant.digProgress=0; }
-        ant.state='CAVANDO';
-        if(!ant.food) ant.targetFood=null;                             // que no persiga dos cosas a la vez
+        ant.state='CAVANDO';ant.targetFood=null;                       // que no persiga dos cosas a la vez
         antsAtascados = (antsAtascados||0)+1;
       } else if(_aire){
         ant.angle = Math.atan2((_aire.r+0.5)*CELL - ant.y, (_aire.c+0.5)*CELL - ant.x);
-        if(!ant.food && !ant.digTarget) ant.state='EXPLORAR';
+        if(ant.food)ant.state=ant.food.isSoil?'VOLVER_TIERRA':'VOLVER_COMIDA';
+        else if(!ant.digTarget)ant.state='EXPLORAR';
       } else {
         ant.angle += Math.PI*0.5 + (Math.random()-0.5)*0.8;           // ni aire ni tierra: que pruebe por detras
       }
     }
   }
-  // herramientas: forja cerca del almacén/taller si es inteligente
-  if(storageStructure(true)&&!ant.tool&&!ant.food&&dist(ant,storagePos())<26&&_entityInKnownWalkspace(ant)&&_openResourceSegment(ant.x,ant.y,storagePos().x,storagePos().y,{allowMeadow:false,maxDistance:26})&&Math.random()<.009){
-    tryCraftTool(ant);
-  }
+  // Material stock is never spent here. The player approves each eligible body adaptation in NEST STORES.
   // edad ya sumada en loop, aquí solo lógica social/emocional
   if(!ant.mood) ant.mood={joy:0.5,anger:0,fear:0,sadness:0,loyalty:0.6,stress:0};
   if(ant.fatigue>80) ant.mood.stress=Math.min(1, ant.mood.stress+0.003);
@@ -5211,7 +5379,7 @@ function updateAnt(ant, dt){
         near.mood.sadness=Math.max(0, near.mood.sadness-0.12); near.mood.joy=Math.min(1, near.mood.joy+0.08);
         if(Math.random()<0.3) near.belief=ant.id;
       }
-      if(ant.food && !ant.food.isSoil && near.mood.anger>0.65 && near.mood.loyalty<0.35 && Math.random()<0.006){
+      if(ant.food && !ant.food.isSoil && ant.state!=='VOLVER_COMIDA'&&!ant._excursion&&near.mood.anger>0.65 && near.mood.loyalty<0.35 && Math.random()<0.006){
         near.food=ant.food; ant.food=null;
         near.mood.joy=Math.min(1, near.mood.joy+0.18); ant.mood.anger=Math.min(1, ant.mood.anger+0.25); ant.mood.sadness=Math.min(1, ant.mood.sadness+0.18);
         pushImportant('crime',`🦹 ${near.id} roba miel a ${ant.id} (F${ant.faction})`,`Crimen - Lealtad ${(near.mood.loyalty*100)|0}%`);
@@ -5440,9 +5608,9 @@ function updateAnt(ant, dt){
   ant._renderX += (ant.x - ant._renderX) * 0.32;
   ant._renderY += (ant.y - ant._renderY) * 0.32;
   if(ant._climbing) speed*=0.72;
-  // herramienta
-  if(ant.tool==='pick') speed*=1.16;
-  if(ant.tool==='trowel') speed*=1.09;
+  // Player-approved body adaptations: no tool is fabricated or assigned automatically.
+  if(antHasAdaptation(ant,'mandibles')) speed*=1.16;
+  if(antHasAdaptation(ant,'foreclaws')) speed*=1.09;
 
   // Ingeniería de emergencia: una sola obrera se acerca por celdas secas y tapona la brecha. No se
   // mete en el agua para construir; si la geometría cambia, updateFloodResponse buscará otra cara.
@@ -5466,7 +5634,7 @@ function updateAnt(ant, dt){
     const safeAdjacent=waterAtPixel(ant.x,ant.y)<WATER_AVOID_LEVEL&&dist(ant,targetPos)<CELL*1.8;
     if(inCell||dist(ant,workPos)<8||safeAdjacent){
       ant.angle=Math.atan2((target.r+.5)*CELL-ant.y,(target.c+.5)*CELL-ant.x);
-      ant.floodProgress=(ant.floodProgress||0)+dt*0.09*(ant.tool==='trowel'?1.28:1);
+      ant.floodProgress=(ant.floodProgress||0)+dt*0.09*(antHasAdaptation(ant,'foreclaws')?1.28:1);
       ant.fatigue=Math.min(100,ant.fatigue+0.03*dt);
       if(Math.random()<0.22) particles.push({x:(target.c+.5)*CELL,y:(target.r+.5)*CELL,vx:(Math.random()-.5),vy:-.4,life:.7,decay:.05,color:'#82cde8'});
       if(ant.floodProgress>=1) _sealFloodCell(ant,target);
@@ -5502,12 +5670,13 @@ function updateAnt(ant, dt){
     // y el input de fatiga de la red clavado en 1,0 - o sea, "no tengo ganas" permanente). Ahora se mide
     // en jornadas: una jornada entera de trabajo la agota, ni un segundo.
     ant.fatigue += _fatUnidad*dt*1.0;
-    // Con la miel en la boca el sorteo del 2% no la sacaba nunca (vease arriba): si va cargada y
-    // al limite, se para en seco y descansa AHII, sin soltar la carga.
-    if(ant.fatigue>92 && (ant.food || ant.state!=='DESCANSAR') && (ant.blocked||0)>3) ant.state='DESCANSAR';
-    else if(ant.fatigue>86 && Math.random()<0.02) ant.state='DESCANSAR';
+    // A slab shift is a short, visible communal commitment. Recruited helpers may finish that shift
+    // before ordinary tiredness rerolls their state; at exhaustion they still stop like everyone else.
+    const _slabShift=(ant._obraUmbralHasta||0)>time&&(ant._umbralLead||ant._umbralSupport);
+    if(!_slabShift&&ant.fatigue>92 && (ant.food || ant.state!=='DESCANSAR') && (ant.blocked||0)>3) ant.state='DESCANSAR';
+    else if(!_slabShift&&ant.fatigue>86 && Math.random()<0.02) ant.state='DESCANSAR';
   }else{
-    ant.fatigue -= _fatUnidad*dt*14;   // la siesta devuelve el aire en ~1,7 horas de juego
+    ant.fatigue -= _restRecoveryAmount(dt); // amber memory can shorten rest, never remove it
     if(ant.fatigue<=12){
       ant.state=ant.digTarget&&soil[ant.digTarget.r]&&soil[ant.digTarget.r][ant.digTarget.c]===1?'CAVANDO':'EXPLORAR';
     }
@@ -5659,14 +5828,14 @@ function updateAnt(ant, dt){
         else ant.angle+=(Math.random()-0.5)*0.7;
       }
     }else{
-      const toolDig = ant.tool==='pick'?1.38 : ant.tool==='trowel'?1.18 : 1;
+      const toolDig = antHasAdaptation(ant,'mandibles')?1.38 : antHasAdaptation(ant,'foreclaws')?1.18 : 1;
       const _digGain=(1.6+(ant.role==='EXCAVADORA'?0.28:0.12)*10)*Math.max(1,gameSpeed*0.85)*toolDig;
       const _esLosa=soilType[ant.digTarget.r]&&soilType[ant.digTarget.r][ant.digTarget.c]===17;
       const _esApoyoUmbral=ant._umbralSupport&&_esLosa;
       const _esLiderUmbral=ant._umbralLead&&_esLosa;
       // Support is mostly visual; the lead advances steadily but still slowly enough for the communal
       // effort to remain visible instead of deleting a fresh slab in a single high-speed frame.
-      ant.digProgress+=_esApoyoUmbral?Math.min(_digGain,0.055):(_esLiderUmbral?Math.min(_digGain,0.65):_digGain);
+      ant.digProgress+=_esApoyoUmbral?Math.min(_digGain,0.018):(_esLiderUmbral?Math.min(_digGain,0.65):_digGain);
       if(Math.random()<0.65) particles.push({x:tx+(Math.random()-0.5)*10,y:ty+(Math.random()-0.5)*10,vx:(Math.random()-0.5)*1.4,vy:-Math.random()*1.4,life:1,decay:0.04,color:'#8b5a2b'});
       if(Math.random()<0.18) particles.push({x:tx,y:ty-8,vx:(Math.random()-0.5)*0.6,vy:-0.9,life:1,decay:0.03,color:'#ffcc00'});
       if(ant.digProgress>=ant.digNeeded){
@@ -5684,7 +5853,7 @@ function updateAnt(ant, dt){
         // ellas a fuerza de cargarlo, intentarlo y ver que aguanta (herramienta, lamina, adorno).
         if(_mt===8 || _mt===9 || _mt===10){
           const _mat = _mt===8?'cobre':_mt===9?'hierro':'oro';
-          const _amt = 1 + (ant.tool==='pick'?1:0) + (colonyIQ>132?1:0);
+          const _amt = 1 + (antHasAdaptation(ant,'mandibles')?1:0) + (colonyIQ>132?1:0);
           economyLedger.creditMaterial(_mat,_amt,'ore extraction');
           if(!materialUso[_mat]) materialUso[_mat]={mina:0, carga:0, tocado:0};
           materialUso[_mat].mina += _amt;
@@ -5703,14 +5872,14 @@ function updateAnt(ant, dt){
         } if(_mt===15){                                   // el magma no se cava: achicharra y ya esta
           ant.digTarget=null; ant.digProgress=0; ant.state='VOLVER_TIERRA'; ant.fatigue=Math.min(100,ant.fatigue+9);
           pushToast(ant.x,ant.y-10,'🔥 QUEMA','#ff6a1e'); return;
-        } if(_mt===7 && (gen<8 || !inventions.masonry)){ ant.digTarget=null; ant.digProgress=0; ant.state='EXPLORAR'; pushToast(ant.x,ant.y-10,'⛔ BEDROCK','#555'); return; }
+        } if(!_canExcavateMaterial(_mt,ant)){ ant.digTarget=null; ant.digProgress=0; ant.state='EXPLORAR'; pushToast(ant.x,ant.y-10,_mt===15?'🔥 MAGMA':'⛔ BEDROCK',_mt===15?'#ff6a1e':'#555'); return; }
         soil[ant.digTarget.r][ant.digTarget.c]=0; if(soilType[ant.digTarget.r]) soilType[ant.digTarget.r][ant.digTarget.c]=0; markSoilDirty(ant.digTarget.c,ant.digTarget.r); ant.digsDone++; digs++; colonyFitness+=0.35;
         ant.deepestWork=Math.max(ant.deepestWork||SURFACE_ROW,ant.digTarget.r); recordJobExperience(ant,'dig',1+Math.max(0,ant.digTarget.r-SURFACE_ROW)*.025);
         // La evolución mide trabajo de la colonia, no solo viajes de miel. Una calada vale menos de
         // la mitad de una entrega mínima (8 frente a 21 XP), pero una fundación que excava de verdad
         // puede alcanzar GEN1 aunque su linaje tarde en coronar el pozo de salida.
         stats.xp+=8; checkLevelUp();
-        if(digs%6===0) pushImportant('invention', `⛏ ${digs} bloques cavados`, `GEN${typeof gen!=='undefined'?gen:0} - ${workers.filter(w=>w.state==='CAVANDO').length} activas en [${ant.digTarget?ant.digTarget.c:''},${ant.digTarget?ant.digTarget.r:''}]`);
+        if(digs%6===0) pushImportant('invention', `>< ${digs} CELLS OPENED`, `GEN${typeof gen!=='undefined'?gen:0} - ${workers.filter(w=>w.state==='CAVANDO').length} activas en [${ant.digTarget?ant.digTarget.c:''},${ant.digTarget?ant.digTarget.r:''}]`);
         // residuo real: la tierra excavada va a basurero, no desaparece
         if(Math.random()<0.52){ addWaste(tx, ty, _mt); }
         // cosecha de material según estrato
@@ -5718,7 +5887,7 @@ function updateAnt(ant, dt){
         else if(_mt===3 && Math.random()<0.62){ economyLedger.creditMaterial('sand',1,'soil excavation'); }
         else if(_mt===4 && Math.random()<0.55){ economyLedger.creditMaterial('stone',1,'soil excavation'); if(inventions.stone) colonyFitness+=0.05; }
         else if(_mt===1 && Math.random()<0.22){ economyLedger.creditMaterial('fiber',1,'root excavation'); } // raíces
-        if(_mt===4) pushToast(tx,ty-16,'⛏ PIEDRA','#8a8a8a',1.3);
+        if(_mt===4) pushToast(tx,ty-16,'>< STONE','#8a8a8a',1.3);
         else if(_mt===2) pushToast(tx,ty-16,'✓ TÚNEL','#d4a574',1.3);
         else pushToast(tx,ty-16,'✓ TÚNEL','#2de67a',1.3);
         logAntHistory(ant, `abrió túnel [${ant.digTarget.c},${ant.digTarget.r}]`);
@@ -5760,7 +5929,7 @@ function updateAnt(ant, dt){
           addWaste(tx,ty,_mt); ant.food=null;
           ant.digTarget=null; ant.digProgress=0; ant.state='EXPLORAR';
         } else {
-          ant.food={amount:1,isSoil:true}; ant.digTarget=null; ant.digProgress=0; ant.state='VOLVER_TIERRA';
+          ant.food={amount:1,isSoil:true,soilType:_mt}; ant.digTarget=null; ant.digProgress=0; ant.state='VOLVER_TIERRA';
         }
       }
     }
@@ -5769,7 +5938,7 @@ function updateAnt(ant, dt){
   if(ant.state==='VOLVER_TIERRA'){
     // decidir si construir una pared estratégica en vez de solo tirar tierra en la entrada. Una
     // obrera escaldada no se detiene a construir: primero sale del basalto y recupera el aliento.
-    if(!ant.buildTarget && !ant._magmaRetreat){
+    if(!ant.buildTarget && !ant._magmaRetreat && !ant._lateralScout){
       const buildChance = 0.16 + (ant.traits.construccion/100)*0.22 + (antProfession(ant)==='CONSTRUCTORA'?.16:0) + Math.min(0.14, (colonyIQ-100)/520) + gen*0.009; // la práctica constructiva pesa, no un botón
       const canBuild = antProfession(ant)==='CONSTRUCTORA' || ant.role==='NODRIZA' || ant.traits.construccion>48;
       if(canBuild && Math.random()<buildChance){
@@ -5777,22 +5946,45 @@ function updateAnt(ant, dt){
         if(site){ ant.buildTarget=site; ant.buildProgress=0; }
       }
     }
-    const tgt=ant.buildTarget&&!ant._magmaRetreat?{x:ant.buildTarget.c*CELL+8,y:ant.buildTarget.r*CELL+8}:surfaceEntrance();
+    const _soilBuild=!!(ant.buildTarget&&!ant._magmaRetreat);
+    let tgt=_soilBuild?{x:ant.buildTarget.c*CELL+8,y:ant.buildTarget.r*CELL+8}:surfaceEntrance();
+    let _soilLip=null;
+    if(!_soilBuild){
+      // Soil carriers must also use the physical mouth. A diagonal from a side branch to the centre of
+      // the meadow trapped them forever against the founding shaft wall, which is why the player saw
+      // everyone go down but almost nobody climb back up. Route to one open shaft lane, then rise in it.
+      const shaftX=CENTER_COL*CELL+8;
+      if(ant._soilLipSide!==-1&&ant._soilLipSide!==1)ant._soilLipSide=ant.x<shaftX?-1:1;
+      _soilLip={x:shaftX+ant._soilLipSide*CELL,y:SURFACE_Y-6};
+      // Route all the way to the lip. An old artificial "foot" below the shaft made carriers that
+      // were already above it walk back down and oscillate instead of following the open BFS upward.
+      tgt=_soilLip;
+    }
     let _soilWaypoint=tgt,_soilRouted=false;
-    if(!_openResourceSegment(ant.x,ant.y,tgt.x,tgt.y,{allowMeadow:true})){
+    if(_soilLip){
+      // A centre-line ray can look clear through a one-cell stair while the ant's body clips its inner
+      // corner. Soil carriers therefore take the connected cell route even when that ray is clear.
+      const rs=routeStep(ant,tgt.x,tgt.y);if(rs){_soilWaypoint=rs;_soilRouted=true;}
+    }else if(!_openResourceSegment(ant.x,ant.y,tgt.x,tgt.y,{allowMeadow:true})){
       const rs=routeStep(ant,tgt.x,tgt.y);if(rs){_soilWaypoint=rs;_soilRouted=true;}
     }
     const ang=Math.atan2(_soilWaypoint.y-ant.y,_soilWaypoint.x-ant.x),bias=steer*.22;
-    ant.angle+=((ang-ant.angle+Math.PI*3)%(Math.PI*2)-Math.PI)*(_soilRouted?0.34:0.11)+bias*.07;
-    const _soilStep=_soilRouted?Math.min(speed,Math.max(1,dist(ant,_soilWaypoint))):speed;
+    ant.angle+=((ang-ant.angle+Math.PI*3)%(Math.PI*2)-Math.PI)*(_soilRouted?0.72:0.18)+bias*(_soilLip?0:.07);
+    if(_soilLip)ant.angle=ang; // carried soil follows the connected lane exactly; it may not cut a corner through rock
+    const _soilStep=_soilLip?Math.min(speed,Math.max(.05,dist(ant,_soilWaypoint))):(_soilRouted?Math.min(speed,Math.max(1,dist(ant,_soilWaypoint))):speed);
     const nx=ant.x+Math.cos(ant.angle)*_soilStep,ny=ant.y+Math.sin(ant.angle)*_soilStep;
-    if(canAntMove(ant,nx,ny)){ant.x=nx;ant.y=ny;ant.blocked=0;}else{ant.blocked++;ant._routeUntil=0;ant.angle+=.32;if(ant.blocked>44){ant.state='EXPLORAR';ant.blocked=0;ant.buildTarget=null;}}
-    if(dist(ant,tgt)<10){
+    if(canAntMove(ant,nx,ny)){ant.x=nx;ant.y=ny;ant.blocked=0;}
+    else if(_soilLip&&_soilRouted&&!isSolidPixel(nx,ny)&&_openResourceSegment(ant.x,ant.y,nx,ny,true)&&waterAtPixel(nx,ny)<=waterAtPixel(ant.x,ant.y)+.015&&dist({x:nx,y:ny},_soilWaypoint)<dist(ant,_soilWaypoint)){
+      // A fresh one-cell side cut can leave the carrier's rear legs brushing its old wall. Its centre
+      // still walks a normal, visible step along the dry BFS; this inward crawl clears the radius test
+      // without jumping through a block or changing floors instantaneously.
+      ant.x=nx;ant.y=ny;ant.blocked=0;
+    }else{ant.blocked++;ant._routeUntil=0;ant.angle+=.32;if(ant.blocked>44){ant.state='EXPLORAR';ant.blocked=0;ant.buildTarget=null;}}
+    const _soilArrived=_soilBuild?dist(ant,tgt)<10:!!(_soilLip&&ant.y<=SURFACE_Y-2&&Math.abs(ant.x-_soilLip.x)<10);
+    if(_soilArrived){
       if(ant.buildTarget){
-        // intenta estructura compleja primero si son inteligentes
-        if(tryBuildComplexStructure(ant, ant.buildTarget)){
-          ant.buildTarget=null; ant.food=null; ant.state='EXPLORAR'; ant.blocked=0; return;
-        }
+        // Autonomous workers may reuse the one physical rubble load they are carrying, but they may
+        // never order a bridge, workshop, tower or any other material-funded structure on their own.
         // colocar bloque: de túnel pasa a tierra - forma cámara
         const c=ant.buildTarget.c, r=ant.buildTarget.r;
         if(soil[r][c]===0){
@@ -5808,15 +6000,11 @@ function updateAnt(ant, dt){
             ant.buildTarget=null; ant.state='EXPLORAR'; return;
           }
           soil[r][c]=1; markSoilDirty(c,r);
-          // material usado: los gastos ordinarios sólo ven stock libre; mínimos y proyectos quedan intactos.
-          let usedType=1;
-          if(inventions.wood && ant.traits.construccion>62 && Math.random()<0.28 && economyLedger.debitMaterial('wood',1,{reason:'wall decoration'})===1){ usedType=1; decoSet.add(dkey(c,r)); }
-          else if(inventions.stone && Math.random()<0.32 && economyLedger.debitMaterial('stone',2,{reason:'wall construction'})===2){ usedType=4; }
-          else if(inventions.clay && Math.random()<0.38 && economyLedger.debitMaterial('clay',1,{reason:'wall construction'})===1){ usedType=2; }
-          else if(Math.random()<0.18 && economyLedger.debitMaterial('sand',1,{reason:'wall construction'})===1){ usedType=3; }
+          // The wall is made from the visible rubble load already in her mandibles. Inventory stone,
+          // clay, sand, wood and fibre are untouched unless the player approves a card or project.
+          const carriedType=ant.food&&ant.food.isSoil?Number(ant.food.soilType)||1:1;
+          const usedType=(carriedType>=1&&carriedType<=4)?carriedType:1;
           if(soilType[r]) soilType[r][c]=usedType;
-          if(usedType===4) pushToast(tgt.x,tgt.y-10,'🧱 PIEDRA','#8a8a8a',1.4);
-          else if(usedType===2) pushToast(tgt.x,tgt.y-10,'🏺 ARCILLA','#c2a080',1.4);
           // ingeniera decora: solo si han aprendido (gen>=3, IQ>130, cámaras>=3) y por gusto cuidado alto
           const canDecorate = gen>=3 && colonyIQ>132 && countChambers()>=4; // realista: decorar no desde GEN2
           if(canDecorate && ant.traits.cuidado>62 && Math.random() < 0.09 + ant.traits.cuidado*0.002){
@@ -5856,6 +6044,8 @@ function updateAnt(ant, dt){
           if(best){
             soil[best.r][best.c]=1; soilType[best.r][best.c]=1; markSoilDirty(best.c,best.r);
             ant.food=null;
+            _finishLateralLoad(ant);
+            ant._lateralScout=false;delete ant._soilLipSide;
             if(ant._magmaRetreat){ ant._magmaRetreat=false; ant.state='DESCANSAR'; } else ant.state='EXPLORAR';
             ant.blocked=0;
             for(let i=0;i<5;i++) particles.push({x:best.c*CELL+8,y:best.r*CELL+8,vx:(Math.random()-0.5)*1,vy:-0.4,life:0.6,decay:0.04,color:'#6b3a1f'});
@@ -5867,6 +6057,8 @@ function updateAnt(ant, dt){
         if(mound.length>30) mound.shift();
       }
       ant.food=null;
+      _finishLateralLoad(ant);
+      ant._lateralScout=false;delete ant._soilLipSide;
       if(ant._magmaRetreat){ ant._magmaRetreat=false; ant.state='DESCANSAR'; }
       else ant.state='EXPLORAR';
       ant.blocked=0;
@@ -5876,12 +6068,32 @@ function updateAnt(ant, dt){
   const carrying=!!ant.food && !ant.food.isSoil;
   if(carrying && ant.state!=='DESCANSAR'){
     ant.state='VOLVER_COMIDA';
+    // Keep the pickup pose for the remainder of this rendered frame. At accelerated speed an ant
+    // could cross the meadow, collect, and descend between two paints: physically simulated, but still
+    // invisible to the player. The next animation frame resumes the same non-teleported route.
+    if(ant._surfacePickupPaintAt!=null&&performance.now()-ant._surfacePickupPaintAt<1)return;
+    delete ant._surfacePickupPaintAt;
     const _storeTarget=storageTargetFor(ant);
     let tgt=_storeTarget;
-    // waypoint Minecraft: si estás en la superficie (y < 100) y lejos del hueco central, ve primero a la boca del túnel para no atravesar tierra en diagonal
-    const shaftX = CENTER_COL*CELL+8;
-    if(ant.y < SURFACE_Y+12 && Math.abs(ant.x - shaftX) > 24){
-      tgt={x: shaftX, y: SURFACE_Y-6};
+    // Reverse the same physical mouth used on the outward trip. First reach one lip while fully in
+    // the meadow, then align to that shaft-cell centre, and only then descend. A diagonal from the
+    // grass edge to the deep store let the ant's 7px body catch the neighbouring solid cell forever.
+    const shaftX=CENTER_COL*CELL+8;
+    let _mouthReturn=false,_mouthLipX=null;
+    if(ant.y<SURFACE_Y+12){
+      if(ant._returnLipSide!==-1&&ant._returnLipSide!==1)ant._returnLipSide=ant.x<shaftX?-1:1;
+      const lipX=shaftX+ant._returnLipSide*CELL;
+      _mouthLipX=lipX;
+      const aligned=Math.abs(ant.x-lipX)<=0.25;
+      _mouthReturn=true;
+      // First stand fully above the chosen open lane. Descending while the body was still at grass
+      // height let its old outward heading carry it sideways into the solid bank beside the mouth.
+      // Latch that phase: recomputing it from y made the carrier descend two pixels, turn back up,
+      // and oscillate forever across the grass line.
+      if(!ant._returnMouthDescending&&aligned&&ant.y<=SURFACE_Y-5)ant._returnMouthDescending=true;
+      tgt=ant._returnMouthDescending
+        ?{x:lipX,y:(SURFACE_ROW+8)*CELL+8}
+        :{x:lipX,y:SURFACE_Y-6};
     }
     // Un waypoint sólo vale por una galería real. La antigua comprobación esperaba diez golpes y a x16
     // podía aterrizar al otro lado de una pared antes de pedir ruta.
@@ -5891,13 +6103,20 @@ function updateAnt(ant, dt){
     const ang=Math.atan2(tgt.y-ant.y, tgt.x-ant.x);
     const steerBias=steer*0.55;
     let diff=((ang-ant.angle+Math.PI*3)%(Math.PI*2)-Math.PI);
-    ant.angle+=diff*(_routedReturn ? 0.28 : 0.07)+steerBias*(_routedReturn ? 0.02 : 0.08);
+    ant.angle+=diff*(_mouthReturn?0.72:(_routedReturn?0.28:0.07))+steerBias*(_mouthReturn?0:(_routedReturn?0.02:0.08));
     if(Math.abs(ant.sensors.commIn1)>0.5&&!_routedReturn) ant.angle+= ant.sensors.commIn1*0.04;
-    const _returnStep=_routedReturn?Math.min(speed,Math.max(1,dist(ant,tgt))):speed;
+    const _returnStep=_mouthReturn?Math.min(speed,Math.max(.2,dist(ant,tgt))):(_routedReturn?Math.min(speed,Math.max(1,dist(ant,tgt))):speed);
+    if(_mouthReturn)ant.angle=ang; // the open mouth lane wins over the ant's old outward heading
     const nx=ant.x+Math.cos(ant.angle)*_returnStep, ny=ant.y+Math.sin(ant.angle)*_returnStep;
-    if((_directReturn||_routedReturn)&&_openResourceSegment(ant.x,ant.y,nx,ny,true)&&canAntMove(ant,nx,ny)){ant.x=nx;ant.y=ny;ant.blocked=0;}else{ ant.blocked++; ant._routeUntil=0; ant.angle+=(Math.random()-0.5)*0.9 + 0.12; if(ant.blocked>32){ ant.angle+=Math.PI*0.45; ant.blocked=0; /* no abandonar miel: seguir intentando VOLVER_COMIDA */ } }
+    if((_directReturn||_routedReturn)&&_openResourceSegment(ant.x,ant.y,nx,ny,true)&&canAntMove(ant,nx,ny)){ant.x=nx;ant.y=ny;ant.blocked=0;}
+    else if(_mouthReturn&&_mouthLipX!=null&&ny<=ant.y+.01&&!isSolidPixel(nx,ny)&&Math.abs(nx-_mouthLipX)<Math.abs(ant.x-_mouthLipX)){
+      // A body already brushing the grass bank may fail the radius test even though its centre is in
+      // open air. Let it physically crawl up and inward until all legs clear; never move it downward
+      // through soil and never change position instantaneously.
+      ant.x=nx;ant.y=ny;ant.blocked=0;
+    }else{ ant.blocked++; ant._routeUntil=0; ant.angle+=(Math.random()-0.5)*0.9 + 0.12; if(ant.blocked>32){ ant.angle+=Math.PI*0.45; ant.blocked=0; /* no abandonar miel: seguir intentando VOLVER_COMIDA */ } }
     if(time-ant.lastPhero>11){ const isRecruit=!!ant.food && !ant.food.isSoil; const amt=isRecruit?(ant.food.amount||1):1; pheromones.push({x:ant.x,y:ant.y,strength: isRecruit? 0.92+amt*0.18 : 0.38, life:1, type: isRecruit?'recruit':'explore', quality: amt}); ant.lastPhero=time; }
-    const _physicalStore=storageDeliveryNodes().length>0;
+    const _physicalStore=storageDeliveryNodes().length>0||(_storeTarget.type==='social_crop'&&_storeTarget.operational);
     let _guarda = _physicalStore && dist(ant,_storeTarget)<14;
     // A delayed carrier may unload at any operational delivery node or founding-store cell, never at
     // an arbitrary place where she became blocked. Forward caches are physical completed projects.
@@ -5916,7 +6135,7 @@ function updateAnt(ant, dt){
       // a la camara de la cria, amonton los jardines en un rincon y el resto del nido se quedaba sin cosecha).
       _votaHuerto(ant.x,ant.y,(kind==='mushroom'||kind==='seed'||kind==='grassSeed'||kind==='berry')?2:1);
       const _delivery=storeFoodDelivery(ant.food,_storeTarget),_safe=_delivery.accepted||0,_overflow=_delivery.overflow||0;
-      ant.food=null;ant.targetFood=null;delete ant._deliveryNodeId;ant.deliveries++;deliveries++;
+      ant.food=null;ant.targetFood=null;ant._excursion=false;delete ant._excursionHasta;delete ant._returnLipSide;delete ant._returnMouthDescending;delete ant._deliveryNodeId;ant.deliveries++;deliveries++;
       recordJobExperience(ant,'forage',Math.max(.5,amt));
       // Trophallaxis: the forager fills her crop and shares it later.
       ant.crop=Math.min(ant.cropMax||1.6,(ant.crop||0)+amt*.38);
@@ -5983,7 +6202,7 @@ function updateAnt(ant, dt){
   // tiene una calada asignada, y las recolectoras aunque la tengan. La obra no se para - solo la manda
   // la comida, no la rifa.
   const _conTunel = (ant.state==='CAVANDO' && !!ant.digTarget);
-  if(!ant.targetFood && !ant.food && (_aprieto || _pocaComida) && (!ant._pozoPrincipal || _aprieto) &&
+  if(!ant.targetFood && !ant.food && (_aprieto || _pocaComida) && (_aprieto||!ant._lateralRelayPending) && (!ant._pozoPrincipal || _aprieto) &&
      (time - (ant._frustrada||-1e9)) >= (_aprieto ? 0 : 900) &&
      (_aprieto || !_conTunel || ant.role==='RECOLECTORA' || ant.affinity==='RECOLECTORA')) {
     // Si todas salen a por miel, nadie cava y el hormiguero no crece (y sin camaras nuevas el tope de
@@ -6009,11 +6228,13 @@ function updateAnt(ant, dt){
       let _constructoraTurno=null;
       const _hayFrenteActivo=_knownWorkforce.some(w=>w.health>0&&w.state==='CAVANDO'&&w.digTarget);
       const _hayFrentePozo=_knownWorkforce.some(w=>w.health>0&&(w.fatigue||0)<88&&!w._magmaRetreat&&w.state==='CAVANDO'&&w.digTarget&&w._pozoPrincipal);
-      const _primerUmbralPendiente=umbralesRotos===0;
-      const _puedePozo=_primerUmbralPendiente && (gen>=1 || day>=3);
+      const _umbralPendiente=!!umbral;
+      // The first shift waits for learned work or Day 3; once one slab has fallen, every later band may
+      // elect a new deep pioneer immediately. This removes the accidental "one shaft, then wander" cap.
+      const _puedePozo=_umbralPendiente && (umbralesRotos>0 || gen>=1 || day>=3);
       // An exhausted/flood-fighting pioneer keeps her history marker but no longer monopolises the
-      // shaft. A fresh worker may take over, so one tired founder cannot stall T4 for the whole colony.
-      const _cuadrillaPozo=_primerUmbralPendiente?_knownWorkforce.find(w=>w.health>0&&(w.fatigue||0)<88&&!w._magmaRetreat&&w.state!=='DESCANSAR'&&w.state!=='CONTROLAR_AGUA'&&w._pozoPrincipal):null;
+      // shaft. A fresh worker may take over, so one tired founder cannot stall the whole colony.
+      const _cuadrillaPozo=_umbralPendiente?_knownWorkforce.find(w=>w.health>0&&(w.fatigue||0)<88&&!w._magmaRetreat&&w.state!=='DESCANSAR'&&w.state!=='CONTROLAR_AGUA'&&w._pozoPrincipal):null;
       if((!_pocaComida||_obraConReserva) && (!_hayFrenteActivo || (_puedePozo && !_hayFrentePozo))){
         // Si ya hay una integrante de la cuadrilla y está libre, conserva ella el relevo: normalmente
         // sigue junto al último bloque abierto y no tiene que atravesar de nuevo todo el hormiguero.
@@ -6025,12 +6246,14 @@ function updateAnt(ant, dt){
           if(!_constructoraTurno || _minaScore(w)>_minaScore(_constructoraTurno)) _constructoraTurno=w;
         }
       }
+      const _instintoLateral=!!(ant._lateralRelayPending||(_lateralTickChoice&&_lateralTickChoice.ant===ant));
+      if(_instintoLateral)_constructoraTurno=ant;
       const _instintoObra = _constructoraTurno===ant;
-      const _pozoPuedeCavar = !ant._pozoPrincipal || (_instintoObra && _puedePozo && (!_pocaComida||_obraConReserva));
-      // Al llegar juntas al umbral, las constructoras reconocen la obra común sin volver a sortear
-      // su impulso neuronal. Así se forma un frente visible antes del primer mordisco, no una obrera
-      // solitaria que por azar toca la losa mientras las demás pasean por la misma galería.
+      // Reaching the slab is itself proof that the connected deep route exists. A stale pioneer marker
+      // or a young GEN must not make a worker standing one cell above it walk away; evolution gates how
+      // the colony reaches later rock, not whether a physically present crew can begin a communal bite.
       const _juntoAlUmbral=!!(umbral && puedeGolpearUmbral() && Math.abs(((ant.y/CELL)|0)-umbral.r)<=1);
+      const _pozoPuedeCavar = _juntoAlUmbral || !ant._pozoPrincipal || (_instintoObra && _puedePozo && (!_pocaComida||_obraConReserva));
       if(_pozoPuedeCavar && !_aprieto && (_juntoAlUmbral || _frustrada || _instintoObra || (!_pocaComida && digIntent>0.48 && wallAvg>0.18 && Math.random()<0.11 && (antProfession(ant)==='MINERA_PROFUNDA' || Math.random()<0.38)))){
         const frontier=findFrontier();
         if(frontier.length){
@@ -6051,15 +6274,15 @@ function updateAnt(ant, dt){
             else if(_d<_bestD){ _bestD=_d; _far=_f; }
           }
           let pick=_cands&&_cands.length ? _cands[(Math.random()*_cands.length)|0] : (_far || frontier[(Math.random()*_fn)|0]);
-          // FRENTE PRINCIPAL: la excavadora de reserva mantiene un pozo dentro de las tres columnas de la
-          // boca hasta romper la primera losa. El resto conserva sus frentes y camaras laterales.
-          if(_instintoObra && _puedePozo && umbral && (!_cuadrillaPozo || _cuadrillaPozo===ant)){
+          // DEEP FRONT: one elected pioneer keeps a connected shaft inside the mouth columns in every
+          // band. A separately elected lateral scout is never converted into this straight-down shift.
+          if(_instintoObra && !_instintoLateral && _puedePozo && umbral && (!_cuadrillaPozo || _cuadrillaPozo===ant)){
             let _frentePozo=null, _fd=Infinity;
             for(let _pc=CENTER_COL-1;_pc<=CENTER_COL+1;_pc++){
               for(let _pr=umbral.r;_pr>SURFACE_ROW;_pr--){
                 if(!soil[_pr] || soil[_pr][_pc]!==1 || !soil[_pr-1] || soil[_pr-1][_pc]!==0) continue;
                 const _pt=soilType[_pr]&&soilType[_pr][_pc];
-                if(_pt===15 || (_pt===7 && (gen<8 || !inventions.masonry))) continue;
+                if(_pt!==17&&!_canExcavateMaterial(_pt,ant))continue;
                 if(_pt===17 && !puedeGolpearUmbral()) continue;
                 const _candidatoPozo={r:_pr,c:_pc};
                 const _cercaPozo=Math.hypot((_pc+0.5)*CELL-ant.x,(_pr+0.5)*CELL-ant.y);
@@ -6074,13 +6297,13 @@ function updateAnt(ant, dt){
               }
             }
             if(_frentePozo){ pick=_frentePozo; ant._pozoPrincipal=true; }
-          } else if(ant!==_cuadrillaPozo || !_primerUmbralPendiente) ant._pozoPrincipal=false;
+          } else if(ant!==_cuadrillaPozo || !_umbralPendiente) ant._pozoPrincipal=false;
           // Las obras del umbral: si la losa esta a tiro y la colonia ya puede morderla, parte de las
           // excavadoras dejan el frente y van a ella. Sin esto el avance depende de que el azar ponga
           // una hormiga encima de la losa, y eso no es una decision de la colonia, es una ruleta.
           const _yaEnUmbral=umbral?workers.filter(w=>w.digTarget&&w.digTarget.r===umbral.r&&soilType[umbral.r]&&soilType[umbral.r][w.digTarget.c]===17).length:0;
           const _cupoUmbral=Math.min(8,Math.max(4,Math.floor(workers.length*0.24)));
-          if(umbral && _yaEnUmbral<_cupoUmbral && puedeGolpearUmbral() && (antProfession(ant)==='MINERA_PROFUNDA'||(ant.traits&&ant.traits.construccion>52)) && (_juntoAlUmbral||Math.random()<0.5)){
+          if(!_instintoLateral && umbral && _yaEnUmbral<_cupoUmbral && puedeGolpearUmbral() && (_juntoAlUmbral||((antProfession(ant)==='MINERA_PROFUNDA'||(ant.traits&&ant.traits.construccion>52))&&Math.random()<0.5))){
             // para morder la losa hay que tener donde pararse: una casilla de aire justo encima. Se busca la
             // columna con hueco MAS CERCANA a la hormiga (antes se usaba la columna de la propia hormiga y,
             // si ahi arriba aun no habian cavado, la obra de la losa no empezaba nunca).
@@ -6111,6 +6334,14 @@ function updateAnt(ant, dt){
             const onSlabNow=workers.filter(w=>w.digTarget&&w.digTarget.r===pick.r&&soilType[pick.r][w.digTarget.c]===17).length;
             if(onSlabNow>=_cupoUmbral) pick=null;
           }
+          if(_instintoLateral){
+            const lateral=_lateralFrontChoice(ant,frontier);
+            if(lateral){
+              pick=lateral;ant._lateralScout=true;ant._lateralTargetSide=lateral.c<CENTER_COL?-1:1;ant._pozoPrincipal=false;
+              delete ant._umbralLead;delete ant._umbralSupport;
+            }else if(ant._lateralRelayPending)pick=null;
+          }
+          if(pick){const pickType=soilType[pick.r]&&soilType[pick.r][pick.c];if(pickType!==17&&!_canExcavateMaterial(pickType,ant))pick=null;}
           if(pick){
           // cavado más rápido si es excavadora, tiene rasgo alto o colonia evolucionada
           const bonus = (antProfession(ant)==='MINERA_PROFUNDA'? 8:antProfession(ant)==='CONSTRUCTORA'?3:0) + Math.floor(ant.traits.construccion/18) + Math.floor(colonyIQ/45) + Math.min(6, gen);
@@ -6122,20 +6353,20 @@ function updateAnt(ant, dt){
             else { ant._umbralLead=true; delete ant._umbralSupport; }
             ant._obraUmbralHasta=time+DAY_LENGTH*0.12; ant._pozoPrincipal=true;
           }
-          // LEY REAL: piedra necesita herramienta/poder. Sin pico, 3x más lento y con chance de fallar
+          // Hard stone rewards reinforced mandibles; colony evolution remains the universal slower route.
           const _np={4:1.2, 6:2.2, 8:1.9, 9:2.6, 10:3.0, 7:3.5, 11:2.8, 12:3.2, 13:3.6, 14:3.9, 16:3.1, 18:2.0};
           const needPower = _np[_type]||0;
-          const hasPower = (ant.tool==='pick' || (colonyIQ>124 && gen>=3) || inventions.stone) ? 1.0 : 0.55;
+          const hasPower = (antHasAdaptation(ant,'mandibles') || (colonyIQ>124 && gen>=3) || inventions.stone) ? 1.0 : 0.55;
           const hardMult = needPower>0 && hasPower<0.9 ? (1.6 + needPower*0.8) : 1;
           // La LOSA (17) no se cava: se muerde. digNeeded corto a proposito, para que la obrera vuelva
           // una y otra vez al mismo sitio y el umbral baje entre todas - que es lo que da la sensacion de
           // haza colectiva, no de un numero que sube solo. Magma (15) y roca madre (7) siguen cerrados.
           ant.digNeeded= _type===17 ? Math.max(5, 11 - Math.min(6,gen*0.5))
-                       : (_type===15 || (_type===7 && (gen<8 || colonyIQ<148 || !inventions.masonry)))? 999
+                       : !_canExcavateMaterial(_type,ant)?999
                        : Math.max(9, Math.floor((26 - bonus + _hard)*hardMult)/(1+bonusCava)); ant.state='CAVANDO';
-          // Topo - solo icono ⛏ en la hormiga, texto va al strip inferior (no lluvia de texto)
-          pushToast(pick.c*CELL+8,pick.r*CELL+8,'⛏',_hard>5?'#8a8a8a':'#ff7a00',0.9);
-          try{ const lab=_hard>5?'PIEDRA DURA':_hard>2?'ARCILLA':'VA A CAVAR'; pushImportant('invention', `⛏ ${lab} [${pick.c},${pick.r}]`, `${ant.id} [${ant.role}] → ${lab.toLowerCase()} - ${workers.filter(w=>w.state==='CAVANDO').length} activas`); }catch(e){}
+          // One jaw mark on the ant; the activity strip owns the text, so excavation never becomes a label storm.
+          pushToast(pick.c*CELL+8,pick.r*CELL+8,'><',_hard>5?'#8a8a8a':'#ff7a00',0.9);
+          try{ const lab=_hard>5?'HARD ROCK':_hard>2?'CLAY':'GOING TO DIG'; pushImportant('invention', `>< ${lab} [${pick.c},${pick.r}]`, `${ant.id} [${ant.role}] → ${lab.toLowerCase()} - ${workers.filter(w=>w.state==='CAVANDO').length} activas`); }catch(e){}
           // Topo - en vez de spam, si ya hay varios cavando, resume en el strip inferior
           const _digsNow = workers.filter(w=>w.state==='CAVANDO').length;
           if(_digsNow>2){
@@ -6232,12 +6463,16 @@ function updateAnt(ant, dt){
     if(canCollectFood(ant,targ)){
       const idx=foods.indexOf(targ);
       if(idx>=0){
-        const cap=2+(ant.role==='RECOLECTORA'?1:0)+(ant.tool==='basket'?1:0);
+        const cap=2+(ant.role==='RECOLECTORA'?1:0)+(antHasAdaptation(ant,'carry')?1:0);
         const take=Math.min(cap, targ.amount);
         if(targ.amount>take) targ.amount-=take; else {foods.splice(idx,1);}
         const kind=foodKind(targ),def=foodDef(targ);
         ant.food={amount:take,ftype:kind,rot:Math.max(0,Number(targ.rot)||0),fresh:targ.fresh!=null?targ.fresh:1,
-          fromOverflow:!!targ.storedOverflow,overflowNodeId:targ.overflowNodeId||null};ant.targetFood=null;ant.blocked=0;colonyFitness+=.35;ant._cargaDesde=time;
+          fromOverflow:!!targ.storedOverflow,overflowNodeId:targ.overflowNodeId||null};
+        // Cargo outranks an old mining intent. A nearby morsel could be picked while CAVANDO retained
+        // its target; on the next tick that earlier branch completed the block and overwrote honey with
+        // soil. Clear the paused bite explicitly so this same visible carrier must walk it home.
+        ant.targetFood=null;ant.digTarget=null;ant.digProgress=0;ant.state='VOLVER_COMIDA';ant.blocked=0;colonyFitness+=.35;ant._cargaDesde=time;ant._surfacePickupPaintAt=performance.now();
         ant.commOut=[.9,.7];
         commInks.push({x:ant.x,y:ant.y,sym:'⬢',color:'#00e5ff',life:1,decay:.0014});
         pushToast(ant.x,ant.y-22,`⬢ ${def.icon} ${def.name}`,'#00e5ff',1.6);
@@ -6596,6 +6831,9 @@ function _hormigaVoxel(g, ant, s, mini, idx){
     g.fillStyle='#1a0a00'; g.fillRect(Q(1), Q(-10)+oy, 1, 2);
     g.fillStyle='#2e1a0a'; g.fillRect(Q(6), Q(-2)+_brazo+oy, 3, 3); g.fillRect(Q(-9), Q(-2)-_brazo+oy, 3, 3);
     g.fillStyle=tinte; g.fillRect(Q(-5), Q(-4)+oy, Q(10), 1);
+    if(antHasAdaptation(ant,'mandibles')){g.fillStyle='#b9c0c7';g.fillRect(Q(4),Q(-9)+oy,Q(4),1);g.fillRect(Q(5),Q(-7)+oy,Q(3),1);}
+    if(antHasAdaptation(ant,'carry')){g.fillStyle='#9fbd58';g.fillRect(Q(-5),Q(-1)+oy,Q(10),1);g.fillRect(Q(-1),Q(-4)+oy,1,Q(10));}
+    if(antHasAdaptation(ant,'foreclaws')){g.fillStyle='#d58a57';g.fillRect(Q(8),Q(-1)+_brazo+oy,3,2);g.fillRect(Q(-10),Q(-1)-_brazo+oy,3,2);}
     if(ant.isQueen){ _bloque(g, Q(-4), Q(-16)+oy, Q(9), Q(4), '#ffcc00'); }
     if(ant.projectCargo){
       const pc={clay:'#c47a52',fiber:'#8fbf5f',wood:'#a97a44',stone:'#9a9a9a'}[ant.projectCargo.kind]||'#f1c27d';
@@ -6623,10 +6861,15 @@ function _hormigaVoxel(g, ant, s, mini, idx){
   // cabeza: baja cuando pica
   const hy = Q(-3) + oy + (cavando? 1 + _golpe : 0);
   _bloque(g, Q(6), hy, Q(8), Q(7), _tilde16(base, 12));
-  // mandibulas: se abren con el golpe y cierran la carga
+  // Mandibles are anatomy, never a human pick. A player-approved stone edge is fused directly onto
+  // both jaws, so the effect remains visibly attached while she walks, climbs and carries.
   const _boca = cavando? (1 - _golpe) : (ant.food||ant.projectCargo? 1 : 0);
   g.fillStyle = '#1a0a00'; g.fillRect(Q(14), hy+Q(2)-_boca, caste==='major'? Q(5):Q(3), 2);
   if(caste==='major'){ g.fillRect(Q(14), hy+Q(4)+_boca, Q(4), 2); }
+  if(antHasAdaptation(ant,'mandibles')){
+    g.fillStyle='#b9c0c7';g.fillRect(Q(15),hy+Q(1)-_boca,Q(4),1);g.fillRect(Q(15),hy+Q(5)+_boca,Q(3),1);
+    g.fillStyle='#f0e9d5';g.fillRect(Q(18),hy+Q(1)-_boca,1,1);
+  }
   // ojo: dos de luz con su pupila; dormida = una raya, sin Z ni letrero
   if(durmiendo){ g.fillStyle='#1a0a00'; g.fillRect(Q(9), hy+Q(2), 3, 1); }
   else { g.fillStyle='#fff8dc'; g.fillRect(Q(9), hy+Q(1), 2, 2); g.fillStyle='#1a0a00'; g.fillRect(Q(10), hy+Q(1), 1, 2); }
@@ -6644,6 +6887,16 @@ function _hormigaVoxel(g, ant, s, mini, idx){
     g.fillRect(Q(7), _cy-1, 1, 2); g.fillRect(Q(10), _cy-1, 1, 2); g.fillRect(Q(13), _cy-1, 1, 2);
   }
   _piernas(g, true);                                         // las de delante, sobre el cuerpo
+  if(antHasAdaptation(ant,'carry')){
+    // Braided fibres brace abdomen and thorax; they are a fitted body binding, not a basket prop.
+    g.fillStyle='#9fbd58';g.fillRect(Q(-10),gy,Q(2),gh);g.fillRect(Q(1),Q(-4)+oy,1,Q(8));
+    g.fillStyle='#d9d27a';g.fillRect(Q(-9),gy+1,1,Math.max(1,gh-2));
+  }
+  if(antHasAdaptation(ant,'foreclaws')){
+    // Fired-clay gripping caps terminate the forward legs.
+    g.fillStyle='#d58a57';g.fillRect(Q(2),Q(7)+oy,Q(3),1);g.fillRect(Q(5),Q(6)+oy,Q(3),1);
+    g.fillStyle='#f1b07b';g.fillRect(Q(7),Q(6)+oy,1,1);
+  }
 
   // LA CARGA VA AQUI DENTRO, prendida de las mandibulas: es parte del cuerpo, no un letrero que
   // el lienzo cuelga encima. Asi la hoja de perfil ensena a la hormiga con lo que lleva, y en el
@@ -7072,19 +7325,6 @@ const MAT_MAP = {
   sand: matSrc(2,0),
   fiber: matSrc(3,0),
   wood: matSrc(4,0)
-};
-// === TEXTURAS DEFINITIVAS 06 - HERRAMIENTAS ATLAS 1408 ===
-const texHerramientas = new Image();
-// texHerramientas disabled
-let texHerramientasReady = false;
-texHerramientas.onload = ()=>{ texHerramientasReady=true; tlog('[TEX] herramientas 1408 atlas ready'); };
-texHerramientas.onerror = ()=>console.warn('[TEX] herramientas failed');
-const HER_TW = 469, HER_TH = 768, HER_BORDER = 20;
-function herSrc(col,row){ return {sx: col*HER_TW+HER_BORDER, sy: row*HER_TH+HER_BORDER, sw: HER_TW-HER_BORDER*2, sh: HER_TH-HER_BORDER*2}; }
-const HER_MAP = {
-  pick: herSrc(0,0),
-  basket: herSrc(1,0),
-  trowel: herSrc(2,0)
 };
 // === TEXTURAS DEFINITIVAS 07 - PERSONAJES ATLAS 1024 ===
 const texPersonajes = new Image();
@@ -8125,21 +8365,10 @@ function drawFarm(ctx,W,H,isMini=false){
     // la carga la pinta el propio pintor de la hormiga (ver _hormigaVoxel): es parte del cuerpo
     ctx.restore();
     if(_solo) return;                     // y hasta aqui llega la hormiga: lo demas es ficha de la elegida
-    // herramienta equipada: madera y metal con su cara de luz, sin contorno negro de 3 px
-    if(ant.tool && !isMini){
-      const _tx=Math.floor(ant.x)+(ant._climbing?9:10), _ty=Math.floor(ant.y)-16;
-      const _toolAtlas=typeof colonyTexturePack!=='undefined'&&colonyTexturePack.draw(ctx,'tool.'+ant.tool,_tx-2,_ty-4,19,19);
-      if(!_toolAtlas&&ant.tool==='pick'){
-        _bloque(ctx,_tx,_ty+4,11,3,'#6b3a1f');
-        _bloque(ctx,_tx+9,_ty+1,6,5,'#8b9bb4');
-      } else if(!_toolAtlas&&ant.tool==='basket'){
-        _bloque(ctx,_tx,_ty+2,10,7,'#c2a080');
-        ctx.fillStyle='#8b5a2b'; ctx.fillRect(_tx+1,_ty+5,8,1);
-        ctx.fillStyle='#fff8dc'; ctx.fillRect(_tx+2,_ty+3,1,1);
-      } else if(!_toolAtlas&&ant.tool==='trowel'){
-        _bloque(ctx,_tx,_ty+4,7,3,'#6b3a1f');
-        _bloque(ctx,_tx+6,_ty+1,5,6,'#7a7a7a');
-      }
+    if(!isMini&&ant._excursion&&ant.y<=SURFACE_Y+12){
+      // A small meadow-route chevron follows the real body; it never substitutes movement or pickup.
+      const mx=Math.floor(_rx),my=Math.floor(_ry)-22;ctx.fillStyle='#081006';ctx.fillRect(mx-5,my-3,11,9);
+      ctx.fillStyle=ant.food?'#ffcc33':'#8fd05b';ctx.fillRect(mx-3,my-1,7,2);ctx.fillRect(mx-1,my+1,3,3);
     }
     // facción y ánimo - puntito de color y barra de vida
     if(!isMini){
@@ -8193,9 +8422,9 @@ function drawFarm(ctx,W,H,isMini=false){
       }
       if(!hasLang){
         if(ant.state==='CAVANDO' && (_cavandoAhora<=3 || ant.selected)){
-          // Topo - si hay >3 cavando, no llover ⛏ individuales; se resume abajo en el strip
+          // With more than three diggers, individual jaw marks collapse into the activity strip.
           const digCount = _cavandoAhora;
-          if(digCount>3 && !ant.selected){ icon=""; col=''; } else { icon="⛏"; col='#2a0a0a'; tcol='#ff9a6e'; bcol='#ff3b30'; }
+          if(digCount>3 && !ant.selected){ icon=""; col=''; } else { icon="><"; col='#2a0a0a'; tcol='#ff9a6e'; bcol='#ff3b30'; }
         }
         else if(ant.food&&!ant.food.isSoil){icon=foodDef(ant.food).icon;col='#0a1f0a';tcol='#86efac';bcol='#2de67a';}
         else if(ant.food && ant.food.isSoil){ icon="🪨"; col='#1f1405'; tcol='#ffcc00'; bcol='#ffcc00'; }
@@ -8609,8 +8838,9 @@ function tickStep(dt){
     // mature colonies pay it dozens of times per frame.
     _surfaceTickWorkforce=workers.filter(w=>_entityInKnownWalkspace(w));
     _surfaceTickChoice=_surfaceExcursionChoice(_surfaceTickWorkforce);
+    _lateralTickChoice=_lateralExcavationChoice(_surfaceTickWorkforce);
     for(let w of [...workers]) updateAnt(w,dt);
-    _surfaceTickWorkforce=null;_surfaceTickChoice=undefined;
+    _surfaceTickWorkforce=null;_surfaceTickChoice=undefined;_lateralTickChoice=undefined;
     updateSociety(dt);
     // Complex structures animate from age. The founding store is different: only recorded worker effort
     // advances its buildProgress, so leaving the game running without builders cannot create it.
@@ -8639,7 +8869,9 @@ function tickStep(dt){
         }
       }
     }
-    renderSociety();
+    // Society state advances in updateSociety(), but its DOM belongs to the throttled HUD pass.
+    // Rendering it in every accelerated simulation substep rebuilt mood bars and language HTML up to
+    // twenty-three times inside one screen frame at x32, causing the intermittent 100 ms frame spike.
     for(let i=pheromones.length-1;i>=0;i--){const t=pheromones[i].type||'recruit',dec=t==='guide'?.00028:t==='explore'?.0011:.0032;pheromones[i].life-=dec;pheromones[i].strength=pheromones[i].life*(t==='guide'?1.05:t==='explore'?.62:1);if(pheromones[i].life<=0)pheromones.splice(i,1);}
     if(pheromones.length>200) pheromones.splice(0, pheromones.length-200);
     if(gameSpeed>8 && pheromones.length>130) pheromones.splice(0, pheromones.length-130);
@@ -8924,7 +9156,7 @@ function updateColonyUIInner(){
     chip.className='ant-chip'+(w.selected?' selected':'');
     const col = w.role==='EXCAVADORA'?'#ff3b30':w.role==='EXPLORADORA'?'#00e5ff':w.role==='NODRIZA'?'#b47aff':'#ffcc00';
     const facCol = society.factions.find(f=>f.id===w.faction)?.color || col;
-    const stateIcon=w.state==='CAVANDO'?'⛏':_PROJECT_STATE_SET.has(w.state)?(w.state==='BUILD_PROJECT'?'🔨':'📦'):w.food&&!w.food.isSoil?foodDef(w.food).icon:w.state==='DESCANSAR'?'💤':w.food?'🪨':'🔍';
+    const stateIcon=w.state==='CAVANDO'?'><':_PROJECT_STATE_SET.has(w.state)?(w.state==='BUILD_PROJECT'?'▦':'📦'):w.food&&!w.food.isSoil?foodDef(w.food).icon:w.state==='DESCANSAR'?'💤':w.food?'🪨':'🔍';
     // mood emoji
     let moodIcon='😐';
     if(w.mood.anger>0.62) moodIcon='😠';
@@ -9003,7 +9235,7 @@ function updateColonyUIInner(){
         if(umbral){
           const _p=Math.max(0, Math.min(100, Math.round((1-umbral.hp/umbral.hpMax)*100)));
           _uEl.innerHTML=`<b style="color:#c8c8d8">🕳️ LOSA · ${NOMBRE_BANDA(umbral.guarda)}</b> · mordida ${_p}%`+
-                         (puedeGolpearUmbral()? '' : `<span style="color:#8a5a3a"> · falta ${umbral.guarda>=5?'cantería (GEN6+IQ145)':'más boca que alimentar'}</span>`);
+                         (puedeGolpearUmbral()? '' : `<span style="color:#8a5a3a"> · needs ${umbral.guarda>=6?'deep masonry (GEN6 + IQ145 + stone + clay)':'at least 3 living workers'}</span>`);
         } else {
           _uEl.innerHTML=`<b style="color:#ffcc00">🕳️ ${umbralesRotos} losas rotas</b> · ${NOMBRE_BANDA(bandaMax)} · el fondo ya es minable`;
         }
@@ -9044,11 +9276,11 @@ function updateColonyUIInner(){
       if(inventions.fiber) unlocked.push('🧵 fibra');
       if(inventions.wood) unlocked.push('🪵 madera');
       if(inventions.fungus) unlocked.push('🍄 hongo');
-      const toolCount=workers.filter(w=>w.tool).length;
+      const adaptationCount=workers.reduce((n,w)=>n+Object.keys(_adaptationBook(w)).filter(k=>_adaptationBook(w)[k]).length,0);
       const structCount=structures.length;
       let txt = unlocked.length? '✓ '+unlocked.join(' - '): '- aún cavan tierra común -';
       if(structCount) txt += ` | 🏗 ${structCount} ${structures.map(s=>STRUCTURE_DEFS[s.type].name).join(', ')}`;
-      if(toolCount) txt += ` - 🔧 ${toolCount} herramientas`;
+      if(adaptationCount) txt += ` · ${adaptationCount} approved adaptations`;
       invEl.textContent=txt;
       invEl.style.color= unlocked.length||structCount?'#2de67a':'#8a7a5a';
     }
@@ -9056,7 +9288,7 @@ function updateColonyUIInner(){
       if(structures.length){
         const names=structures.map(s=>STRUCTURE_DEFS[s.type].name).join(', ');
         if(worldAge>2.5 && structures.some(s=>s.type==='tower')) log.textContent=`🏰 Torre vigía erguida - ${names} - el mundo ya tiene arquitectura`;
-        else if(worldAge>1.8 && structures.some(s=>s.type==='workshop')) log.textContent=`🛠️ Taller activo - ${names} - fabrican herramientas`;
+        else if(worldAge>1.8 && structures.some(s=>s.type==='workshop')) log.textContent=`Legacy workshop preserved as scenery · ${names}`;
         else log.textContent=`🏗 ${structures.length} estructuras: ${names} - el mundo se vuelve civilizado`;
       } else if(plants.some(p=>p.type==='fruitTree' && p.growth>0.58)){
         log.textContent='🍎 Manzanos frutales maduran - caen 3 manzanas cada cosecha';
@@ -9398,6 +9630,7 @@ function pintarRoster(){
 }
 function abrirRoster(){
   const sh = document.getElementById('rosterSheet'); if(!sh) return;
+  try{ cerrarLineage(true); }catch(e){}
   try{ cerrarInventario(true); }catch(e){}
   // una hoja a la vez, tambien con los perfiles: si no, la lista se monta encima del perfil abierto y en la
   // pantalla quedan dos cabeceras de la misma columna (medido en la captura: el perfil asomaba por debajo).
@@ -9462,6 +9695,20 @@ function farmPointer(e){
 }
 let isDragging=false,dragStartScreen={x:0,y:0},dragStartView={x:0,y:0},hasPanned=false;
 let mapTool='navigate',pheromonePainting=false,lastGuidePoint=null,guidePointsAdded=0,suppressCanvasClick=false,guideTrailSerial=0,activeGuideTrail=0;
+function _syncProjectPlacementHud(invalidReason=''){
+  const hud=document.getElementById('projectPlacementHud');if(!hud)return;
+  const active=mapTool==='project'&&!!projectPlacementType,def=active?projectDefinition(projectPlacementType):null;
+  hud.hidden=!active;hud.setAttribute('aria-hidden',active?'false':'true');hud.toggleAttribute('data-invalid',!!invalidReason);
+  if(!active||!def)return;
+  hud.style.setProperty('--place-accent',invalidReason?'#d95d52':(def.color||'#8fbf5f'));
+  const icon=document.getElementById('projectPlacementIcon'),title=document.getElementById('projectPlacementTitle'),purpose=document.getElementById('projectPlacementPurpose'),commitment=document.getElementById('projectPlacementCommitment'),instruction=document.getElementById('projectPlacementInstruction');
+  if(icon)icon.textContent=def.icon||'SITE';if(title)title.textContent=def.name;
+  if(purpose)purpose.textContent=def.effect+' '+def.siteHint;
+  if(commitment)commitment.textContent='AFTER A VALID SITE · COMMIT '+Object.entries(def.cost).map(([k,v])=>v+' '+k.toUpperCase()).join(' + ')+' · THEN WORKERS HAUL AND BUILD';
+  if(instruction)instruction.textContent=invalidReason
+    ?'NOT PLACED · '+invalidReason+' · TRY ANOTHER CELL OR PRESS ESC'
+    :'TAP OR CLICK A GREEN CELL · ARROWS PAN + ENTER PLACES AT CENTRE · ESC CANCELS';
+}
 function setMapTool(next='navigate'){
   const previous=mapTool;
   mapTool=(next==='honey'||next==='pheromone'||(next==='project'&&projectPlacementType))?next:'navigate';
@@ -9475,8 +9722,25 @@ function setMapTool(next='navigate'){
     :mapTool==='pheromone'?'FOLLOW TRAIL ARMED · DRAG FROM ANTS TO DESTINATION · RELEASE TO FINISH'
     :mapTool==='project'?((projectDefinition(projectPlacementType)||{name:'PROJECT'}).name+' SITE · CLICK OPEN CONNECTED FLOOR · ESC TO CANCEL')
     :'NAVIGATE · CLICK AN ANT TO FOLLOW · SHIFT+CLICK TO DIG';
+  _syncProjectPlacementHud();
   canvas.dataset.mapTool=mapTool;
+  canvas.setAttribute('aria-label',mapTool==='project'
+    ?((projectDefinition(projectPlacementType)||{name:'Project'}).name+' placement map. Arrow keys pan. Enter tries the centre cell. Escape cancels.')
+    :'Ant farm world map. Arrow keys pan; use the visible map tools for honey and trails.');
   canvas.style.cursor=mapTool==='honey'?'copy':mapTool==='pheromone'||mapTool==='project'?'cell':'crosshair';
+}
+function tryPlaceColonyProjectAt(x,y){
+  const type=projectPlacementType;if(mapTool!=='project'||!type)return false;
+  mouse.x=x;mouse.y=y;
+  const c=Math.floor(x/CELL),r=Math.floor(y/CELL),checked=projectSiteCheck(type,c,r);
+  if(!checked.ok){
+    pushToast(x,Math.min(y,exploredBottomY()-8),'✕ WORKSITE','#ff6b6b');
+    showNotify('warn','INVALID WORKSITE',checked.reason);
+    _syncProjectPlacementHud(checked.reason);return false;
+  }
+  const result=approveColonyProject(type,checked.site);
+  if(result&&result.ok){setMapTool('navigate');return true;}
+  _syncProjectPlacementHud(result&&result.reason?String(result.reason):'The project could not be approved.');return false;
 }
 function canPlaceMapItem(x,y){
   return canInteractAt(x,y)&&_entityInKnownWalkspace({x,y})&&waterAtPixel(x,y)<WATER_AVOID_LEVEL;
@@ -9488,7 +9752,10 @@ function placePlayerHoney(x,y){
     return false;
   }
   const amount=1+Math.floor(Math.random()*2);
-  spawnFoodAt(x,y,amount,'honey');
+  const drop=spawnFoodAt(x,y,amount,'honey');
+  // Player honey is still a physical food object. This mark only lets the emergent scout selector
+  // distinguish a deliberate one-shot placement from ambient forage; no worker or route is forced.
+  if(drop){drop.playerPlaced=true;drop.playerPlacedAt=time;}
   pushEvent('food',`🍯 Player placed honey ×${amount} at [${Math.floor(x)},${Math.floor(y)}]`);
   pushToast(x,y,`🍯 HONEY ×${amount}`,'#ffcc00');
   return true;
@@ -9499,7 +9766,7 @@ function addGuidePoint(x,y){
     if(Math.hypot(x-lastGuidePoint.x,y-lastGuidePoint.y)<7) return false;
     if(!_openResourceSegment(lastGuidePoint.x,lastGuidePoint.y,x,y,true)) return false;
   }
-  pheromones.push({x,y,strength:1.18,life:1.35,type:'guide',quality:3,player:true,trailId:activeGuideTrail,guideOrder:guidePointsAdded});
+  pheromones.push({x,y,strength:1.18,life:1.35*(_lineageFx.guideLifeMultiplier||1),type:'guide',quality:3,player:true,trailId:activeGuideTrail,guideOrder:guidePointsAdded});
   lastGuidePoint={x,y};guidePointsAdded++;
   return true;
 }
@@ -9573,6 +9840,9 @@ canvas.addEventListener('click',e=>{
   if(suppressCanvasClick){suppressCanvasClick=false;return;}
   if(hasPanned){hasPanned=false;return;}
   const pos=farmPointer(e),x=pos.x,y=pos.y;
+  // An explicitly armed project owns the next map tap. This also makes touch placement deterministic
+  // when a worker happens to walk over the chosen floor cell.
+  if(mapTool==='project'){tryPlaceColonyProjectAt(x,y);return;}
   // Fog is physical: no selection, order, resource or trail can cross unknown cells.
   if(!canInteractAt(x,y)){pushToast(x,Math.min(y,exploredBottomY()-8),'? UNEXPLORED','#8a7a6a');return;}
   let clicked=null;let bestDist=Infinity;
@@ -9606,11 +9876,6 @@ canvas.addEventListener('click',e=>{
     if(mapTool!=='navigate')setMapTool('navigate');
     return;
   }
-  if(mapTool==='project'){
-    const type=projectPlacementType,c=Math.floor(x/CELL),r=Math.floor(y/CELL),checked=projectSiteCheck(type,c,r);
-    if(!checked.ok){pushToast(x,y,'✕ WORKSITE','#ff6b6b');showNotify('warn','INVALID WORKSITE',checked.reason);return;}
-    const result=approveColonyProject(type,checked.site);if(result&&result.ok)setMapTool('navigate');return;
-  }
   if(mapTool==='honey'){
     if(placePlayerHoney(x,y))setMapTool('navigate');
     return;
@@ -9637,8 +9902,8 @@ canvas.addEventListener('click',e=>{
     if(sel){
       sel.digTarget=best;sel.digProgress=0;sel.digNeeded=22;sel.state='CAVANDO';
       pushEvent('evo',`Dig order [${best.c},${best.r}] → ${sel.id}`);
-      pushImportant('invention',`⛏ DIG ORDER [${best.c},${best.r}]`,`${sel.id} is digging · see activity strip`);
-      pushToast(best.c*CELL,best.r*CELL,'⛏ ORDER','#ffcc00');showNotify('ok','Dig order',`${sel.id} is heading to [${best.c},${best.r}].`);
+      pushImportant('invention',`>< DIG ORDER [${best.c},${best.r}]`,`${sel.id} is digging · see activity strip`);
+      pushToast(best.c*CELL,best.r*CELL,'>< ORDER','#ffcc00');showNotify('ok','Dig order',`${sel.id} is heading to [${best.c},${best.r}].`);
     }
   }else{
     showNotify('warn','Too far from the frontier','No diggable wall within 7 cells. No food or pheromone was placed.');
@@ -9676,16 +9941,23 @@ document.getElementById('btnPhero').onclick=e=>{
   if(e)e.stopPropagation();setMapTool(mapTool==='pheromone'?'navigate':'pheromone');
 };
 setMapTool('navigate');
+const _cancelProjectPlacement=document.getElementById('btnCancelProjectPlacement');
+if(_cancelProjectPlacement)_cancelProjectPlacement.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();setMapTool('navigate');showNotify('warn','PLACEMENT CANCELLED','No project material was committed.');});
 // Capture ESC before the global farm-menu shortcut: cancelling a temporary placement must cancel only
-// that tool, not also throw the player out to the title menu in the same key event.
+// that tool, not also throw the player out to the title menu in the same key event. Keyboard users can
+// pan the focused canvas and commit the cell at the centre with Enter.
 window.addEventListener('keydown',e=>{
   const typing=e.target&&(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.isContentEditable);
-  if(!typing&&e.key==='Escape'&&mapTool!=='navigate'){setMapTool('navigate');e.preventDefault();e.stopImmediatePropagation();}
+  if(!typing&&e.key==='Escape'&&mapTool!=='navigate'){setMapTool('navigate');e.preventDefault();e.stopImmediatePropagation();return;}
+  if(!typing&&mapTool==='project'&&e.target===canvas&&e.key==='Enter'){
+    const centre=screenToWorld(VIEW_W/2,VIEW_H/2);tryPlaceColonyProjectAt(centre.x,centre.y);e.preventDefault();e.stopImmediatePropagation();return;
+  }
+  if(!typing&&mapTool==='project'&&e.target===canvas&&e.key.startsWith('Arrow'))e.preventDefault();
 },{capture:true});
 document.addEventListener('pointerdown',e=>{
   if(mapTool==='navigate')return;
   const t=e.target;
-  if(t&&(t===canvas||(t.closest&&t.closest('#btnFood, #btnPhero'))))return;
+  if(t&&(t===canvas||(t.closest&&t.closest('#btnFood, #btnPhero, #projectPlacementHud'))))return;
   setMapTool('navigate');
 },true);
 document.getElementById('btnBreed').onclick=()=>{if(economyLedger.food<3){showNotify('error','NOT ENOUGH FOOD',`You need <b>3 rations</b>. Reserve: <b>${economyLedger.food}</b>.`);pushToast(queen.x,queen.y-22,'♛ NEEDS 3 FOOD','#ff3b30');return;}queen.progress=100;showNotify('ok','Egg on the way','The queen is gestating.');};
@@ -9896,7 +10168,7 @@ window.addEventListener('keydown',e=>{
   if(e.key==='+'||e.key==='=')setZoom(view.zoom*1.2);
   if(e.key==='-'||e.key==='_') setZoom(view.zoom*0.82);
   if(e.key==='0'){view.zoom=Math.max(1.38,getMinZoom());view.x=(W-VIEW_W/view.zoom)/2;view.y=0;clampView();updateZoomLabel();}
-  { const b=getPanBounds(); if(e.key==='ArrowLeft') view.x=clamp(view.x-22,b.minX,b.maxX); if(e.key==='ArrowRight') view.x=clamp(view.x+22,b.minX,b.maxX); if(e.key==='ArrowUp') view.y=clamp(view.y-22,b.minY,b.maxY); if(e.key==='ArrowDown') view.y=clamp(view.y+22,b.minY,b.maxY); clampView(); }
+  { const b=getPanBounds(),arrow=e.key==='ArrowLeft'||e.key==='ArrowRight'||e.key==='ArrowUp'||e.key==='ArrowDown'; if(e.key==='ArrowLeft') view.x=clamp(view.x-22,b.minX,b.maxX); if(e.key==='ArrowRight') view.x=clamp(view.x+22,b.minX,b.maxX); if(e.key==='ArrowUp') view.y=clamp(view.y-22,b.minY,b.maxY); if(e.key==='ArrowDown') view.y=clamp(view.y+22,b.minY,b.maxY); clampView(); if(arrow&&mapTool==='project'){const centre=screenToWorld(VIEW_W/2,VIEW_H/2);mouse.x=centre.x;mouse.y=centre.y;} }
   if(e.key.toLowerCase()==='o') document.getElementById('togEyes').click();
   if(e.key.toLowerCase()==='t') document.getElementById('togTrail').click();
   if(e.key.toLowerCase()==='i') document.getElementById('togInk').click();
@@ -9911,13 +10183,18 @@ function buildOnSteps(){
       hint: "Your colony is waiting"
     },
     {
-      title: "🍽 FOOD RESERVE",
-      body: `<div style="display:flex;gap:12px;align-items:center"><div style="width:52px;height:52px;background:#ffcc00;border:3px solid #000;display:grid;place-items:center;font-size:24px;box-shadow:3px 3px 0 #000">🍯</div><div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#ffcc00">DROP HONEY TOOL</div><div style="font-family:'VT323',monospace;font-size:18px;color:#fff8dc;margin-top:6px;line-height:1.25">Press DROP HONEY, then choose one open spot. The reserve also includes fungus, fruit, berries, and seeds; delivery bubbles name the real source.</div></div></div>`,
-      hint: "Choose a tool first"
+      title: "🍽 DROP HONEY · ONE SHOT",
+      body: `<div style="display:flex;gap:12px;align-items:center"><div style="width:52px;height:52px;background:#ffcc00;border:3px solid #000;display:grid;place-items:center;font-size:24px;box-shadow:3px 3px 0 #000">🍯</div><div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#ffcc00">ARM HONEY, THEN TAP ONCE</div><div style="font-family:'VT323',monospace;font-size:18px;color:#fff8dc;margin-top:6px;line-height:1.25">Choose one explored, open spot. Honey drops once and the map returns to navigation; ordinary taps never place it.</div></div></div>`,
+      hint: "One tap, one drop"
     },
     {
-      title: "💬 WATCH THEM",
-      body: `<div style="display:flex;gap:12px;align-items:center"><div style="width:52px;height:52px;background:#000;border:3px solid #000;display:grid;place-items:center;font-size:20px;box-shadow:3px 3px 0 #000">👁️</div><div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#2de67a">EVERY ANT SPEAKS</div><div style="font-family:'VT323',monospace;font-size:18px;color:#fff8dc;margin-top:6px;line-height:1.25">Her bubble shows what she is doing. Tap an ant to open her profile and follow her.</div></div></div>`,
+      title: "··· FOLLOW TRAIL · DRAG",
+      body: `<div style="display:flex;gap:12px;align-items:center"><div style="width:52px;height:52px;background:#21152d;border:3px solid #000;display:grid;place-items:center;font-size:25px;color:#b47aff;box-shadow:3px 3px 0 #000">···</div><div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#b47aff">A SEPARATE GUIDE</div><div style="font-family:'VT323',monospace;font-size:18px;color:#fff8dc;margin-top:6px;line-height:1.25">Arm TRAIL, drag from the ants toward a destination, then release. The temporary trail guides them and never drops food.</div></div></div>`,
+      hint: "Drag from ants to destination"
+    },
+    {
+      title: "💬 NAVIGATE & WATCH",
+      body: `<div style="display:flex;gap:12px;align-items:center"><div style="width:52px;height:52px;background:#000;border:3px solid #000;display:grid;place-items:center;font-size:20px;box-shadow:3px 3px 0 #000">👁️</div><div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#2de67a">ORDINARY TAPS ARE SAFE</div><div style="font-family:'VT323',monospace;font-size:18px;color:#fff8dc;margin-top:6px;line-height:1.25">Tap an ant to open her profile. Cancelling, panning, selecting, or touching interface controls places neither honey nor trail.</div></div></div>`,
       hint: "Tap an ant"
     },
     {
@@ -9964,7 +10241,7 @@ function attachOnHandlers(){
   setTimeout(()=>{
     const el=document.getElementById('onStep');
     if(el && !el.innerHTML.trim()){
-      el.innerHTML=`<div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#fff;margin-bottom:12px">🐜 YOUR FARM</div><div style="font-family:'VT323',monospace;font-size:18px;color:#fff8dc">Tap the meadow to drop honey and watch the workers carry it home. Tap an ant to open her profile.</div>`;
+      el.innerHTML=`<div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#fff;margin-bottom:12px">🐜 YOUR FARM</div><div style="font-family:'VT323',monospace;font-size:18px;color:#fff8dc">Ordinary taps navigate or select. Arm HONEY for one drop on explored open ground, or arm TRAIL and drag from the ants toward a destination; the tools are separate and return to navigation.</div>`;
       console.warn('onboarding fallback injected');
     }
   }, 680);
@@ -9997,6 +10274,7 @@ function closeQueenProfile(immediate=false){
 function showQueenProfile(q){
   if(!q)q=queens[selectedQueenIndex]||queens[0];
   if(!q||!isExploredPixel(q.x,q.y))return false;
+  try{cerrarLineage(true);}catch(e){}
   try{cerrarInventario(true);}catch(e){}
   try{cerrarRoster(true);}catch(e){}
   ensureQueenMeta(q);
@@ -10734,7 +11012,7 @@ if(_topoHasWorld){
 
 // === SAVE PERSISTENTE - la granja sobrevive a recargar ===
 const SAVE_KEY='antFarm_fullSave_v2';
-const SAVE_VER='20261020l';
+const SAVE_VER='20261020m';
 const LS_ALIVE='antfarm_worldAlive';
 const LS_INGAME='antfarm_inGame';
 let _loadedSaveSavedAt=0;
@@ -10795,6 +11073,7 @@ function serializeSave(force){
     const data={
       v:SAVE_VER, savedAt:Date.now(), day,
       offline:{v:1,unlocks:{lineage:!!_offlineUnlocks.lineage,lateStage:!!_offlineUnlocks.lateStage},receipt:_lastOfflineReceipt?{..._lastOfflineReceipt}:null,presented:[..._offlinePresentedStamps].slice(-64),pending:_offlineReturnPending.slice(0,16)},
+      lineage:lineageSnapshot(lineageState),lineageRun:{relicsFound:Math.max(0,lineageRun.relicsFound|0)},
       time, gen, colonyIQ, colonyFood:economyLedger.food, digs, deliveries, accidents, rewardsFound, mutations, commsCount, worldAge,
       ROWS, COLS, SURFACE_ROW, worldSeed,
       ancientSites:Array.isArray(ancientSites)?ancientSites.map(s=>({id:s.id,c:s.c,r:s.r,depth:s.depth,w:s.w,h:s.h,style:s.style,kind:s.kind,biome:s.biome,damage:s.damage,flood:s.flood,cycle:s.cycle,scar:s.scar,repairStyle:s.repairStyle,repairRate:s.repairRate,oddity:s.oddity||0,muralSeed:s.muralSeed})):[],
@@ -10811,7 +11090,8 @@ function serializeSave(force){
       umbral: umbral? {r:umbral.r, hp:Math.round(umbral.hp*10)/10, hpMax:umbral.hpMax, banda:umbral.banda} : null,
       foods: Array.isArray(foods)? foods.slice(0,120).map(f=>({x:f.x,y:f.y,amount:f.amount,max:f.max,ftype:f.ftype,grounded:!!f.grounded,
         rot:Math.max(0,Number(f.rot)||0),fresh:f.fresh!=null?f.fresh:1,storedOverflow:!!f.storedOverflow,
-        overflowNodeId:f.overflowNodeId||null,overflowNodeType:f.overflowNodeType||null})) : [],
+        overflowNodeId:f.overflowNodeId||null,overflowNodeType:f.overflowNodeType||null,
+        playerPlaced:!!f.playerPlaced,playerPlacedAt:Number(f.playerPlacedAt)||0})) : [],
       protectedFoodLots: protectedFoodLots.map(l=>({kind:l.kind,amount:l.amount,nodeId:l.nodeId,rot:l.rot||0,x:l.x,y:l.y,storedAt:l.storedAt||0})),
       mound: Array.isArray(mound)? mound.filter(m=>m && !m.isPuddle).slice(0,300).map(m=>({x:m.x,y:m.y,h:m.h})) : [],
       // Topo: JSON.stringify ya serializa profundo; los spreads ({...w}) copiaban cada hormiga DOS veces
@@ -10853,7 +11133,10 @@ function deserializeSave(){
     const data=JSON.parse(raw);
     if(!data || !Array.isArray(data.soil) || data.soil.length===0) return false;
     _loadedSaveSavedAt=Math.max(0,Number(data.savedAt)||0);
-    _offlineUnlocks={lineage:!!(data.offline&&data.offline.unlocks&&data.offline.unlocks.lineage),lateStage:!!(data.offline&&data.offline.unlocks&&data.offline.unlocks.lateStage)};
+    _setLineageState(data.lineage);
+    const _hasRunRelics=!!(data.lineageRun&&Object.prototype.hasOwnProperty.call(data.lineageRun,'relicsFound'));
+    lineageRun={relicsFound:(Math.max(0,_hasRunRelics?Number(data.lineageRun.relicsFound)||0:(Array.isArray(data.reliquias)?data.reliquias.length:0))|0)};
+    _offlineUnlocks={lineage:lineageState.flights>0||!!(data.offline&&data.offline.unlocks&&data.offline.unlocks.lineage),lateStage:!!(data.offline&&data.offline.unlocks&&data.offline.unlocks.lateStage)};
     _lastOfflineReceipt=data.offline&&data.offline.receipt&&typeof data.offline.receipt==='object'?{...data.offline.receipt}:null;
     _offlinePresentedStamps.clear();for(const key of data.offline&&Array.isArray(data.offline.presented)?data.offline.presented:[])if(typeof key==='string'&&key.length<96)_offlinePresentedStamps.add(key);
     {const pending=data.offline&&data.offline.pending,list=Array.isArray(pending)?pending:(pending&&typeof pending==='object'?[pending]:[]);_offlineReturnPending=list.filter(x=>x&&typeof x.key==='string'&&x.key.length<96).slice(0,16);}
@@ -10885,6 +11168,7 @@ function deserializeSave(){
     workers = Array.isArray(data.workers)? data.workers : [];
     workers.forEach(w=>{
       w.selected=false; if(w.digTarget===undefined) w.digTarget=null;
+      _adaptationBook(w); // migrate legacy pick/basket/trowel saves without losing their earned effect
       _jobBook(w);
       if(!ANT_PROFESSIONS.includes(w.profession)) w.profession=antProfession(w);
       if(w.profession!=='OBRERA') w.role=_legacyRoleForProfession(w.profession);
@@ -10996,7 +11280,7 @@ function _offlineProjectInput(known){
     if(!site||site.built!==false)return {kind:'none',name:'',anchor:null,model:null,ref:null,crew:[],initialWork:0};
     const crew=(site.builders||[]).map(id=>byId.get(String(id))).filter(Boolean);let siteOK=false;
     try{siteOK=_storeSiteIsPhysical(site);}catch(e){}
-    let workRate=0;for(const w of crew){const trait=w.traits&&w.traits.construccion||40,xp=_jobBook(w).build||0;workRate+=.74+trait/220+Math.min(.24,xp*.018)+(w.tool==='trowel' ? .20 : 0);}
+    let workRate=0;for(const w of crew){const trait=w.traits&&w.traits.construccion||40,xp=_jobBook(w).build||0;workRate+=.74+trait/220+Math.min(.24,xp*.018)+(antHasAdaptation(w,'foreclaws') ? .20 : 0);}
     const workNeeded=site.workNeeded||STORE_WORK_REQUIRED,mainAfter=8+_storeFootprint(site).length*2+Math.max(0,(site.level||1)-1)*12+colonyProjects.completedCount('clay_jars')*12;
     const capacityAfter=Math.max(economyLedger.food,mainAfter+operationalColonyProjects('forward_cache').length*6);
     return {kind:'store',name:'NEST STORE',anchor:_storeAnchor(site),model:{id:'STORE-'+site.c+'-'+site.r,enabled:siteOK&&crew.length>0,foodFloor:_reservaVital()+1,capacityAfter,haulRemaining:0,haulRate:0,work:site.work||0,workNeeded,workRate},ref:site,crew,initialWork:site.work||0};
@@ -11008,7 +11292,7 @@ function _offlineProjectInput(known){
   const haulRemaining=Object.keys(a.cost||{}).reduce((n,k)=>n+Math.max(0,Math.floor((a.cost[k]||0)-(a.delivered&&a.delivered[k]||0))),0);
   const haulRate=crew.length/(DAY_LENGTH*.03);
   let workRate=0;
-  for(const w of crew){const trait=w.traits&&w.traits.construccion||40,xp=_jobBook(w).build||0;workRate+=.58+trait/230+Math.min(.28,xp*.02)+(w.tool==='trowel' ? .20 : 0);}
+  for(const w of crew){const trait=w.traits&&w.traits.construccion||40,xp=_jobBook(w).build||0;workRate+=.58+trait/230+Math.min(.28,xp*.02)+(antHasAdaptation(w,'foreclaws') ? .20 : 0);}
   const enabled=siteOK&&crew.length>0,baseCapacity=capacidadAlmacen();
   const capacityAfter=(a.type==='clay_jars'?Math.max(economyLedger.food,baseCapacity+12):a.type==='forward_cache'?Math.max(economyLedger.food,baseCapacity+6):0);
   const def=projectDefinition(a.type);
@@ -11018,7 +11302,7 @@ function _offlineSlabInput(known,excluded){
   if(!umbral)return null;
   const crew=known.filter(w=>w&&!(excluded&&excluded.has(String(w.id)))&&w.digTarget&&w.digTarget.r===umbral.r&&soilType[umbral.r]&&soilType[umbral.r][w.digTarget.c]===17&&(w.state==='CAVANDO'||w._umbralLead||w._umbralSupport));
   let perDay=0;
-  for(const w of crew)perDay+=6+(w.role==='EXCAVADORA' ? .9 : 0)+(w.tool==='pick' ? .8 : 0)+(inventions.masonry ? .6 : 0)+Math.min(.8,gen*.04);
+  for(const w of crew)perDay+=6+(w.role==='EXCAVADORA' ? .9 : 0)+(antHasAdaptation(w,'mandibles') ? .8 : 0)+(inventions.masonry ? .6 : 0)+Math.min(.8,gen*.04);
   const centerC=Number.isFinite(Number(umbral.centroC))?Number(umbral.centroC):(Number.isFinite(Number(umbral.c0))&&Number.isFinite(Number(umbral.c1))?(Number(umbral.c0)+Number(umbral.c1))/2:CENTER_COL);
   return {id:'slab-'+umbral.r+'-'+umbral.banda,enabled:crew.length>0,hp:umbral.hp,hpMax:umbral.hpMax,rate:perDay/DAY_LENGTH,anchor:{x:(centerC+.5)*CELL,y:(umbral.r+.5)*CELL}};
 }
@@ -11027,7 +11311,7 @@ function _offlineDigInput(known,excluded){
   for(const w of known){
     if(excluded&&excluded.has(String(w.id)))continue;
     const t=w&&w.digTarget;if(!t||w.state!=='CAVANDO'||!soil[t.r]||soil[t.r][t.c]!==1||!soilType[t.r])continue;
-    const mt=soilType[t.r][t.c];if(mt===17||mt===15||(mt===7&&(gen<8||!inventions.masonry)))continue;
+    const mt=soilType[t.r][t.c];if(mt===17||!_canExcavateMaterial(mt,w))continue;
     try{if(!puedeAbrirSuperficie(t.c,t.r))continue;}catch(e){continue;}
     const key=t.r+','+t.c;
     if(!groups.has(key))groups.set(key,{id:'dig-'+key,c:t.c,r:t.r,type:mt,progress:0,needed:Infinity,members:[]});
@@ -11055,7 +11339,7 @@ function _offlineContext(now){
   const availableForage=known.filter(w=>!busy.has(String(w.id)));
   if(!foragers.length&&availableForage.length)foragers=availableForage.slice(0,Math.max(1,Math.ceil(availableForage.length*.25)));
   let forageRate=0;
-  for(const w of foragers){const xp=_jobBook(w).forage||0;forageRate+=(.55+Math.min(.45,xp*.025)+(w.tool==='basket'?.22:0))/DAY_LENGTH;}
+  for(const w of foragers){const xp=_jobBook(w).forage||0;forageRate+=(.55+Math.min(.45,xp*.025)+(antHasAdaptation(w,'carry')?.22:0))/DAY_LENGTH;}
   const broodInput=brood.map((b,i)=>({id:'existing-'+i,type:b.type,progress:b.progress||0,isQueen:!!b.isQueen,waiting:!!b._capWaiting,payload:{kind:'existing',index:i}}));
   const queenRefs=new Map(),queenInput=[];
   queens.forEach((q,i)=>{const id='queen-'+i+'-'+String(q.id||i);queenRefs.set(id,q);queenInput.push({id,progress:q.progress||0,rate:_offlineQueenRate(q),enabled:_entityInKnownWalkspace(q)&&(q.health||0)>18,royalNext:!!q._royalNext,payload:{index:i}});});
@@ -11176,7 +11460,7 @@ function _offlineApplyBrood(result,ctx){
 function _offlineCompleteDig(group){
   if(!group||!soil[group.r]||soil[group.r][group.c]!==1||!soilType[group.r]||soilType[group.r][group.c]!==group.type)return false;
   const mt=group.type;soil[group.r][group.c]=0;soilType[group.r][group.c]=0;markSoilDirty(group.c,group.r);digs++;stats.xp+=8;colonyFitness+=.35;
-  let kind='',chance=0,amount=1;if(mt===8||mt===9||mt===10){kind=mt===8?'cobre':mt===9?'hierro':'oro';const pick=group.members.some(w=>w.tool==='pick');amount=1+(pick?1:0)+(colonyIQ>132?1:0);chance=1;}
+  let kind='',chance=0,amount=1;if(mt===8||mt===9||mt===10){kind=mt===8?'cobre':mt===9?'hierro':'oro';const edged=group.members.some(w=>antHasAdaptation(w,'mandibles'));amount=1+(edged?1:0)+(colonyIQ>132?1:0);chance=1;}
   else if(mt===2){kind='clay';chance=.72;}else if(mt===3){kind='sand';chance=.62;}else if(mt===4){kind='stone';chance=.55;}else if(mt===1){kind='fiber';chance=.22;}
   if(kind&&worldHash(worldSeed,group.c,group.r,173)<chance)economyLedger.creditMaterial(kind,amount,'offline excavation');
   if(worldHash(worldSeed,group.c,group.r,174)<.52)addWaste(group.c*CELL+8,group.r*CELL+8,mt);
@@ -11991,24 +12275,42 @@ function updateEcoHud(){
     _ecoTxt('velMatWood',  Math.max(0, Math.floor(economyLedger.materials.wood||0)));
     _ecoTxt('velMatSand',  Math.max(0, Math.floor(economyLedger.materials.sand||0)));
     _ecoTxt('velMatRooms', storageCells().length);
+    if(typeof updateLineageHud==='function')updateLineageHud();
     if(_invAbierto) pintarInventario();
   }catch(e){ /* un nodo que falte no puede parar el bucle */ }
 }
 function _filaInv(def, valor){
-  const keep=colonyProjects.reserve(def.k);
+  const keep=colonyProjects.reserve(def.k),committed=Math.floor(economyLedger.materialHeld(def.k)),available=Math.floor(economyLedger.materialAvailable(def.k));
   return '<article class="inv-resource-card" data-material="'+def.k+'">'
     + '<span class="inv-resource-icon" style="--mat-main:'+def.col+';--mat-dark:'+def.col2+'" aria-hidden="true"><i></i></span>'
     + '<span class="inv-resource-copy"><b class="inv-resource-name">'+def.n+'</b>'
     + '<span class="inv-resource-note">'+def.sirve+'</span></span>'
-    + '<b class="inv-resource-count" aria-label="'+valor+' '+def.n.toLowerCase()+'">'+valor+'</b>'
+    + '<b class="inv-resource-count" aria-label="total '+valor+' '+def.n.toLowerCase()+'">'+valor+'</b>'
+    + '<span class="inv-resource-ledger" aria-label="'+committed+' committed and '+available+' available"><span>COMMITTED <b>'+committed+'</b></span><span>AVAILABLE <b>'+available+'</b></span></span>'
     + '<span class="inv-reserve-control"><span class="inv-reserve-label">KEEP <b>'+keep+'</b></span>'
     + '<button type="button" data-reserve-kind="'+def.k+'" data-reserve-delta="-1" aria-label="Keep one less '+def.n.toLowerCase()+'">−</button>'
     + '<button type="button" data-reserve-kind="'+def.k+'" data-reserve-delta="1" aria-label="Keep one more '+def.n.toLowerCase()+'">+</button></span></article>';
 }
 function _projectCostHtml(cost){return Object.entries(cost||{}).map(([k,v])=>'<span><b>'+v+'</b> '+k.toUpperCase()+'</span>').join('');}
+function _bodyAdaptationsHtml(){
+  const living=workers.filter(w=>w&&(w.health||0)>20);
+  let html='<section class="inv-section inv-adaptation-section" aria-labelledby="invAdaptTitle"><h3 class="inv-section-head" id="invAdaptTitle">BODY ADAPTATIONS</h3>'
+    +'<p class="inv-project-intro">You approve each material use. The colony selects one eligible worker by need, traits and experience — never by manual assignment.</p><div class="inv-adaptation-grid">';
+  for(const [type,d] of Object.entries(BODY_ADAPTATION_DEFS)){
+    const adapted=living.filter(w=>antHasAdaptation(w,type)).length,eligible=living.length-adapted;
+    const unlocked=_adaptationUnlocked(type),affordable=economyLedger.canAffordMaterials(d.need),enabled=unlocked&&affordable&&eligible>0;
+    let status=enabled?'APPROVE FOR ONE':eligible<=0?'ALL ADAPTED':!unlocked?'NOT YET LEARNED':'NEEDS AVAILABLE STOCK';
+    html+='<article class="inv-adaptation-card" data-adaptation="'+type+'"><div class="inv-adaptation-top"><span class="inv-adaptation-glyph adapt-'+type+'" aria-hidden="true"><i></i></span><span><b>'+d.name+'</b><small>'+d.effect+'</small></span></div>'
+      +'<p class="inv-adaptation-detail"><b>WHAT CHANGES</b> '+d.detail+'</p>'
+      +'<div class="inv-adaptation-cost" aria-label="Adaptation cost">'+_projectCostHtml(d.need)+'</div>'
+      +'<div class="inv-adaptation-counts"><span><b>'+adapted+'</b> ADAPTED</span><span><b>'+eligible+'</b> ELIGIBLE</span></div>'
+      +'<button class="inv-adaptation-approve" type="button" data-adaptation-approve="'+type+'" '+(enabled?'':'disabled')+'>'+status+'</button></article>';
+  }
+  return html+'</div><p class="inv-adaptation-rule"><b>SPENDING RULE</b> No worker can take these materials automatically.</p></section>';
+}
 function _colonyProjectsHtml(){
   const active=colonyProjects.active();let html='<section class="inv-section inv-project-section" aria-labelledby="invProjectsTitle"><h3 class="inv-section-head" id="invProjectsTitle">COLONY PROJECTS</h3>'
-    +'<p class="inv-project-intro">Choose one bottleneck. Materials are committed now, then carried from the store by an emergent crew.</p>';
+    +'<p class="inv-project-intro">Review the result and cost. A site project commits material only after you choose a valid cell; an emergent crew then carries every unit.</p>';
   if(active){
     const def=projectDefinition(active.type),total=Object.values(active.cost).reduce((a,v)=>a+v,0),delivered=Object.values(active.delivered).reduce((a,v)=>a+v,0),transit=Object.values(active.inTransit).reduce((a,v)=>a+v,0),work=Math.round(active.work/Math.max(1,active.workNeeded)*100);
     const crew=(active.crew||[]).map(id=>{const w=workers.find(x=>x.id===id);return w?antDisplayName(w):id;});
@@ -12016,6 +12318,7 @@ function _colonyProjectsHtml(){
     html+='<article class="inv-active-project" data-project="'+active.type+'"><div class="inv-project-top"><span class="inv-project-glyph">'+def.icon+'</span><span><b>'+def.name+'</b><small>ACTIVE · ONE AT A TIME</small></span></div>'
       +'<div class="inv-project-track"><i style="--project-progress:'+Math.round(((delivered+transit)/Math.max(1,total))*55+work*.45)+'%"></i></div>'
       +'<div class="inv-project-stats"><span><b>'+delivered+'</b>/'+total+' DELIVERED</span><span><b>'+transit+'</b> IN TRANSIT</span><span><b>'+work+'%</b> BUILT</span></div>'
+      +'<p class="inv-project-effect"><b>WHEN COMPLETE</b> '+def.effect+'</p><p class="inv-project-detail"><b>HOW IT WORKS</b> '+def.details+'</p>'
       +'<p class="inv-project-status">'+(active.blocked?active.blocked:(colonyProjects.allDelivered()?'Crew is building at the chosen site.':'Workers are collecting committed units from the founding store.'))+'</p>'
       +'<p class="inv-project-crew"><b>EMERGENT CREW</b> '+(crew.length?crew.join(' · '):'Survival work currently has priority.')+'</p>'
       +(moved===0?'<button class="inv-project-cancel" type="button" data-project-cancel="1">RELEASE BEFORE PICKUP</button>':'')+'</article>';
@@ -12023,10 +12326,10 @@ function _colonyProjectsHtml(){
     const proposals=colonyProjectProposals();
     if(!proposals.length)html+='<div class="inv-project-empty">Complete the connected founding store before the colony can commit a worksite.</div>';
     for(const p of proposals){
-      const action=p.placement==='store'?'APPROVE':'CHOOSE SITE',built=p.count?'<span class="inv-project-built">BUILT '+p.count+'</span>':'';
+      const built=p.count?'<span class="inv-project-built">BUILT '+p.count+'</span>':'';
       html+='<article class="inv-project-card" data-project="'+p.id+'"><div class="inv-project-top"><span class="inv-project-glyph" style="--project-color:'+p.color+'">'+p.icon+'</span><span><b>'+p.name+'</b><small>'+p.reason+'</small></span>'+built+'</div>'
-        +'<div class="inv-project-cost" aria-label="Project cost">'+_projectCostHtml(p.cost)+'</div><p class="inv-project-effect"><b>EFFECT</b> '+p.effect+'</p><p class="inv-project-trade"><b>SACRIFICE</b> '+p.tradeoff+'</p>'
-        +'<button class="inv-project-start" type="button" data-project-start="'+p.id+'" '+(p.affordable?'':'disabled')+'>'+(p.affordable?action:'HELD BY RESERVES')+'</button></article>';
+        +'<div class="inv-project-cost" aria-label="Project cost">'+_projectCostHtml(p.cost)+'</div><p class="inv-project-effect"><b>RESULT</b> '+p.effect+'</p><p class="inv-project-detail"><b>HOW IT WORKS</b> '+p.details+'</p><p class="inv-project-site"><b>PLACEMENT</b> '+p.siteHint+'</p><p class="inv-project-trade"><b>RISK</b> '+p.tradeoff+'</p>'
+        +'<button class="inv-project-start" type="button" data-project-start="'+p.id+'" '+(p.affordable?'':'disabled')+'>'+(p.affordable?(p.placement==='store'?'APPROVE AND BUILD':'CHOOSE SITE ON MAP'):'HELD BY RESERVES')+'</button></article>';
     }
   }
   return html+'</section>';
@@ -12059,6 +12362,7 @@ function pintarInventario(){
     + '<b class="inv-cache-coord">'+(sitio?'['+cx+','+cy+']':'UNASSIGNED')+'</b>'
     + '<span class="inv-cache-detail">'+(celdas.length?'<b>'+celdas.length+'</b> structure '+(celdas.length===1?'cell':'cells'):sitio?'<span class="is-empty">under construction · '+Math.round((sitio.buildProgress||0)*100)+'%</span>':'<span class="is-empty">no connected build site</span>')
     + (graneros?' · <b>'+graneros+'</b> '+(graneros===1?'upgrade':'upgrades'):'')+'</span></span></article></section>';
+  html += _bodyAdaptationsHtml();
   html += _colonyProjectsHtml();
   html += '<section class="inv-section" aria-labelledby="invMaterialsTitle"><h3 class="inv-section-head" id="invMaterialsTitle">RAW MATERIALS</h3><div class="inv-resource-grid">';
   for(const d of _MAT_DEFS){
@@ -12066,23 +12370,19 @@ function pintarInventario(){
   }
   html += '</div></section>';
   try{
-    const herramientas={pick:['PK','PICK'],basket:['BK','BASKET'],trowel:['TR','TROWEL']};
-    const partes=[];
-    for(const k in herramientas){
-      const n=workers.filter(w=>w.tool===k).length;
-      if(n) partes.push('<div class="inv-tool-chip"><span class="inv-tool-mark" aria-hidden="true">'+herramientas[k][0]+'</span><span>'+herramientas[k][1]+'</span><b>×'+n+'</b></div>');
-    }
-    const estructur=structures.filter(st=>st&&st.built!==false).length;
-    const crias=brood.length;
-    html += '<section class="inv-section" aria-labelledby="invColonyTitle"><h3 class="inv-section-head" id="invColonyTitle">EQUIPMENT &amp; COLONY</h3>'
-      + '<div class="inv-tool-grid">'+(partes.length?partes.join(''):'<div class="inv-empty-tools">No tools currently in use.</div>')+'</div>'
+    const estructur=structures.filter(st=>st&&st.built!==false).length,crias=brood.length;
+    html += '<section class="inv-section" aria-labelledby="invColonyTitle"><h3 class="inv-section-head" id="invColonyTitle">NEST CONDITIONS</h3>'
       + '<div class="inv-colony-facts"><div class="inv-fact"><b>'+estructur+'</b><span>STRUCTURES</span></div>'
       + '<div class="inv-fact"><b>'+crias+'</b><span>BROOD</span></div><div class="inv-fact"><b>'+wastePiles.length+'</b><span>WASTE</span></div></div></section>';
   }catch(e){}
   if(body.dataset.stamp!==html){
-    const scroll=body.scrollTop,focus=document.activeElement&&document.activeElement.dataset?{kind:document.activeElement.dataset.reserveKind,delta:document.activeElement.dataset.reserveDelta,project:document.activeElement.dataset.projectStart}:null;
-    body.innerHTML=html;body.dataset.stamp=html;body.scrollTop=scroll;
-    if(focus){const sel=focus.kind?'[data-reserve-kind="'+focus.kind+'"][data-reserve-delta="'+focus.delta+'"]':focus.project?'[data-project-start="'+focus.project+'"]':'';const el=sel&&body.querySelector(sel);if(el)try{el.focus({preventScroll:true});}catch(e){}}
+    const scroll=body.scrollTop,oldMax=Math.max(0,body.scrollHeight-body.clientHeight),stickToBottom=!!body.dataset.stamp&&oldMax>0&&oldMax-scroll<=4;
+    const focus=document.activeElement&&document.activeElement.dataset?{kind:document.activeElement.dataset.reserveKind,delta:document.activeElement.dataset.reserveDelta,project:document.activeElement.dataset.projectStart,adaptation:document.activeElement.dataset.adaptationApprove}:null;
+    body.innerHTML=html;body.dataset.stamp=html;
+    // Live deliveries can alter wrapped copy by a few pixels while the player is at the last row. Keep
+    // that physical bottom anchored instead of preserving an absolute scrollTop that hides its new edge.
+    body.scrollTop=stickToBottom?Math.max(0,body.scrollHeight-body.clientHeight):scroll;
+    if(focus){const sel=focus.kind?'[data-reserve-kind="'+focus.kind+'"][data-reserve-delta="'+focus.delta+'"]':focus.project?'[data-project-start="'+focus.project+'"]':focus.adaptation?'[data-adaptation-approve="'+focus.adaptation+'"]':'';const el=sel&&body.querySelector(sel);if(el)try{el.focus({preventScroll:true});}catch(e){}}
   }
 }
 // Topo (dueño, 2026-10-15): «en el menu del inventario o almacen quiero que puedas scrollear, porque hay
@@ -12106,11 +12406,11 @@ function _asentarBajoCalendario(el){
     // The curtain takes its geometry from the rendered clock — expanded, collapsed or responsive.
     // CSS reads these variables with !important, so old per-panel inline widths cannot drift again.
     if(r&&r.width>0){
-      el.style.setProperty('--curtain-runtime-width',Math.round(r.width)+'px');
-      el.style.setProperty('--curtain-runtime-right',Math.max(0,Math.round((window.innerWidth||r.right)-r.right))+'px');
+      el.style.setProperty('--curtain-runtime-width',Math.max(0,r.width).toFixed(3)+'px');
+      el.style.setProperty('--curtain-runtime-right',Math.max(0,(window.innerWidth||r.right)-r.right).toFixed(3)+'px');
     }
-    const bajo=r&&r.bottom>0?Math.round(r.bottom):(bar?Math.round(bar.getBoundingClientRect().bottom):76);
-    el.style.top=bajo+'px';el.style.left='auto';
+    const bajo=r&&r.bottom>0?r.bottom:(bar?bar.getBoundingClientRect().bottom:76);
+    el.style.top=Math.max(0,bajo).toFixed(3)+'px';el.style.left='auto';
     return bajo;
   }catch(e){ return 0; }
 }
@@ -12136,10 +12436,10 @@ function asentarHoja(el){
     // overflow. The clock has its own mini responsive form, and the curtain uses exactly what is left.
     const alto=Math.max(48,(window.innerHeight||800)-top-8);
     el.style.setProperty('max-height',alto+'px','important');
-    if(el.id==='invSheet'){
-      // The redesigned drawer owns a fixed header and footer; only its body scrolls.
+    if(el.id==='invSheet'||el.id==='lineageSheet'){
+      // These redesigned drawers own a fixed header and footer; only their body scrolls.
       el.style.setProperty('overflow','hidden');
-      const cuerpo=document.getElementById('invBody');
+      const cuerpo=document.getElementById(el.id==='lineageSheet'?'lineageBody':'invBody');
       if(cuerpo){ cuerpo.style.overflowY='auto'; cuerpo.style.overscrollBehavior='contain'; }
     }else{
       const oy=getComputedStyle(el).overflowY;
@@ -12152,6 +12452,7 @@ function asentarHoja(el){
 let _invUltimoFoco=null;
 function abrirInventario(){
   const sh=document.getElementById('invSheet'); if(!sh) return;
+  try{ cerrarLineage(true); }catch(e){}
   try{ cerrarRoster(true); }catch(e){}
   try{ closeAntProfile(true); }catch(e){}
   try{ closeQueenProfile(true); }catch(e){}
@@ -12166,7 +12467,7 @@ function abrirInventario(){
     const cerrar=document.getElementById('btnCloseInv'); if(cerrar) cerrar.focus({preventScroll:true});
   });
 }
-function cerrarInventario(immediate=false){
+function cerrarInventario(immediate=false,restoreFocus=true){
   const sh=document.getElementById('invSheet'); if(!sh) return;
   const devolver=sh.contains(document.activeElement);
   _invAbierto=false; sh.removeAttribute('data-open'); sh.setAttribute('aria-hidden','true');
@@ -12176,7 +12477,7 @@ function cerrarInventario(immediate=false){
   const finish=()=>{
     if(!_invAbierto){
       sh.style.display='none';
-      if(devolver){const f=(_invUltimoFoco&&document.contains(_invUltimoFoco))?_invUltimoFoco:puerta;if(f&&f.focus)f.focus({preventScroll:true});}
+      if(devolver&&restoreFocus){const f=(_invUltimoFoco&&document.contains(_invUltimoFoco))?_invUltimoFoco:puerta;if(f&&f.focus)f.focus({preventScroll:true});}
     }
   };
   if(immediate)finish();else setTimeout(finish,220);
@@ -12184,7 +12485,7 @@ function cerrarInventario(immediate=false){
 window.abrirInventario=abrirInventario; window.cerrarInventario=cerrarInventario;
 // el calendario se pliega con — (y cambia de alto): las hojas abiertas se vuelven a sentar debajo
 try{ document.getElementById('calCollapseBtn') && document.getElementById('calCollapseBtn').addEventListener('click', ()=>{
-    requestAnimationFrame(()=>{ for(const id of ['invSheet','rosterSheet','antProfile','queenProfile']){ const e=document.getElementById(id); if(e && (e.getAttribute('data-open')||e.classList.contains('open'))){ if(id==='invSheet') _asentarInventario(e); else _asentarBajoCalendario(e); asentarHoja(e); } } });
+    requestAnimationFrame(()=>{ for(const id of ['invSheet','lineageSheet','rosterSheet','antProfile','queenProfile']){ const e=document.getElementById(id); if(e && (e.getAttribute('data-open')||e.classList.contains('open'))){ if(id==='invSheet'||id==='lineageSheet') _asentarInventario(e); else _asentarBajoCalendario(e); asentarHoja(e); } } });
 }); }catch(e){}
 function initInventarioHud(){
   const b=document.getElementById('btnInventory');
@@ -12202,6 +12503,8 @@ function initInventarioHud(){
     body.dataset.projectWired='1';body.addEventListener('click',e=>{
       const reserve=e.target.closest&&e.target.closest('[data-reserve-kind][data-reserve-delta]');
       if(reserve){e.preventDefault();e.stopPropagation();const k=reserve.dataset.reserveKind,d=Number(reserve.dataset.reserveDelta)||0;setProjectReserve(k,colonyProjects.reserve(k)+d);return;}
+      const adapt=e.target.closest&&e.target.closest('[data-adaptation-approve]');
+      if(adapt&&!adapt.disabled){e.preventDefault();e.stopPropagation();approveBodyAdaptation(adapt.dataset.adaptationApprove);return;}
       const start=e.target.closest&&e.target.closest('[data-project-start]');
       if(start&&!start.disabled){e.preventDefault();e.stopPropagation();armColonyProject(start.dataset.projectStart);return;}
       const cancel=e.target.closest&&e.target.closest('[data-project-cancel]');
@@ -12218,9 +12521,9 @@ function initInventarioHud(){
     const recolocar=()=>{
       cancelAnimationFrame(pendiente);
       pendiente=requestAnimationFrame(()=>{
-        for(const id of ['invSheet','rosterSheet','antProfile','queenProfile']){
+        for(const id of ['invSheet','lineageSheet','rosterSheet','antProfile','queenProfile']){
           const e=document.getElementById(id);if(!e||getComputedStyle(e).display==='none')continue;
-          if(id==='invSheet')_asentarInventario(e);else _asentarBajoCalendario(e);asentarHoja(e);
+          if(id==='invSheet'||id==='lineageSheet')_asentarInventario(e);else _asentarBajoCalendario(e);asentarHoja(e);
         }
         _rulerSig='';updateDepthRuler();
       });
@@ -12243,3 +12546,131 @@ function initInventarioHud(){
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', initInventarioHud);
 else initInventarioHud();
 setTimeout(initInventarioHud, 600);
+
+
+// === NUPTIAL FLIGHT · AMBER · PERMANENT LINEAGE ================================================
+// One earned-only reset layer. It replaces the physical farm with a newly generated nest; workers,
+// stock, depth and open work reset. Amber, finite upgrades, relics and flight receipts persist.
+let _lineageOpen=false,_lineageLastFocus=null,_lineageBusy=false,_lineageRenderSig='';
+function _nuptialRunMetrics(){
+  let depth=0;
+  try{for(const cell of nestReachableData().cells)depth=Math.max(depth,(cell[1]|0)-SURFACE_ROW);}catch(e){}
+  const nextSlabProgress=umbral&&umbral.hpMax>0?Math.max(0,Math.min(1,1-umbral.hp/umbral.hpMax)):0;
+  let sizeKey='';try{sizeKey=localStorage.getItem('antfarm_worldSize')||'';}catch(e){}
+  return {slabs:umbralesRotos,depth,nextSlabProgress,relics:lineageRun.relicsFound||0,workers:workers.filter(w=>(w.health||0)>0).length,
+    livingQueens:queens.filter(q=>(q.health||0)>0).length,generation:gen,worldSeed,sizeKey};
+}
+function currentNuptialFlightQuote(){return quoteNuptialFlight(_nuptialRunMetrics());}
+function _amberText(value){const n=Math.max(0,Number(value)||0);return n.toFixed(2);}
+function _lineageEsc(value){return String(value==null?'':value).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));}
+function _upgradeEffectText(id,level){
+  if(id==='trail_memory')return '+'+(level*25)+'% TRAIL LIFE';
+  if(id==='sealed_jars')return '+'+(level*2)+' PROTECTED RATIONS';
+  if(id==='forager_marks')return '+'+(level*4)+' WILD-FORAGE CELLS';
+  if(id==='deep_rest')return '+'+(level*15)+'% REST RECOVERY';
+  return '—';
+}
+function updateLineageHud(){
+  const amount=document.getElementById('lineageAmberHud');if(amount)amount.textContent=_amberText(lineageState.amber);
+  const door=document.getElementById('btnLineage');if(door)door.title='Nuptial Flight · '+_amberText(lineageState.amber)+' amber · '+lineageState.flights+' completed';
+  if(_lineageOpen)renderLineageSheet();
+}
+function renderLineageSheet(force=false){
+  const body=document.getElementById('lineageBody'),action=document.getElementById('btnNuptialFlight');if(!body)return;
+  const q=currentNuptialFlightQuote(),r=q.run;
+  const sig=JSON.stringify([r.slabs,r.depth,Math.round(r.nextSlabProgress*1000),r.relics,r.workers,r.livingQueens,lineageState,_lineageBusy]);
+  if(!force&&sig===_lineageRenderSig)return;_lineageRenderSig=sig;
+  const status=q.eligible?'READY · A NEW FOUNDER CAN LEAVE':q.blockers.join(' · ');
+  let html='<section class="lineage-run-card"><div class="lineage-run-top"><span>NEXT FLIGHT YIELD</span><b>+'+_amberText(q.award)+' ◆</b></div>'
+    +'<div class="lineage-formula"><span class="lineage-formula-label">FULL-PRECISION FORMULA</span><strong>√ (16 × broken slabs + depth beyond 8 + 8 × next-slab progress + 2 × new relics)</strong></div>'
+    +'<div class="lineage-metrics"><span><b>'+r.slabs+'</b>SLABS</span><span><b>'+r.depth+'</b>DEPTH</span><span><b>'+Math.round(r.nextSlabProgress*100)+'%</b>NEXT SLAB</span><span><b>'+r.relics+'</b>NEW RELICS</span></div>'
+    +'<div class="lineage-status'+(q.eligible?'':' locked')+'">'+_lineageEsc(status)+'</div></section>';
+  html+='<section class="lineage-reset-card"><h3>WHAT THE FLIGHT MEANS</h3><p>The old physical nest closes and a new seeded world begins at Day 1. This is a deliberate reset, never an automatic event.</p>'
+    +'<div class="lineage-reset-grid"><div><b>RESETS</b><span>workers · queens · brood · depth · food · materials · projects · temporary trails</span></div>'
+    +'<div><b>PERSISTS</b><span>amber · finite upgrades · relic case · flight records · display settings · 12 h offline milestone</span></div></div></section>';
+  html+='<section class="lineage-upgrades"><h3>PERMANENT UPGRADES</h3>';
+  for(const id of Object.keys(LINEAGE_UPGRADES)){
+    const def=LINEAGE_UPGRADES[id],level=lineageState.upgrades[id]||0,cost=nextUpgradeCost(lineageState,id),maxed=cost===null,afford=maxed||lineageState.amber+1e-10>=cost;
+    const pips=Array.from({length:def.max},(_,i)=>'<i class="'+(i<level?'on':'')+'"></i>').join('');
+    html+='<article class="lineage-upgrade-card" data-lineage-upgrade="'+id+'"><div class="lineage-upgrade-head"><b>'+def.name+'</b><span class="lineage-ranks" aria-label="rank '+level+' of '+def.max+'">'+pips+'</span></div>'
+      +'<p>'+def.description+'</p><div class="lineage-upgrade-foot"><span class="lineage-upgrade-effect">'+_upgradeEffectText(id,level)+'</span>'
+      +'<button type="button" class="lineage-buy" data-buy-lineage="'+id+'" '+((maxed||!afford)?'disabled':'')+'>'+(maxed?'MAX':afford?'BUY · '+cost+' ◆':'NEEDS '+cost+' ◆')+'</button></div></article>';
+  }
+  html+='</section>';
+  const last=lineageState.history[lineageState.history.length-1];
+  html+='<section class="lineage-history-card"><h3>FLIGHT RECORD</h3><p>'+(lineageState.flights
+    ?lineageState.flights+' completed · latest carried '+_amberText(last.award)+' amber from '+last.slabs+' '+(last.slabs===1?'slab':'slabs')+' at depth '+last.depth+'.'
+    :'No flight completed. Break the first collective slab to open this layer.')+'</p></section>';
+  body.innerHTML=html;
+  if(action){action.disabled=!q.eligible||_lineageBusy;action.textContent=q.eligible?'BEGIN NUPTIAL FLIGHT':'FLIGHT LOCKED';}
+}
+function buyPermanentLineageUpgrade(id){
+  const result=buyLineageUpgrade(lineageState,id);
+  if(!result.ok){
+    const msg=result.reason==='not_enough_amber'?'Earn more amber through a Nuptial Flight.':result.reason==='maxed'?'This upgrade is already complete.':'Unknown permanent upgrade.';
+    showNotify('warn','UPGRADE NOT BOUGHT',msg);return result;
+  }
+  _setLineageState(result.state);serializeSave(true);updateLineageHud();renderLineageSheet();
+  showNotify('ok',result.def.name+' · RANK '+result.level,'Permanent and earned entirely through play.');
+  return result;
+}
+function _executeNuptialFlight(at=Date.now()){
+  if(_lineageBusy)return {ok:false,reason:'busy'};
+  const metrics=_nuptialRunMetrics(),result=completeNuptialFlight(lineageState,metrics,at);
+  if(!result.ok)return result;
+  _lineageBusy=true;
+  try{
+    const cols=COLS,rows=ROWS,keptRelics=reliquias.map(x=>({...x})),award=result.quote.award,flightNo=result.state.flights;
+    try{cerrarLineage(true);cerrarInventario(true);cerrarRoster(true);closeAntProfile(true);closeQueenProfile(true);}catch(e){}
+    _setLineageState(result.state);
+    topoCreateFreshWorld(cols,rows,{lineage:lineageState,relics:keptRelics,nuptial:true});
+    _offlineUnlocks.lineage=true;
+    try{setMapTool('navigate');}catch(e){}
+    pushEvent('evo','◆ NUPTIAL FLIGHT '+flightNo,'New seeded nest · +'+_amberText(award)+' amber · relic case retained');
+    setNarration('<b>Nuptial Flight '+flightNo+' completed.</b> <small>A new physical nest begins. Amber, upgrades, relics, and the 12-hour offline milestone remain.</small>');
+    showNotify('canon','NUPTIAL FLIGHT '+flightNo,'+'+_amberText(award)+' amber · new seeded nest',5200);
+    serializeSave(true);updateLineageHud();updateEcoHud();
+    return {ok:true,award,flightNo,state:lineageSnapshot(lineageState),newWorldSeed:worldSeed};
+  }finally{_lineageBusy=false;}
+}
+function requestNuptialFlight(){
+  const q=currentNuptialFlightQuote();
+  if(!q.eligible){showNotify('warn','NUPTIAL FLIGHT LOCKED',q.blockers.join(' · '));renderLineageSheet();return q;}
+  const wasPaused=paused;paused=true;
+  gameConfirm('BEGIN NUPTIAL FLIGHT?',
+    'EARN  +'+_amberText(q.award)+' AMBER\n\nRESET  workers, queens, brood, depth, stock, projects and temporary trails\n\nKEEP  amber, permanent upgrades, relics, flight records and the 12 h offline milestone\n\nThe old physical nest cannot be resumed.',
+    ()=>{const done=_executeNuptialFlight(Date.now());paused=wasPaused;if(!done.ok)showNotify('error','FLIGHT STOPPED',String(done.reason||'Unknown reason'));},
+    ()=>{paused=wasPaused;});
+  return q;
+}
+function abrirLineage(){
+  const sh=document.getElementById('lineageSheet');if(!sh||!_topoHasWorld)return;
+  try{cerrarInventario(true);cerrarRoster(true);closeAntProfile(true);closeQueenProfile(true);}catch(e){}
+  _lineageLastFocus=document.activeElement;_lineageOpen=true;sh.setAttribute('data-open','1');sh.setAttribute('aria-hidden','false');sh.style.display='flex';
+  const door=document.getElementById('btnLineage');if(door)door.setAttribute('aria-expanded','true');
+  _asentarInventario(sh);renderLineageSheet();
+  requestAnimationFrame(()=>{sh.style.transform='translate3d(0,0,0) scale(1)';sh.style.opacity='1';asentarHoja(sh);const close=document.getElementById('btnCloseLineage');if(close)close.focus({preventScroll:true});});
+}
+function cerrarLineage(immediate=false){
+  const sh=document.getElementById('lineageSheet');if(!sh)return;
+  const devolver=sh.contains(document.activeElement);_lineageOpen=false;sh.removeAttribute('data-open');sh.setAttribute('aria-hidden','true');
+  const door=document.getElementById('btnLineage');if(door)door.setAttribute('aria-expanded','false');
+  sh.style.transform='translateY(-12px) scaleY(0)';sh.style.opacity='0';
+  const finish=()=>{if(!_lineageOpen){sh.style.display='none';if(devolver){const f=_lineageLastFocus&&document.contains(_lineageLastFocus)?_lineageLastFocus:door;if(f&&f.focus)f.focus({preventScroll:true});}}};
+  if(immediate)finish();else setTimeout(finish,220);
+}
+function initLineageHud(){
+  const door=document.getElementById('btnLineage');if(door&&!door.dataset.wired){door.dataset.wired='1';door.onclick=e=>{e&&e.stopPropagation();if(_lineageOpen)cerrarLineage();else abrirLineage();};}
+  const close=document.getElementById('btnCloseLineage');if(close&&!close.dataset.wired){close.dataset.wired='1';close.onclick=()=>cerrarLineage();}
+  const action=document.getElementById('btnNuptialFlight');if(action&&!action.dataset.wired){action.dataset.wired='1';action.onclick=requestNuptialFlight;}
+  const body=document.getElementById('lineageBody');if(body&&!body.dataset.wired){body.dataset.wired='1';body.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('[data-buy-lineage]');if(b&&!b.disabled){e.preventDefault();buyPermanentLineageUpgrade(b.dataset.buyLineage);}});}
+  if(!window.__lineageEscapeWired){window.__lineageEscapeWired=true;window.addEventListener('keydown',e=>{if(e.key==='Escape'&&_lineageOpen){e.preventDefault();e.stopImmediatePropagation();cerrarLineage();}}, {capture:true});}
+  updateLineageHud();
+}
+window.currentNuptialFlightQuote=currentNuptialFlightQuote;
+window.buyPermanentLineageUpgrade=buyPermanentLineageUpgrade;
+window.requestNuptialFlight=requestNuptialFlight;
+window._executeNuptialFlight=_executeNuptialFlight;
+window.abrirLineage=abrirLineage;window.cerrarLineage=cerrarLineage;
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initLineageHud);else initLineageHud();
+setTimeout(initLineageHud,600);

@@ -7,8 +7,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ANT FARM</title>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache">
-<link rel="stylesheet" href="css/style.css?v=20261020l">
-<link rel="stylesheet" href="css/startup.css?v=20261020l">
+<link rel="stylesheet" href="css/style.css?v=20261020m">
+<link rel="stylesheet" href="css/startup.css?v=20261020m">
 
 <style id="topoHideUntilStart">
   #appRoot{display:none !important}
@@ -197,13 +197,14 @@
 <section id="onboardingModal" class="topo-subscreen" role="dialog" aria-modal="true" aria-labelledby="onboardingTitle" aria-hidden="true">
   <div class="topo-panel topo-panel-onboarding" style="--topo-panel-width:720px">
     <header class="topo-panel-header">
-      <div><span class="topo-panel-kicker">DAY 0</span><h2 id="onboardingTitle">YOUR FARM IS READY</h2><p>Three gestures are enough to begin.</p></div>
+      <div><span class="topo-panel-kicker">DAY 0</span><h2 id="onboardingTitle">YOUR FARM IS READY</h2><p>Four clear actions are enough to begin.</p></div>
       <span class="topo-ready-light">WORLD ALIVE</span>
     </header>
     <div class="topo-panel-body topo-first-steps">
-      <article><span class="topo-step-number">01</span><div class="topo-step-icon topo-honey-icon" aria-hidden="true"></div><div><strong>DROP HONEY</strong><p>Arm the honey tool, then choose one open spot for the first workers.</p></div></article>
-      <article><span class="topo-step-number">02</span><div class="topo-step-icon topo-dig-icon" aria-hidden="true"></div><div><strong>DIG</strong><p>Hold <b>SHIFT</b> and click underground to order a tunnel.</p></div></article>
-      <article><span class="topo-step-number">03</span><div class="topo-step-icon topo-watch-icon" aria-hidden="true"></div><div><strong>WATCH THEM</strong><p>Tap an ant to open her profile and follow her decisions.</p></div></article>
+      <article><span class="topo-step-number">01</span><div class="topo-step-icon topo-watch-icon" aria-hidden="true"></div><div><strong>NAVIGATE &amp; WATCH</strong><p>Ordinary taps only navigate or select an ant. Tap her to open her profile.</p></div></article>
+      <article><span class="topo-step-number">02</span><div class="topo-step-icon topo-honey-icon" aria-hidden="true"></div><div><strong>DROP HONEY · ONE SHOT</strong><p>Arm <b>HONEY</b>, then tap one explored, open spot. It drops once and returns to navigation.</p></div></article>
+      <article><span class="topo-step-number">03</span><div class="topo-step-icon topo-phero-icon" aria-hidden="true"></div><div><strong>FOLLOW TRAIL · DRAG</strong><p>Arm <b>TRAIL</b>, drag from the ants toward a destination, then release. It guides; it never drops food.</p></div></article>
+      <article><span class="topo-step-number">04</span><div class="topo-step-icon topo-dig-icon" aria-hidden="true"></div><div><strong>DIG</strong><p>Hold <b>SHIFT</b> and click a known underground frontier to order a tunnel.</p></div></article>
     </div>
     <footer class="topo-panel-footer topo-onboarding-footer"><span>THE COLONY SAVES ITSELF</span><button type="button" id="btnOnboardingStart" class="topo-enter-farm">ENTER THE FARM</button></footer>
   </div>
@@ -287,7 +288,7 @@
             <button class="tog on amber" id="togEyes">◉ OJOS</button>
             <button class="tog on purp" id="togTrail">· RASTRO</button>
             <button class="tog on" id="togInk">⬡ TINTA</button>
-            <button class="tog on" id="togFront">⛏ FRENTE</button>
+            <button class="tog on" id="togFront">>< FRONT</button>
           </div>
           <span style="opacity:0.25">|</span>
           <span id="camLabel" style="font-family:'Press Start 2P',monospace;font-size:8px;color:var(--cyan)">2 CÁMARAS</span>
@@ -312,7 +313,7 @@
         </div>
       </div>
       <div class="canvas-wrap" id="canvasWrap">
-        <canvas id="farmCanvas" width="960" height="576"></canvas>
+        <canvas id="farmCanvas" width="960" height="576" tabindex="0" aria-label="Ant farm world map. Arrow keys pan; use the visible map tools for honey and trails."></canvas>
         <div class="notify-stack" id="notifyStack"></div>
         <div class="frame-label"><span>🔬 VIDRIO v4 REAL</span><span style="opacity:0.35">|</span><span id="frameInfo">PIXEL REAL · CAVADO ANIMADO</span><span style="opacity:0.35">|</span><span style="font-size:7px">ARRASTRA · RUEDA ZOOM · DOBLE CLICK CENTRA</span></div>
 
@@ -365,7 +366,7 @@
             <span style="flex:1;background:#000;border:3px solid #000;padding:8px;text-align:center;font-family:'Press Start 2P',monospace;font-size:7px">RECOMP <b id="cRew" style="color:var(--amber)">0/3</b></span>
           </div>
           <div class="explain">
-            <b>Read at a glance:</b> Every ant carries a large <b style="background:var(--amber);color:#000;padding:2px 4px">STATUS BUBBLE</b>. <span style="background:var(--green);color:#000;padding:2px 4px">FOOD→HOME</span> uses the icon of what she really carries. <span style="background:var(--red);color:#fff;padding:2px 4px">⛏ DIG 60%</span> means she is excavating. <span style="background:var(--cyan);color:#000;padding:2px 4px">⬢ CYAN</span> calls out food. Pure readable pixel art.
+            <b>Read at a glance:</b> Every ant carries a large <b style="background:var(--amber);color:#000;padding:2px 4px">STATUS BUBBLE</b>. <span style="background:var(--green);color:#000;padding:2px 4px">FOOD→HOME</span> uses the icon of what she really carries. <span style="background:var(--red);color:#fff;padding:2px 4px">>< DIG 60%</span> means she is excavating. <span style="background:var(--cyan);color:#000;padding:2px 4px">⬢ CYAN</span> calls out food. Pure readable pixel art.
           </div>
         </div>
         <div class="ai-section">
@@ -616,6 +617,24 @@
   </footer>
 </section>
 
+<!-- LINEAGE — the first and only reset curtain in this build. Amber is earned in play, never sold. -->
+<section id="lineageSheet" class="inv-sheet lineage-sheet" role="dialog" aria-modal="false" aria-labelledby="lineageTitle" aria-describedby="lineageSubtitle" aria-hidden="true" tabindex="-1">
+  <header class="inv-header lineage-header">
+    <div class="inv-header-mark lineage-header-mark" aria-hidden="true"><span></span></div>
+    <div class="inv-heading">
+      <span class="inv-kicker">EARNED IN PLAY</span>
+      <h2 id="lineageTitle">NUPTIAL FLIGHT</h2>
+      <p id="lineageSubtitle">Amber outlives the nest.</p>
+    </div>
+    <button id="btnCloseLineage" class="inv-close" type="button" aria-label="Close lineage"><span aria-hidden="true">×</span></button>
+  </header>
+  <div id="lineageBody" class="inv-body lineage-body hoja-cuerpo" tabindex="0" aria-label="Nuptial flight and permanent upgrades"></div>
+  <footer class="inv-footer lineage-footer">
+    <span class="inv-shortcuts"><kbd>ESC</kbd> CLOSE <i aria-hidden="true">·</i> AMBER CANNOT BE BOUGHT</span>
+    <button id="btnNuptialFlight" class="lineage-flight-action" type="button">BEGIN NUPTIAL FLIGHT</button>
+  </footer>
+</section>
+
 <!-- LISTA DE HORMIGAS ACTIVAS — la puerta es el numero de la barra de arriba (Topo: «que al pinchar
      cuantas hormigas hay aparezca la lista»). Misma piel que las demas hojas: caja crema, marco negro,
      el cuerpo scrollea y el pie no se mueve. -->
@@ -859,6 +878,18 @@
     </div>
   </div>
 
+  <section id="projectPlacementHud" class="project-placement-hud" role="region" aria-live="polite" aria-labelledby="projectPlacementTitle" aria-hidden="true" hidden>
+    <div class="project-placement-mark" aria-hidden="true"><span id="projectPlacementIcon">FUN</span></div>
+    <div class="project-placement-copy">
+      <span class="project-placement-kicker">CHOOSE A WORKSITE · NOTHING SPENT YET</span>
+      <strong id="projectPlacementTitle">FUNGUS BED</strong>
+      <p id="projectPlacementPurpose">Choose a valid underground floor tile.</p>
+      <p id="projectPlacementCommitment">AFTER A VALID SITE · COMMIT 4 FIBRE + 2 CLAY · THEN WORKERS HAUL AND BUILD</p>
+      <p id="projectPlacementInstruction">TAP OR CLICK A GREEN TILE · ESC CANCELS</p>
+    </div>
+    <button id="btnCancelProjectPlacement" class="project-placement-cancel" type="button" aria-label="Cancel project placement">CANCEL <kbd>ESC</kbd></button>
+  </section>
+
   <div id="calendarWidget" style="box-sizing:border-box" title="Click abre calendario — 12 días por estación">
   <div class="rc-hud">
     <div class="rc-card" id="rcCard">
@@ -901,8 +932,9 @@
     <div class="rc-mini-bar"><div class="rc-mini-bar-fill" id="rcMiniBar"></div></div>
   </div>
   <button id="calCollapseBtn" title="Minimizar / Expandir">—</button>
-    <div id="calAntRow" style="height:28px;min-height:28px;background:#3e2a14;border-top:3px solid #000;display:flex;align-items:center;justify-content:center;gap:6px;padding:0 6px;box-sizing:border-box;image-rendering:pixelated">
-      <button class="pixel-btn" id="btnDay1" title="Simula un dia entero: corre el mismo paso del bucle, sin pintar cada frame" style="flex:0 0 auto;height:22px;padding:0 8px;font-family:'Press Start 2P';font-size:10px;line-height:1;display:grid;place-items:center;background:#3e2a14;border:2px solid #000;color:#fff8dc;box-shadow:1px 1px 0 #000;margin-left:2px">&#9197; +1 DIA</button>
+    <div id="calAntRow" style="height:28px;min-height:28px;background:#3e2a14;border-top:3px solid #000;display:flex;align-items:center;justify-content:center;gap:5px;padding:0 6px;box-sizing:border-box;image-rendering:pixelated">
+      <button class="pixel-btn" id="btnLineage" type="button" title="Open Nuptial Flight and permanent upgrades" aria-label="Open Nuptial Flight and permanent upgrades" aria-expanded="false" style="flex:1 1 auto;height:22px;min-width:0;padding:0 6px;font-family:'Press Start 2P';font-size:6px;line-height:1;display:flex;align-items:center;justify-content:center;gap:4px;background:#2a160d;border:2px solid #000;color:#ffc64a;box-shadow:1px 1px 0 #000;white-space:nowrap"><span aria-hidden="true">◆</span><b id="lineageAmberHud">0.00</b><span>AMBER</span></button>
+      <button class="pixel-btn" id="btnDay1" title="Simulate one full day with the real loop" style="flex:0 0 auto;height:22px;padding:0 7px;font-family:'Press Start 2P';font-size:8px;line-height:1;display:grid;place-items:center;background:#3e2a14;border:2px solid #000;color:#fff8dc;box-shadow:1px 1px 0 #000">&#9197; +1 DAY</button>
     </div>
 </div>
 
@@ -953,18 +985,19 @@
   <!-- Motor del juego — núcleo profesional modular -->
   
 
-<script src="core/bandas.js?v=20261020l"></script>
-<script src="core/mundo.js?v=20261020l"></script>
-<script src="core/tesoros.js?v=20261020l"></script>
-<script src="core/economia.js?v=20261020l"></script>
-<script src="core/proyectos.js?v=20261020l"></script>
-<script src="core/agua.js?v=20261020l"></script>
-<script src="core/offline.js?v=20261020l"></script>
-<script src="assets/textures/colony-atlas.manifest.js?v=20261020l"></script>
-<script src="js/texture-pack.js?v=20261020l"></script>
-<script src="js/i18n-en.js?v=20261020l"></script>
-<script src="js/app.js?v=20261020l"></script>
-<script src="js/splash-topo.js?v=20261020l"></script>
+<script src="core/bandas.js?v=20261020m"></script>
+<script src="core/mundo.js?v=20261020m"></script>
+<script src="core/tesoros.js?v=20261020m"></script>
+<script src="core/economia.js?v=20261020m"></script>
+<script src="core/proyectos.js?v=20261020m"></script>
+<script src="core/agua.js?v=20261020m"></script>
+<script src="core/offline.js?v=20261020m"></script>
+<script src="core/lineage.js?v=20261020m"></script>
+<script src="assets/textures/colony-atlas.manifest.js?v=20261020m"></script>
+<script src="js/texture-pack.js?v=20261020m"></script>
+<script src="js/i18n-en.js?v=20261020m"></script>
+<script src="js/app.js?v=20261020m"></script>
+<script src="js/splash-topo.js?v=20261020m"></script>
 <script>
 // Vigia del arranque: si js/app.js no termino de cargar, decirlo en pantalla en vez de dejar
 // botones sordos. Es lo unico que vive en el HTML; el juego entero esta en js/app.js.

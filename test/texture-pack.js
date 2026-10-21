@@ -38,7 +38,7 @@ const pManifest=index.indexOf('colony-atlas.manifest.js'),pLoader=index.indexOf(
 check('HTML carga manifiesto y runtime antes de app.js',pManifest>=0&&pLoader>pManifest&&pApp>pLoader);
 const app=fs.readFileSync(path.join(root,'js','app.js'),'utf8');
 check('proyectos terminados se dibujan por nombre con variantes y fallback',app.includes("'project.clay_jars_empty'")&&app.includes("'project.forward_cache_full'")&&app.includes("'project.tunnel_braces_reinforced'")&&app.includes("'project.worksite_foundation'"));
-check('estructuras, cultivos, herramientas y cargas usan la hoja común',app.includes("['structure.'+s.type]")&&app.includes("'crop.fungus_seedling'")&&app.includes("'tool.'+ant.tool")&&app.includes("cargo.fiber_bundle")&&app.includes("_drawCarriedTexture"));
+check('estructuras, cultivos y cargas usan la hoja; las adaptaciones quedan unidas al cuerpo',app.includes("['structure.'+s.type]")&&app.includes("'crop.fungus_seedling'")&&app.includes("cargo.fiber_bundle")&&app.includes("_drawCarriedTexture")&&app.includes("antHasAdaptation(ant,'mandibles')")&&app.includes("antHasAdaptation(ant,'foreclaws')")&&!app.includes("'tool.'+ant.tool"));
 check('el excedente físico usa sprites tipados del atlas',app.includes("'overflow.'+(_fk==='grassSeed'?'grain':_fk)"));
 const runtime=fs.readFileSync(path.join(root,'js','texture-pack.js'),'utf8');
 check('el runtime resuelve variantes futuras sin coordenadas nuevas',runtime.includes('function resolve(names)')&&runtime.includes('function drawFirst(')&&runtime.includes('function drawVariant('));

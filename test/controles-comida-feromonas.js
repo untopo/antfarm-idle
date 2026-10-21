@@ -13,6 +13,13 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error'&&!/favicon|AudioContext|autoplay/.test(m.text()))errors.push(m.text());});
   await page.goto(`http://127.0.0.1:${PORT}/ant-farm-rpg/index.html`,{waitUntil:'load',timeout:30000});
   await page.waitForFunction('typeof topoCreateFreshWorld==="function"',{timeout:30000});
+  console.log('\n· onboarding explains the two intentional tools');
+  const guide=await page.evaluate(()=>{const modern=document.getElementById('onboardingModal')?.innerText||'',legacy=typeof buildOnSteps==='function'?buildOnSteps().map(s=>s.title+' '+s.body+' '+s.hint).join(' '):'';return{cards:document.querySelectorAll('#onboardingModal .topo-first-steps article').length,modern,legacy};});
+  ok(guide.cards===4,'la guía moderna conserva cuatro acciones legibles, sin duplicar controles',String(guide.cards));
+  ok(/DROP HONEY · ONE SHOT/.test(guide.modern)&&/explored, open spot/.test(guide.modern)&&/returns to navigation/.test(guide.modern),'la miel se explica como herramienta armada de un solo uso');
+  ok(/FOLLOW TRAIL · DRAG/.test(guide.modern)&&/drag from the ants/.test(guide.modern)&&/never drops food/.test(guide.modern),'la feromona se explica por separado y por arrastre');
+  ok(/ordinary taps only navigate/i.test(guide.modern)&&!/tap the (green )?meadow to drop honey/i.test(guide.modern+guide.legacy),'la guía no vuelve a prometer miel con un click normal');
+  ok(/DROP HONEY · ONE SHOT/.test(guide.legacy)&&/FOLLOW TRAIL · DRAG/.test(guide.legacy),'el onboarding legado conserva el mismo contrato si entra como respaldo');
   const setup=await page.evaluate(()=>{
     topoCreateFreshWorld(64,45);paused=true;weather.type='clear';weather.intensity=0;
     document.body.classList.add('game-started');const app=document.getElementById('appRoot');if(app)app.style.display='flex';

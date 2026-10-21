@@ -26,7 +26,9 @@ try{
   console.log('\n· desktop: one entry, three contextual proposals, integrated reserve controls');
   ok(m.projects===1&&m.cards>=1&&m.cards<=3,'PROJECTS appears once inside the sole NEST STORES body',m.cards+' proposals');
   ok(m.reserveButtons===16&&m.minReserve>=28,'all eight resources have one compact −/+ reserve pair',m.reserveButtons+' buttons · '+m.minReserve+'px');
-  ok(/Choose one bottleneck/.test(m.text)&&/EFFECT/.test(m.text)&&/SACRIFICE/.test(m.text),'cards explain problem, effect and sacrifice in English');
+  ok(/Review the result and cost/.test(m.text)&&/only after you choose a valid cell/.test(m.text)&&/RESULT/.test(m.text)&&/HOW IT WORKS/.test(m.text)&&/PLACEMENT/.test(m.text)&&/RISK/.test(m.text),'cards explain commitment timing, result, operation, placement and risk in English');
+  ok(/Starts with 4 harvest charges/.test(m.text)&&/1 physical mushroom ration/.test(m.text)&&/workers must carry every mushroom/.test(m.text),'FUNGUS BED states its finite yield and physical delivery before approval');
+  ok(/WHAT CHANGES/.test(m.text)&&/one additional food ration/.test(m.text)&&/flood-control work/.test(m.text),'adaptations state exactly what changes before material approval');
   ok(m.horizontal.length===0&&m.rect.right<=1280&&m.rect.bottom<=820,'enlarged menu still fits desktop without horizontal spill',JSON.stringify(m.rect)+' · '+m.horizontal.slice(0,8).join(' | '));
   ok(m.scrollable>80,'the longer STORES body remains genuinely scrollable',m.scrollable+'px');
   const reserveBefore=await page.evaluate(()=>({total:economyLedger.materials.clay,keep:colonyProjects.reserve('clay'),available:economyLedger.materialAvailable('clay')}));
@@ -46,19 +48,34 @@ try{
   const pickup=await page.evaluate(()=>{const a=colonyProjects.activeRef(),w=workers.find(x=>x.id===a.crew[0]),p=storagePos();w.x=p.x;w.y=p.y;w.fatigue=0;workOnColonyProject(w,2,1);pintarInventario();return{cargo:w.projectCargo&&{...w.projectCargo},state:w.state,clay:economyLedger.materials.clay,transit:colonyProjects.active().inTransit.clay};});
   ok(pickup.cargo&&pickup.state==='HAUL_PROJECT'&&pickup.clay===before.clay-1&&pickup.transit===1,'the first debit coincides with a visible ant cargo in transit');
 
-  console.log('\n· exclusive placement tool cancels cleanly and cannot place honey');
+  console.log('\n· FUNGUS BED enters an explicit, cancellable map state before spending anything');
   await page.evaluate(()=>{const a=colonyProjects.activeRef(),w=workers.find(x=>x.projectCargo);if(w){const p=colonyProjectAnchor(a);w.x=p.x;w.y=p.y;workOnColonyProject(w,2,1);}let guard=0;while(colonyProjects.activeRef()&&guard++<240){const q=colonyProjects.activeRef(),b=workers.find(x=>x.id===q.crew[0]);b.fatigue=0;const p=colonyProjects.allDelivered()?colonyProjectAnchor(q):storagePos();b.x=p.x;b.y=p.y;workOnColonyProject(b,20,1);if(b.projectCargo){const z=colonyProjectAnchor(q);b.x=z.x;b.y=z.y;workOnColonyProject(b,2,1);}}const s=storageStructure(true),rr=Math.min(ROWS-3,s.r+s.h+2),mid=s.c+1;for(let y=s.r+s.h;y<=rr;y++){soil[y][mid]=0;soilType[y][mid]=0;}for(let c=Math.max(2,s.c-7);c<=Math.min(COLS-3,s.c+9);c++){soil[rr][c]=0;soilType[rr][c]=0;}markSoilDirty();refreshExploration(true);});
-  const tool=await page.evaluate(()=>{const food0=foods.length;const armed=colonyProjectsAPI.arm('forward_cache');return{armed,mapTool,placement:projectPlacementType,food0};});
-  ok(tool.armed&&tool.mapTool==='project'&&tool.placement==='forward_cache','CHOOSE SITE arms its own temporary map mode');
-  await page.keyboard.press('Escape');await sleep(80);
-  const cancelled=await page.evaluate(()=>({mapTool,placement:projectPlacementType,foods:foods.length}));
-  ok(cancelled.mapTool==='navigate'&&cancelled.placement===null&&cancelled.foods===tool.food0,'ESC cancels placement without creating food or spending stock');
-  const siteClick=await page.evaluate(()=>{colonyProjectsAPI.arm('forward_cache');let site=null;for(let r=SURFACE_ROW+1;r<ROWS-2&&!site;r++)for(let c=1;c<COLS-2;c++){const q=projectSiteCheck('forward_cache',c,r);if(q.ok){site=q.site;break;}}if(!site)return null;const rect=canvas.getBoundingClientRect(),wx=(site.c+.5)*CELL,wy=(site.r+.5)*CELL;return{site,x:rect.left+(wx-view.x)*view.zoom/VIEW_W*rect.width,y:rect.top+(wy-view.y)*view.zoom/VIEW_H*rect.height,before:{clay:economyLedger.materials.clay,wood:economyLedger.materials.wood}};});
+  const tool=await page.evaluate(()=>{const food0=foods.length,before={clay:economyLedger.materials.clay,fiber:economyLedger.materials.fiber},armed=colonyProjectsAPI.arm('fungus_bed');return{armed,food0,before};});await sleep(260);
+  const armedState=await page.evaluate(()=>{const h=document.getElementById('projectPlacementHud'),r=h.getBoundingClientRect();return{mapTool,placement:projectPlacementType,hidden:h.hidden,aria:h.getAttribute('aria-hidden'),text:h.textContent.replace(/\s+/g,' ').trim(),rect:{x:r.x,y:r.y,right:r.right,bottom:r.bottom},invOpen:document.getElementById('invSheet').getAttribute('data-open'),focus:document.activeElement&&document.activeElement.id,heldFiber:economyLedger.materialHeld('fiber')};});
+  ok(tool.armed&&armedState.mapTool==='project'&&armedState.placement==='fungus_bed'&&!armedState.hidden&&armedState.aria==='false','CHOOSE SITE closes STORES into a visible FUNGUS BED placement state');
+  ok(/NOTHING SPENT YET/.test(armedState.text)&&/4 harvest charges/.test(armedState.text)&&/solid floor/.test(armedState.text)&&/COMMIT 4 FIBER \+ 2 CLAY/.test(armedState.text)&&/WORKERS HAUL AND BUILD/.test(armedState.text)&&/CANCEL/.test(armedState.text),'persistent placement HUD explains purpose, cost, next work, valid ground and cancellation');
+  ok(!armedState.invOpen&&armedState.focus==='farmCanvas'&&armedState.heldFiber===0,'closing the curtain moves keyboard focus to the map without committing material');
+  const invalid=await page.evaluate(()=>{const before={clay:economyLedger.materials.clay,fiber:economyLedger.materials.fiber},placed=tryPlaceColonyProjectAt(CELL*.5,CELL*.5),h=document.getElementById('projectPlacementHud');return{placed,mapTool,invalid:h.hasAttribute('data-invalid'),text:document.getElementById('projectPlacementInstruction').textContent,after:{clay:economyLedger.materials.clay,fiber:economyLedger.materials.fiber},held:economyLedger.materialHeld('fiber')};});
+  ok(!invalid.placed&&invalid.mapTool==='project'&&invalid.invalid&&/NOT PLACED/.test(invalid.text),'an invalid tap explains the rejection and keeps placement armed');
+  ok(invalid.after.clay===tool.before.clay&&invalid.after.fiber===tool.before.fiber&&invalid.held===0,'invalid placement neither spends nor commits any resource');
+  await page.click('#btnCancelProjectPlacement');await sleep(80);
+  let cancelled=await page.evaluate(()=>({mapTool,placement:projectPlacementType,hidden:document.getElementById('projectPlacementHud').hidden,foods:foods.length}));
+  ok(cancelled.mapTool==='navigate'&&cancelled.placement===null&&cancelled.hidden&&cancelled.foods===tool.food0,'the tactile CANCEL action exits without creating food or spending stock');
+  await page.evaluate(()=>colonyProjectsAPI.arm('fungus_bed'));await sleep(260);await page.keyboard.press('Escape');await sleep(80);
+  cancelled=await page.evaluate(()=>({mapTool,placement:projectPlacementType,hidden:document.getElementById('projectPlacementHud').hidden}));
+  ok(cancelled.mapTool==='navigate'&&cancelled.placement===null&&cancelled.hidden,'ESC provides the same clean cancellation path');
+  await page.evaluate(()=>colonyProjectsAPI.arm('fungus_bed'));await sleep(260);await page.keyboard.press('Enter');await sleep(80);
+  const keyboardPlacement=await page.evaluate(()=>({active:colonyProjects.active(),mapTool,invalid:document.getElementById('projectPlacementHud').hasAttribute('data-invalid'),invOpen:document.getElementById('invSheet').getAttribute('data-open'),focus:document.activeElement&&document.activeElement.id}));
+  ok(!keyboardPlacement.invOpen&&(keyboardPlacement.active&&keyboardPlacement.active.type==='fungus_bed'||keyboardPlacement.mapTool==='project'&&keyboardPlacement.invalid),'ENTER acts on the focused map centre instead of reopening the closed inventory');
+  await page.evaluate(()=>{if(colonyProjects.activeRef())cancelColonyProject();else setMapTool('navigate');});
+  const siteClick=await page.evaluate(()=>{colonyProjectsAPI.arm('fungus_bed');let site=null;for(let r=SURFACE_ROW+1;r<ROWS-2&&!site;r++)for(let c=1;c<COLS-2;c++){const q=projectSiteCheck('fungus_bed',c,r);if(q.ok){site=q.site;break;}}if(!site)return null;const wx=(site.c+.5)*CELL,wy=(site.r+.5)*CELL,b=getPanBounds();view.x=clamp(wx-VIEW_W/view.zoom/2,b.minX,b.maxX);view.y=clamp(wy-VIEW_H/view.zoom/2,b.minY,b.maxY);clampView();const rect=canvas.getBoundingClientRect();return{site,x:rect.left+(wx-view.x)*view.zoom/VIEW_W*rect.width,y:rect.top+(wy-view.y)*view.zoom/VIEW_H*rect.height,before:{clay:economyLedger.materials.clay,fiber:economyLedger.materials.fiber}};});
   if(siteClick){await page.mouse.click(siteClick.x,siteClick.y);await sleep(100);}
-  const placed=await page.evaluate(()=>({active:colonyProjects.active(),mapTool,clay:economyLedger.materials.clay,wood:economyLedger.materials.wood,heldWood:economyLedger.materialHeld('wood')}));
-  ok(siteClick&&placed.active&&placed.active.type==='forward_cache'&&placed.mapTool==='navigate','a real canvas click approves the chosen connected worksite');
-  ok(placed.clay===siteClick.before.clay&&placed.wood===siteClick.before.wood&&placed.heldWood===2,'site approval commits cost without an early debit');
-  await page.evaluate(()=>{colonyProjectsAPI.cancel();abrirInventario();});await sleep(120);
+  const placed=await page.evaluate(()=>({active:colonyProjects.active(),mapTool,hudHidden:document.getElementById('projectPlacementHud').hidden,clay:economyLedger.materials.clay,fiber:economyLedger.materials.fiber,heldClay:economyLedger.materialHeld('clay'),heldFiber:economyLedger.materialHeld('fiber')}));
+  ok(siteClick&&placed.active&&placed.active.type==='fungus_bed'&&placed.mapTool==='navigate'&&placed.hudHidden,'a real canvas tap approves the chosen connected FUNGUS BED worksite');
+  ok(placed.clay===siteClick.before.clay&&placed.fiber===siteClick.before.fiber&&placed.heldClay===2&&placed.heldFiber===4,'valid placement commits the stated 2 clay + 4 fibre without an early debit');
+  await page.evaluate(()=>abrirInventario());await sleep(120);m=await metrics(page);
+  ok(m.active===1&&/WHEN COMPLETE/.test(m.text)&&/4 harvest charges/.test(m.text)&&/Workers are collecting committed units/.test(m.text),'active progress keeps the promised result beside hauling and build status');
+  await page.evaluate(()=>{colonyProjectsAPI.cancel();pintarInventario();});await sleep(80);
 
   console.log('\n· texture atlas and STORAGE PRESSURE use the existing STORES card');
   const pressure=await page.evaluate(()=>{
@@ -82,7 +99,11 @@ try{
   await page.setViewport({width:390,height:844});await page.evaluate(()=>{if(document.getElementById('invSheet').getAttribute('data-open')!=='1')abrirInventario();_asentarInventario(document.getElementById('invSheet'));asentarHoja(document.getElementById('invSheet'));});await sleep(180);m=await metrics(page);
   ok(m.rect.x>=7&&m.rect.right<=383&&m.rect.bottom<=844&&m.horizontal.length===0,'portrait drawer stays inside every edge',JSON.stringify(m.rect)+' · '+m.horizontal.slice(0,8).join(' | '));
   await page.screenshot({path:SHOTS+'/projects-portrait.png'});
-  await page.setViewport({width:844,height:390});await page.evaluate(()=>{_asentarInventario(document.getElementById('invSheet'));asentarHoja(document.getElementById('invSheet'));});await sleep(180);m=await metrics(page);
+  await page.evaluate(()=>colonyProjectsAPI.arm('fungus_bed'));await sleep(260);
+  const mobilePlacement=await page.evaluate(()=>{const h=document.getElementById('projectPlacementHud'),r=h.getBoundingClientRect(),c=document.getElementById('btnCancelProjectPlacement').getBoundingClientRect();return{hidden:h.hidden,rect:{x:Math.round(r.x),y:Math.round(r.y),right:Math.round(r.right),bottom:Math.round(r.bottom)},cancel:{w:Math.round(c.width),h:Math.round(c.height)},overflow:h.scrollWidth-h.clientWidth};});
+  ok(!mobilePlacement.hidden&&mobilePlacement.rect.x>=7&&mobilePlacement.rect.right<=383&&mobilePlacement.rect.bottom<=844&&mobilePlacement.cancel.w>=44&&mobilePlacement.cancel.h>=40&&mobilePlacement.overflow<=1,'portrait placement instructions and tactile cancel stay wholly on-screen',JSON.stringify(mobilePlacement));
+  await page.screenshot({path:SHOTS+'/fungus-placement-portrait.png'});await page.click('#btnCancelProjectPlacement');
+  await page.setViewport({width:844,height:390});await page.evaluate(()=>{abrirInventario();_asentarInventario(document.getElementById('invSheet'));asentarHoja(document.getElementById('invSheet'));});await sleep(180);m=await metrics(page);
   const shortCalBottom=await page.evaluate(()=>Math.round(document.getElementById('calendarWidget').getBoundingClientRect().bottom));
   ok(m.rect.y===shortCalBottom&&m.rect.bottom<=390&&m.scrollable>100&&m.horizontal.length===0,'short landscape keeps the curtain below the mini clock with a scrollable body',JSON.stringify(m.rect)+' · '+m.horizontal.slice(0,8).join(' | '));
   await page.screenshot({path:SHOTS+'/projects-landscape.png'});

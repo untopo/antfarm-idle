@@ -6,7 +6,7 @@ function check(name,cond,detail=''){if(cond){ok++;console.log('  ok  '+name);}el
 
 const defs=P.COLONY_PROJECT_ORDER.map(P.projectDefinition);
 check('hay exactamente cuatro proyectos iniciales',defs.length===4&&defs.map(x=>x.name).join('|')==='CLAY JARS|FORWARD CACHE|TUNNEL BRACES|FUNGUS BED');
-check('cada obra declara coste, trabajo, efecto y sacrificio',defs.every(d=>Object.keys(d.cost).length&&d.work>0&&d.effect&&d.tradeoff));
+check('cada obra declara coste, trabajo, resultado, funcionamiento, colocación y riesgo',defs.every(d=>Object.keys(d.cost).length&&d.work>0&&d.effect&&d.details&&d.siteHint&&d.tradeoff));
 
 const book=P.createColonyProjects();
 const ledger=E.createEconomyLedger({materials:{clay:10,fiber:8,wood:6,stone:5}});

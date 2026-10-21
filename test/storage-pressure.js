@@ -91,7 +91,7 @@ const save=run(`(()=>{
 })()`);
 ok(save.before.protected===save.cap&&save.before.overflow===4&&save.before.total===save.legacy,'G migra al límite y conserva el resto como pila física');
 ok(save.before.types.every(t=>t==='honey'),'la reserva G recibe un tipo migratorio estable en vez de quedar sin tipo');
-ok(save.saved.v==='20261020l'&&save.saved.lots.length>=2&&save.saved.overflow.some(f=>f.storedOverflow&&f.overflowNodeId),'L guarda procedencia protegida, excedente y migración offline');
+ok(save.saved.v==='20261020m'&&save.saved.lots.length>=2&&save.saved.overflow.some(f=>f.storedOverflow&&f.overflowNodeId),'M guarda procedencia protegida, excedente y migración offline');
 ok(save.loaded&&save.after.protected===save.before.protected&&save.after.overflow===save.before.overflow&&save.after.total===save.before.total,'cargar J restaura protegido y excedente sin duplicar ni borrar');
 ok(save.after.types.includes('honey')&&save.after.lots.every(l=>l.kind&&l.nodeId&&l.amount>0),'el round trip mantiene tipos y nodos legibles');
 

@@ -12,29 +12,37 @@
       id:'clay_jars',name:'CLAY JARS',icon:'JAR',placement:'store',size:Object.freeze({w:1,h:1}),
       cost:Object.freeze({clay:3,fiber:2}),work:84,max:3,color:'#d79662',
       problem:'The founding store is running out of protected shelf space.',
-      effect:'+12 ration capacity at the nest store.',
+      effect:'+12 protected ration capacity at the founding store.',
+      details:'Moves up to 12 overflow rations onto protected shelves, where food spoils at only 12% of its normal rate.',
+      siteHint:'Built inside the existing founding store; no map placement is needed.',
       tradeoff:'Clay and fibre remain tied up in containers.'
     }),
     forward_cache:Object.freeze({
       id:'forward_cache',name:'FORWARD CACHE',icon:'BOX',placement:'open_floor',size:Object.freeze({w:2,h:1}),
       cost:Object.freeze({clay:2,fiber:2,wood:2}),work:110,max:3,color:'#c18a42',
       problem:'Long return routes keep foragers away from useful work.',
-      effect:'Food may be delivered to this connected cache; +6 capacity.',
-      tradeoff:'A remote cache needs a safe, connected chamber.'
+      effect:'A nearer delivery point for deep carriers, plus 6 protected ration spaces.',
+      details:'Underground carriers may choose this cache instead of walking all the way to the founding store. Its route and extra capacity stop working if the site floods or is cut off.',
+      siteHint:'Choose two adjacent open, explored, connected and dry cells with solid floor below.',
+      tradeoff:'Its small capacity matters only while the chamber stays connected and dry.'
     }),
     tunnel_braces:Object.freeze({
       id:'tunnel_braces',name:'TUNNEL BRACES',icon:'II',placement:'open_floor',size:Object.freeze({w:1,h:1}),
       cost:Object.freeze({wood:3,stone:2}),work:96,max:8,color:'#a8753c',
       problem:'Loose ceilings can refill a worked tunnel.',
-      effect:'The chosen 5 × 3 cell zone resists cave-ins.',
-      tradeoff:'Protection is local; the rest of the nest stays exposed.'
+      effect:'The 5 × 3 cell zone around the chosen anchor cannot cave in.',
+      details:'A physical brace frame prevents collapse code from refilling those 15 local cells; it does not protect the rest of the nest.',
+      siteHint:'Choose one open, explored, connected and dry underground cell at the centre of the area to protect.',
+      tradeoff:'Protection is local; distant passages stay exposed.'
     }),
     fungus_bed:Object.freeze({
       id:'fungus_bed',name:'FUNGUS BED',icon:'FUN',placement:'open_floor',size:Object.freeze({w:1,h:1}),
       cost:Object.freeze({fiber:4,clay:2}),work:104,max:4,color:'#8fbf5f',
-      problem:'The colony has substrate but too little tended growing space.',
-      effect:'Builds one fed fungus bed without creating free food.',
-      tradeoff:'The bed still needs tending, dry access, and a solid floor.'
+      problem:'The colony needs a local food source below ground.',
+      effect:'Starts with 4 harvest charges; each can become 1 physical mushroom ration while tended.',
+      details:'A healthy tended bed supports the food-based population limit and breeding resilience. It creates no free stock: harvests consume its finite substrate and workers must carry every mushroom.',
+      siteHint:'Choose one open, explored, connected and dry underground cell with solid floor below, away from another bed.',
+      tradeoff:'Without tending, substrate, dry access, or its floor, the bed stops producing and can die.'
     })
   });
   const ORDER=['clay_jars','forward_cache','tunnel_braces','fungus_bed'];

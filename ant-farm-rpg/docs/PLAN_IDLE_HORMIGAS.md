@@ -1,6 +1,6 @@
 # PLAN · Antfarm como juego idle / incremental
 
-**Estado:** plan completo, sin código. Nada de esto toca el juego actual hasta que el dueño apruebe la fase 0.
+**Estado (Build M):** las fases de núcleo offline, recibo de regreso y primer **Vuelo nupcial** ya están integradas. Migración y Linaje continúan como diseño futuro; `COLONIA` / `HISTORIAL` permanecen selladas.
 **Encargo (Topo, 2026-10-16):** «transformemos esto en un juego incremental/idle con nuestra idea de hormigas.
 No tengas miedo en reformular cosas existentes, pero siguiendo nuestra idea bajo las limitaciones de un
 navegador. Haz una investigación exhaustiva de muchos juegos del género y ve cómo convertir lo que hemos
@@ -85,7 +85,7 @@ son el premio de la vitrina.
 
 | Escala | Qué haces | Qué pasa mientras no miras |
 |---|---|---|
-| **Minuto** | Tocas la tierra para cavar a mano; compras una mejora; asignas obreras a cavar, recolectar o criar. | La colonia excava y acumula material. |
+| **Minuto** | Apruebas una adaptación corporal o un proyecto; nunca asignas una obrera ni una profesión concreta. | La colonia elige cuadrillas por experiencia, edad, rasgos y necesidad; excava y acumula material sin gastarlo. |
 | **Hora** | Desbloqueas una banda nueva; rompes una losa; decides a qué banda enviar la cuadrilla. | Con la losa a medias, la colonia sigue mordiendo hasta el tope de offline. |
 | **Día** | Haces un vuelo nupcial o una migración cuando la curva se aplana; eliges qué linaje potenciar. | Lo de siempre: ingreso lento, y el regreso muestra un resumen. |
 
@@ -100,10 +100,10 @@ son el premio de la vitrina.
 
 ### 2.4 Escalera de mejoras (de las que se compran)
 
-- **Obreras por tipo:** excavadora, recolectora, nodriza. Cada tipo multiplica su parte del trabajo.
-- **Herramientas por banda:** la pala de hierro abre la pizarra; el pico de cuarzo, el mármol. La herramienta
-  también se mejora dentro de cada banda (como el pico de Idle Miner).
-- **Obra:** cámaras de cría, almacén, cámara de la reina, puertas. Cada cámara abre un tipo de trabajo nuevo
+- **Oficios emergentes:** excavadora, recolectora y nodriza aparecen por trabajo aprendido y necesidad; no se compran ni asignan.
+- **Adaptaciones corporales por banda:** filos minerales en mandíbulas y agarres en garras abren o aceleran
+  roca dura. El jugador aprueba cada gasto; la colonia elige la receptora elegible, sin picos ni palas humanas.
+- **Obra aprobada:** cámaras de cría, almacén, cámara de la reina, puertas. Cada cámara abre un tipo de trabajo nuevo
   (cría = más obreras; almacén = más tope de material offline).
 - **Cuellos de botella explícitos:** ascensor de tierra (cuánto se puede sacar por tiempo) y almacén (cuánto se
   puede guardar). Sin ellos no hay decisiones, y es la lección de Idle Miner Tycoon.
@@ -124,7 +124,7 @@ Ninguna se llama «prestigio» (la lección de Trimps). Cada una tiene una moned
 
 | Capa | Nombre | Qué reinicia | Qué gana el jugador | Qué cambia para siempre |
 |---|---|---|---|---|
-| **1** | **Vuelo nupcial** | Profundidad y material. Se conservan las reliquias y las mejoras de linaje. | **Ámbar**, en función de la profundidad alcanzada (raíz cuadrada, sin redondeo que castigue; lección de Teiton) | Mejoras permanentes del nido: obreras más rápidas, mejor almacén offline. |
+| **1** | **Vuelo nupcial** | Nido físico completo: mundo, población, cría, profundidad, existencias, proyectos, tiempo y estadísticas de expedición. | **Ámbar**, por losas, profundidad, avance de la próxima losa y reliquias nuevas (raíz cuadrada, saldo interno sin redondear) | Cuatro mejoras pequeñas y finitas: memoria de trail, capacidad protegida, alcance de forraje y descanso. |
 | **2** | **Migración** | Todo lo de la capa 1, y el nido se muda a un mundo nuevo. | **Semillas** (una por migración) | Las bandas se reordenan según la semilla del mundo: otro orden de minerales, otra escala de dureza. Rejugabilidad real, como Idle Ants. |
 | **3** | **Linaje** | Todo, excepto el linaje. | **Reliquias de linaje** y puntos de genética (cuántas bandas completas tiene tu estirpe) | Rasgos heredados (velocidad, golpe, resistencia al magma), que es el puente con lo que ya tenemos: las hormigas mutan y heredan. |
 
@@ -202,6 +202,18 @@ red entrenada.
 - Sus dos sugerencias exactas sólo abren `NEST STORES` o centran la cámara. No aprueban proyectos, eligen
   excavaciones, asignan profesiones ni abren `COLONIA`/`HISTORIAL`. Mientras está abierto pausa la granja,
   aísla el fondo, atrapa/restaura foco y respeta movimiento reducido.
+
+**Vuelo nupcial integrado (Build M):**
+- `core/lineage.js` calcula y registra sin DOM: `√(16×losas + profundidad tras el pozo fundador +
+  8×progreso de la próxima losa + 2×reliquias nuevas)`. El saldo conserva toda su precisión; la interfaz
+  muestra dos decimales. Esperar, acumular población o guardar existencias no aumenta el pago.
+- Se desbloquea con al menos una losa rota y una reina viva. La confirmación enumera explícitamente el
+  reinicio irreversible. Después nace un mundo físico con otra semilla, Día 1 y colonia fundadora real.
+- Persisten sólo ámbar, vuelos, marcas, cuatro mejoras finitas y la vitrina de reliquias. El primer vuelo
+  enciende el escalón offline de 12 h. Guardados anteriores migran las reliquias ya halladas como hallazgos
+  de la expedición corriente.
+- Una única cortina `NUPTIAL FLIGHT` comparte ancho y eje con el calendario. No replica el saldo dentro:
+  su cifra vive sólo en la puerta de ámbar. `COLONIA` y `HISTORIAL` no se abren.
 
 ### 3.4 Anti-trampas (medio alcance)
 - Como en Idle Deepcore o Idle Miner, el juego es de un solo jugador en un navegador. La tabla de tiempo

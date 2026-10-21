@@ -12,11 +12,34 @@ node dev-server.js 8017      # raiz: ant-farm-rpg/, sin cache (Cache-Control: no
 
 Servir con `no-store` importa: con HTML nuevo y `app.js` de la cache vieja el juego se comporta de
 forma distinta a como está escrito y no se puede depurar. `index.html`, `css/style.css` y los assets
-llevan **un solo** `?v=` (`20261020l`); al tocar CSS o JS se sube en todos los sitios a la vez.
+llevan **un solo** `?v=` (`20261020m`); al tocar CSS o JS se sube en todos los sitios a la vez.
 
 Depuración: `?debug=1` en la URL (o `localStorage.antfarm_debug='1'`) enciende el registro del juego
 (`tlog`) que está callado por defecto. En la consola: `_topoDbg()` devuelve día, obreras, comida,
 dimensiones y si está pausado.
+
+## Build M: vuelo nupcial y salida física
+
+Las fundadoras ya salen por la boca visible, recogen en el prado y vuelven alineándose con un labio abierto
+antes de descender; no hay teletransporte ni asignación manual de oficio. Cada salida lleva un marcador verde
+que sigue al cuerpo real, y la entrega sólo entra al ledger después del regreso físico. Una pionera profundiza
+en cada banda mientras exploradoras emergentes abren ambos lados y suben físicamente el escombro. La cantería
+profunda se aprende de verdad en GEN6 + IQ145 + piedra/arcilla, y ocho losas consecutivas expanden los tres
+tamaños sin un fondo fijo. `DROP HONEY` es una herramienta de un solo uso y `FOLLOW TRAIL` se dibuja por arrastre.
+
+Los materiales ya no desaparecen por iniciativa de la simulación. `NEST STORES` separa **TOTAL / COMMITTED /
+AVAILABLE**, mantiene `KEEP` como reserva y ofrece tres adaptaciones corporales: mandíbulas con filo de piedra,
+ataduras de carga de fibra y garras delanteras con agarre de arcilla. Cada clic muestra coste, efecto y
+`ADAPTED / ELIGIBLE`, paga sólo stock disponible y deja que rasgos, experiencia y necesidad elijan a la obrera;
+nunca se asigna un individuo a mano. Los `pick/basket/trowel` de guardados anteriores migran a esas adaptaciones
+sin perder su bonus y dejan de dibujarse. Puentes, talleres y torres automáticos están retirados: los únicos
+sumideros de material son esta aprobación y los proyectos funcionales que el jugador inicia con efecto explícito.
+
+El primer reinicio incremental vive en `core/lineage.js`: una losa rota más una reina viva habilitan el
+**NUPTIAL FLIGHT**. Su fórmula de ámbar conserva precisión completa, una confirmación enumera lo que se
+reinicia y una nueva semilla crea otro nido físico. Sólo persisten ámbar ganado jugando, cuatro mejoras
+finitas, vuelos, mejores marcas y reliquias. Una única cortina voxel bajo el calendario sirve de puerta,
+tienda y explicación, sin abrir `COLONIA` ni `HISTORIAL`.
 
 ## Build L: recibo de regreso
 
@@ -47,6 +70,7 @@ ant-farm-rpg/
 ├── css/style.css       tema del juego; css/startup.css contiene la familia voxel responsive de entrada
 ├── js/app.js           ~11 000 líneas · motor de mundo, colonia, almacén y UI
 ├── js/texture-pack.js  runtime del atlas: nombres estables, pivotes, nearest-neighbour y fallback
+├── core/lineage.js     núcleo puro: fórmula, recibos, saldo y cuatro mejoras finitas de ámbar
 ├── assets/textures/colony-atlas.{png,json,manifest.js} · hoja única de 80 objetos voxel reutilizables
 ├── scripts/generate-colony-atlas.py · fuente determinista de la hoja y ambos manifiestos
 └── docs/
@@ -85,10 +109,16 @@ node test/browser-smoke.js    # solo el navegador real (creación, iframe sandbo
 | `test/reload-simulation.js` | La granja activa sobrevive a llenar el archivo de 5 granjas |
 | `test/browser-smoke.js` | Chrome real: menú → tamaños → siembra → mundo 96×48 pintado, colonia viva, recarga, y el mismo flujo dentro de un `iframe sandbox` sin `allow-modals` |
 | `test/offline-return.js` | Chrome real: contenido del recibo, una presentación por sello en `CONTINUE` y visibilidad, idempotencia, dos sugerencias no automáticas, foco/ESC, movimiento reducido y tamaños desktop/retrato/landscape |
+| `test/lineage.js` + `lineage-integration.js` | Fórmula sin redondeo, elegibilidad, wallet sólo ganada, costes finitos, reinicio físico, persistencia exacta, migración y escalón offline |
+| `test/lineage-browser.js` | Una cortina de ámbar bajo el reloj; compra, confirmación/cancelación, foco, no solapamiento y tamaños desktop/retrato/landscape |
+| `test/salida-emergente-real.js` | La misma fundadora se elige por conducta, cruza la hierba, recoge y vuelve físicamente por un labio abierto antes de entregar |
+| `test/exploracion-tridireccional.js` | Un mundo intacto abre izquierda y derecha mientras una excavadora lateral y una forrajera vuelven físicamente por la boca |
+| `test/profundidad-continuable.js` | Cantería alcanzable, bedrock tardío y ocho losas consecutivas que agrandan SMALL, MEDIUM y BIG sin fondo fijo |
 | `test/intro-topo.js` | La transición usa la geometría responsive definitiva desde el primer píxel visible, sin título grande que luego se encoja |
 | `test/startup-menu.js` | Orden, teclado y tamaños táctiles del menú en escritorio, móvil y landscape |
 | `test/front-menu-settings.js` | Familia voxel completa: paneles sin recorte, ajustes persistentes, fondo inmóvil al desactivarlo, exportación/importación y borrado seguro |
 | `test/inventario-voxel.js` | Inventario voxel sin cifras ni controles duplicados: datos del ledger, scroll anclado y adaptación medida en desktop, portrait y landscape |
+| `test/adaptaciones-controladas.js` | Migra herramientas antiguas, compra una adaptación desde la tarjeta, protege `KEEP`/compromisos y demuestra que 32× de simulación no produce ningún débito material no aprobado |
 
 `test/world-perf-proflib.js` es el DOM de juguete que usan los tests de node; `world-create-breakdown.js`
 y `world-frame-driver.js` son para mirar de dónde viene el coste (la fila "crear mundo (todo)" imprime

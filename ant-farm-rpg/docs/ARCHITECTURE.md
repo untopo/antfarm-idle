@@ -1,5 +1,5 @@
 # Arquitectura — ANT FARM
-Actualizado: 2026-10-14 (mide sobre el `js/app.js` del repo, no sobre una versión anterior).
+Actualizado: 2026-10-21 (el mapa de líneas es orientativo; los contratos se miden contra `js/app.js`).
 
 ## Mapa del fichero único
 
@@ -62,7 +62,28 @@ Reglas duras:
 
 `serializeSave(force)` aborta si la firma `time|digs|colonyFood|workers|deliveries|_soilRev` no cambió
 y no se forcejea; `force=true` se usa al terminar la siembra, antes del onboarding, para que recargar
-no borre la granja. BIG ≈ 47 KB. `window._clearSave()` borra todo y recarga.
+no borre la granja. `window._clearSave()` borra todo y recarga.
+
+## Autoridad material y adaptaciones (Build M)
+
+`core/economia.js` es el único dueño del saldo. Para cada material define cuatro conceptos distintos:
+
+- balance físico total (`materialBalance`);
+- reserva mínima elegida con `KEEP` (`materialFloor`);
+- compromiso de un proyecto aprobado (`materialHeld`);
+- saldo gastable (`materialAvailable = total − KEEP − compromisos`).
+
+En `app.js` sólo quedan tres sitios capaces de reducir material: `approveBodyAdaptation()` paga una decisión
+que acaba de pulsar el jugador, y los dos `consumeHeldMaterial()` transportan presencial u offline stock de
+un proyecto previamente aprobado. Paredes de tierra, cuidado de hongos, diques, talleres, puentes y torres no
+pueden tocar el ledger. `test/adaptaciones-controladas.js` enumera esos call sites y deja correr la simulación
+a 32× para demostrar cero débitos autónomos.
+
+Cada obrera guarda `adaptations:{mandibles,carry,foreclaws}`. `_adaptationBook()` migra los antiguos
+`tool:pick/basket/trowel`, conserva su efecto y elimina los campos humanos antes del siguiente guardado.
+La UI nunca permite elegir una hormiga: `_adaptationCandidate()` ordena elegibles por salud, fatiga, rasgos,
+experiencia y oficio emergente. El botón desaparece como acción útil —queda deshabilitado y dice `ALL ADAPTED`—
+cuando ninguna obrera viva carece de esa modificación.
 
 ## HUD tolerante
 
@@ -81,9 +102,8 @@ HUD ausente no puede parar la simulación.
 
 ## Deuda conocida
 
-- `COLS/ROWS` tienen un default 64×36 en el código; el suelo está diferido pero los números existen.
-- `index.html` conserva `#hudToggle` (`display:none`) y `wireChromeUI()` busca tiras (`.hud-strips`,
-  `#dayControls`, `#cornerControls`) que no existen en esta revisión del HTML.
-- 4 sprites referenciados no están en `assets/` (404) → las hormigas se dibujan a mano.
-- Sin audio, sin punteros táctiles, sin persistencia de ajustes (ver el reporte de jugabilidad).
-- Faltan `x32/x64` en la tira de velocidades y las reglas de reinas/obreras por tamaño.
+- `COLS/ROWS` conservan un default 64×36 como geometría previa al flujo; `soil` y la simulación siguen diferidos hasta elegir tamaño.
+- `app.js` continúa siendo global y muy grande; partirlo sólo vale cuando los módulos reduzcan acoplamiento, no como movimiento cosmético de líneas.
+- Algunos textos y comentarios heredados siguen en español aunque la interfaz pública activa está en inglés.
+- Los slots del atlas para herramientas y estructuras antiguas siguen estables por compatibilidad, pero ya no se renderizan ni construyen.
+- Antes de llamar completo al núcleo aún hacen falta las simulaciones largas de economía/los tres tamaños y la pasada final de táctil, audio, accesibilidad, rendimiento y migración.

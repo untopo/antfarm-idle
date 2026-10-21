@@ -55,26 +55,36 @@ línea ámbar).
 
 ```
 hpMax            = 16 + 13 · banda_que_guarda
-golpe por obrera = 1 + 0,55 si es EXCAVADORA + 0,6 con cantería + 0,07·GEN (tope 1,4)
-                 + (IQ−100)/200 + bonusCava
+golpe por obrera = 1 + 0,55 si es EXCAVADORA + 0,6 con cantería
+                 + 0,42 si el jugador aprobó filo de piedra en sus mandíbulas
+                 + 0,07·GEN (tope 1,4) + (IQ−100)/200 + bonusCava
 ```
 
 Cada vez que una excavadora remata un golpe sobre una casilla `17`, la casilla **no desaparece**: baja el
 `hp`, saltan cuatro astillas grises y vuelve a por otra (`digNeeded` para la losa es 5–11, corto a
 propósito, para que el baile sea repetir en el mismo sitio). Con `umbral.hp <= 0` llama a `abrirUmbral()`.
 
-**Quién puede morderla.** `puedeGolpearUmbral()`: mínimo 3 obreras vivas, y a partir de MÁRMOL (banda 5)
-hace falta la invención `masonry` (cantería: GEN≥6, IQ≥145, piedra+arcilla). Si falta algo, el panel lo
-dice en vez de dejar a la colonia picando en seco.
+**Quién puede morderla.** `puedeGolpearUmbral()`: mínimo 3 obreras vivas; desde MÁRMOL NEGRO (índice 6)
+hace falta `masonry` (cantería profunda). Ya no es una llave imposible: `checkInventions()` la aprende en
+juego con GEN≥6, IQ≥145 y las tradiciones de piedra + arcilla. Si falta algo, el panel lo dice en vez de
+dejar a la colonia picando en seco. CUARCITA permanece abierta para que el límite no llegue demasiado pronto.
+Una obrera con mandíbulas de filo de piedra, aprobadas y pagadas por el jugador, puede trabajar bedrock desde
+GEN6 + IQ145 + `masonry`; sin esa adaptación, la ruta evolutiva universal de GEN8 + IQ148 permanece disponible,
+de modo que un linaje nunca depende de una receta imposible ni de que una obrera concreta siga viva.
 
 **A quién se le encarga.** En la elección de frente de excavación hay tres reglas:
 
 1. **sesgo de pozo**: `distancia = |Δ| − 1,35 · piso`, o sea que entre dos frentes iguales gana el bajo;
-2. **frente principal de fundación**: desde GEN1 (o al entrar en el día 3 si el aprendizaje tarda), una
-   sola obrera libre mantiene el pozo dentro de las tres columnas de la boca hasta la primera losa. Si la
-   despensa toca 5, vuelve a mandar la comida. El escombro queda abajo como residuo con coste higiénico,
-   para no obligarla a subir cada bloque por separado. Después de la primera losa esta cadena se retira;
-3. **la obra de la losa**: si la losa está a tiro y la colonia puede morderla, se forma una cuadrilla de
+2. **frente profundo persistente**: desde GEN1 (o al entrar en el día 3 si el aprendizaje tarda), una
+   obrera libre mantiene un pozo conectado dentro de las tres columnas de la boca. Al abrir una losa la
+   marca se liquida y la colonia elige otra pionera para la banda nueva: no existe el antiguo «primer pozo
+   y después vagar». Si la despensa toca 5, vuelve a mandar la comida;
+3. **exploración lateral simultánea**: una colonia de 4–11 mantiene una exploradora lateral que completa
+   relevos emparejados izquierda/derecha; una colonia de 12+ puede sostener dos. Alternan ambos costados,
+   no conocen coordenadas de tesoros y descubren recursos al
+   abrir suelo conectado. Cada una lleva el escombro físicamente hasta un labio de la boca, creando el
+   tráfico ascendente que faltaba;
+4. **la obra de la losa**: si la losa está a tiro y la colonia puede morderla, se forma una cuadrilla de
    **4 a 8** (24 % de las obreras, topada) con una líder y apoyos lentos. Reciben la casilla `17` con hueco
    libre encima **más cercana a su columna**, sólo si están a una fila. La losa también pertenece al frente
    genérico, por lo que ese camino vuelve a comprobar el cupo: sin esa segunda guarda terminaba reclutada

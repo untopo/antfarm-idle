@@ -50,32 +50,45 @@ Todos usan `FOOD_DEFS`, con `rotDays` (pudrición), `color`, `cap` y se dibujan 
 | 29 | **Grana (semilla pasto)** | `grassSeed` | Nunca | Punto `#7ad35f` 3px indistinguible de seed |
 | — | *Cantidad visual* | `amount 1-3` | — | Número encima `1/2/3` con fondo negro 6px |
 
-## 4) MATERIALES DE CONSTRUCCIÓN — 5 tipos
-Aparecen excavando (`worldMaterials`), se ven en HUD `ecoMats` y en estructuras.
-| # | Objeto | Inventario | Desbloqueo | Estado actual |
-|---|--------|------------|------------|---------------|
-| 30 | **Piedra** | `stone` | GEN3 IQ124 | Emoji `🪨` + contador, sin textura bloque piedra |
-| 31 | **Arcilla** | `clay` | GEN4 IQ128 | `🏺` |
-| 32 | **Arena** | `sand` | Siempre | `⏳` |
-| 33 | **Fibra** | `fiber` | GEN4 IQ132 | `🧵` |
-| 34 | **Madera** | `wood` | GEN5 IQ138 + sapling maduro | `🪵` |
+## 4) MATERIALES EN `NEST STORES` — 8 tipos
+Aparecen excavando o recolectando y el ledger enseña por separado `TOTAL`, `COMMITTED` y `AVAILABLE`.
+`KEEP` protege un mínimo. Ninguno se consume por decisión autónoma de una obrera.
+| # | Objeto | Inventario | Uso real actual | Estado gráfico |
+|---|--------|------------|-----------------|----------------|
+| 30 | **Piedra** | `stone` | filo de mandíbulas + proyectos aprobados | bloque voxel gris propio |
+| 31 | **Arcilla** | `clay` | agarre de garras + proyectos aprobados | bloque voxel rojizo propio |
+| 32 | **Arena** | `sand` | sin sumidero aprobado todavía | grano voxel claro; se atesora honestamente |
+| 33 | **Fibra** | `fiber` | ataduras de carga + proyectos aprobados | haz vegetal voxel |
+| 34 | **Madera** | `wood` | caches y refuerzos aprobados | viga voxel |
+| 35 | **Cobre** | `cobre` | sin sumidero aprobado todavía | veta/stock cobrizo |
+| 36 | **Hierro** | `hierro` | sin sumidero aprobado todavía | veta/stock plateado |
+| 37 | **Oro** | `oro` | sin sumidero aprobado todavía | veta/stock dorado |
 
-## 5) ESTRUCTURAS CONSTRUIBLES — 4 tipos
-Ocupan `w×h` celdas, con `buildProgress 0→1` (andamio). Dibujo en `drawStructures`.
-| # | Objeto | `type` | Tamaño | Estado actual |
-|---|--------|--------|--------|---------------|
-| 35 | **Taller** | `workshop` | 2×2 | Cobertizo 32×32 con techo, mesa, yunque — rects planos `#6b3a1f` |
-| 36 | **Granero** | `granary` | 3×2 | Silo 48×32 con sacos 10×8, puerta — rects `#c2a080` |
-| 37 | **Puente** | `bridge` | 3×1 | Tabla 48×16 con barandilla — rect `#8b5a2b` |
-| 38 | **Torre vigía** | `tower` | 2×3 | Torre 32×48 con almena, antorcha — rect `#7a7a7a` |
+## 5) INFRAESTRUCTURA FUNCIONAL APROBABLE — 4 proyectos
+Sólo se inicia desde `NEST STORES → COLONY PROJECTS`; la tarjeta muestra coste, efecto y sacrificio y
+compromete el material antes de que una cuadrilla emergente lo transporte físicamente.
+| # | Objeto | `type` | Efecto verificable |
+|---|--------|--------|--------------------|
+| 38 | **Clay Jars** | `clay_jars` | +12 raciones protegidas en el almacén |
+| 39 | **Forward Cache** | `forward_cache` | nodo conectado de entrega y +6 de capacidad |
+| 40 | **Tunnel Braces** | `tunnel_braces` | zona elegida de 5×3 resistente a derrumbes |
+| 41 | **Fungus Bed** | `fungus_bed` | lecho físico alimentado, sin crear comida gratis |
 
-## 6) HERRAMIENTAS EQUIPABLES — 3 tipos
-Una por hormiga `ant.tool`, bonus excavación/carga.
-| # | Objeto | `tool` | Bonus | Estado actual |
-|---|--------|--------|-------|---------------|
-| 39 | **Pico piedra** | `pick` | +34% dig | Icono `⛏` 14×3 + piedra 8×6, en mandíbula si no anthro |
-| 40 | **Cesta fibra** | `basket` | +1 carry | Rect `#c2a080` 8×5 en mandíbula |
-| 41 | **Paleta arcilla** | `trowel` | +28% build | Rect `#7a7a7a` 4×2 |
+Los antiguos `workshop/granary/bridge/tower` sólo se cargan como escenario de guardados previos. No se
+vuelven a construir ni gastan stock. En particular, el puente no anuncia que cruza huecos: nunca tuvo una
+regla de navegación real. Los graneros antiguos migran al almacén físico estable.
+
+## 6) ADAPTACIONES CORPORALES — 3 tipos
+Cada tarjeta sólo se habilita si hay una obrera viva sin esa adaptación y existe stock `AVAILABLE`.
+El jugador aprueba el gasto; necesidad, rasgos y experiencia eligen a la receptora sin micromanejo.
+| # | Objeto | Código | Coste | Efecto y dibujo actual |
+|---|--------|--------|-------|------------------------|
+| A1 | **Mandíbulas con filo de piedra** | `mandibles` | 2 piedra | +38 % de cava, +golpe de losa y bedrock desde GEN6 con masonry; filos claros pegados a ambas mandíbulas |
+| A2 | **Ataduras de carga de fibra** | `carry` | 2 fibra | +1 capacidad; trenzas verdes abrazan abdomen y tórax, no una cesta humana |
+| A3 | **Garras delanteras con agarre de arcilla** | `foreclaws` | 1 arcilla + 1 piedra | +24 % construcción y +28 % trabajo contra inundación; puntas cocidas sobre las patas |
+
+Los campos antiguos `ant.tool = pick/basket/trowel` migran una vez a estas tres claves y se eliminan. No
+se dibuja pico, cesta ni paleta y `tryCraftTool()` está retirado.
 
 ## 7) PERSONAJES / CASTAS — 12+ variantes
 **Desde 2026-10-16 no hay spritesheets de bicho**: todos se pintan a mano con `_hormigaVoxel` (misma regla que el terreno: cara de luz arriba, canto de sombra abajo, junta de 1 px entre segmentos). Los cinco PNG que había (`ant-body-walk-6f`, `ant-idle-4f`, `ant-dig-4f`, `ant-rest-2f`, `queen-2f`) se borraron del proyecto: medido en el navegador, cero peticiones de imagen de bicho al arrancar. Medidas de ancho de bulto, sacadas de los píxeles pintados (`test/hormiga-voxel.js`).
@@ -84,7 +97,7 @@ Una por hormiga `ant.tool`, bonus excavación/carga.
 | 42 | **Obrera minim** | `caste minim` 24% | `_hormigaVoxel` a escala 0,82 → 26×12 px | Vida -0,14d, crop 1,2 |
 | 43 | **Obrera media** | `caste media` 60% | escala 1 → 33×15 px | Base |
 | 44 | **Obrera major** | `caste major` 16% | escala 1,3 → 45×18 px, mandíbulas de 5 px | Vida +0,38d, crop 2,0 |
-| 45 | **Excavadora** | `role EXCAVADORA` | franja roja de 1 px en el tórax | Pico en las mandíbulas (bloque, sin contorno) |
+| 45 | **Excavadora** | `role EXCAVADORA` | franja roja de 1 px en el tórax | Las mandíbulas naturales muerden el frente; el filo aprobado se integra al cuerpo |
 | 46 | **Recolectora** | `role RECOLECTORA` | franja de miel | Lleva la gota prendida, dentro del propio pintor |
 | 47 | **Exploradora** | `role EXPLORADORA` | franja cian | Antenas que bailan un bloque entero |
 | 48 | **Nodriza** | `role NODRIZA` | franja violeta | Distinta ya por color y por postura al criar |
@@ -141,15 +154,15 @@ Dibujadas en `broodRow` y como `brood[]` con `x,y`.
 - **Vegetación:** 9 plantas × 3 estadios = 27 sprites + 3 variantes cada una = ~35 texturas. Hoy son rects de 3-4px.
 - **Recursos:** 6 foods necesitan sprite 12×12 con rotación y pudrición (mancha oscura), no emoji.
 - **Materiales:** 5 iconos HUD son emoji; necesitan bloque pixel (piedra cúbica, lingote arcilla, grano arena, madeja fibra, tronco).
-- **Estructuras:** 4 edificios necesitan tiles con construcción progresiva (andamio → terminado) con interior.
-- **Herramientas:** 3 herramientas solo icono mandíbula; necesitan sprite mano/mandíbula + animación picar.
+- **Proyectos físicos:** los cuatro proyectos funcionales necesitan estados de obra y terminado; las cuatro estructuras legacy no reciben arte nuevo.
+- **Adaptaciones:** pulir los tres detalles anatómicos en todas las escalas sin separarlos del cuerpo.
 - **Personajes:** Nodriza indistinguible de recolectora; falta sprite nodriza con larva; reina solo 2 frames; antropo 3 estilos sin walk fino.
 - **Brood:** Huevo/larva/pupa son `●/~ /◆` CSS; necesitan sprite 16×16 con animación temblor.
 - **Fungus/Waste:** Nubes genéricas; necesitan micelio y basura con moscas.
 
 ---
 
-**TOTAL conteo tangible único: 73 objetos** (14 superficies + 9 plantas + 6 foods + 5 materiales + 4 estructuras + 3 herramientas + 12 personajes + 4 brood + 2 hongos/basura + 5 señales + 6 clima + 3 ocultos)
+**TOTAL base auditado: 77 objetos físicos**, más 3 variaciones de adaptación corporal (14 superficies + 9 plantas + 6 foods + 8 materiales + 4 proyectos + 12 personajes + 4 brood + 2 hongos/basura + 5 señales + 6 clima + 3 ocultos)
 
 ## 14) LA ESCALERA (2026-10-16) — lo que hay que dibujar al cavar hondo
 

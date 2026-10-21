@@ -48,7 +48,8 @@ const protectedCells=run(`(()=>{const s=storageStructure(true),fp=_storeFootprin
 ok(protectedCells.allOpen&&protectedCells.sandStopped,'la gravedad deposita arena sobre el marco, nunca dentro de sus celdas');
 ok(protectedCells.floodOpen&&protectedCells.barrier&&protectedCells.stillStore,'una defensa contra agua usa rejilla transitable y no sepulta el almacén');
 ok(/if\(typeof isStoreCell==='function'&&isStoreCell\(nc,nr\)\) continue;/.test(src),'el relleno de tierra genérico excluye explícitamente el footprint');
-ok(/soil\[rr\]\[cc\]===1\|\|\(typeof isStoreCell/.test(src),'las estructuras genéricas tampoco pueden solaparlo');
+const projectOverlap=run(`(()=>{const s=storageStructure(true),p=_storeFootprint(s)[0],q=projectSiteCheck('forward_cache',p.c,p.r);return q;})()`);
+ok(!projectOverlap.ok,'las obras funcionales tampoco pueden solaparlo',projectOverlap.reason||'rechazado');
 
 console.log('\n· conocimiento: una cueva enorme y desconectada sigue fuera del nido');
 const isolated=run(`(()=>{const before=storagePos(),cap=capacidadAlmacen(),dc=3,dr=ROWS-7;
@@ -84,12 +85,28 @@ ok(stable.known,'la nueva sala conectada sí pasa a ser conocida');
 ok(stable.same,'pero el almacén conserva exactamente su dirección',`[${stable.c},${stable.r}]`);
 ok(stable.preserved,'sólo la comida dentro del marco construido se conserva');
 
-console.log('\n· una mejora aumenta capacidad sin levantar otro almacén');
+console.log('\n· una mejora aprobada aumenta capacidad sin levantar otro almacén');
 const upgrade=run(`(()=>{const s=storageStructure(true),p0={c:s.c,r:s.r,x:storagePos().x,y:storagePos().y},cap0=capacidadAlmacen();
   gen=4;colonyIQ=140;inventions.clay=true;economyLedger.creditMaterial('clay',5,'test');economyLedger.creditMaterial('fiber',5,'test');economyLedger.setFood(20,'test');
-  const ant=workers[0];const done=tryBuildComplexStructure(ant,{c:CENTER_COL,r:SURFACE_ROW+2});
-  return{done,level:s.level,cap0,cap1:capacidadAlmacen(),same:p0.c===s.c&&p0.r===s.r&&p0.x===storagePos().x&&p0.y===storagePos().y,open:_storeFootprint(s).every(p=>soil[p.r][p.c]===0),stores:structures.filter(x=>_storeKinds(x)&&!x.abandoned).length};})()`);
-ok(upgrade.done&&upgrade.level===2,'la tecnología de granero mejora el marco existente');
+  const balance0={clay:economyLedger.materials.clay,fiber:economyLedger.materials.fiber};
+  const automatic=tryBuildComplexStructure(workers[0],{c:CENTER_COL,r:SURFACE_ROW+2});
+  const untouched=economyLedger.materials.clay===balance0.clay&&economyLedger.materials.fiber===balance0.fiber;
+  const start=approveColonyProject('clay_jars');let picked=0,guard=0;
+  while(colonyProjects.activeRef()&&!colonyProjects.allDelivered()&&guard++<160){
+    const a=colonyProjects.activeRef();if(!(a.crew||[]).length)_assignColonyProjectCrew(true);
+    const w=workers.find(x=>x.id===(a.crew||[])[0]);if(!w)break;
+    w.fatigue=0;w.food=null;w.wasteTarget=null;w.x=storagePos().x;w.y=storagePos().y;workOnColonyProject(w,2,1);
+    if(w.projectCargo)picked++;
+    const target=colonyProjectAnchor(a);w.x=target.x;w.y=target.y;workOnColonyProject(w,2,1);
+  }
+  guard=0;
+  while(colonyProjects.activeRef()&&guard++<180){
+    const a=colonyProjects.activeRef();if(!(a.crew||[]).length)_assignColonyProjectCrew(true);
+    const w=workers.find(x=>x.id===(a.crew||[])[0]);if(!w)break;
+    w.fatigue=0;const target=colonyProjectAnchor(a);w.x=target.x;w.y=target.y;workOnColonyProject(w,8,1);
+  }
+  return{automatic,untouched,start,picked,count:colonyProjects.completedCount('clay_jars'),cap0,cap1:capacidadAlmacen(),same:p0.c===s.c&&p0.r===s.r&&p0.x===storagePos().x&&p0.y===storagePos().y,open:_storeFootprint(s).every(p=>soil[p.r][p.c]===0),stores:structures.filter(x=>_storeKinds(x)&&!x.abandoned).length};})()`);
+ok(!upgrade.automatic&&upgrade.untouched&&upgrade.start.ok&&upgrade.picked>0&&upgrade.count===1,'sólo el proyecto aprobado mejora el marco existente');
 ok(upgrade.cap1===upgrade.cap0+12,'la mejora suma capacidad comprobable',upgrade.cap0+' → '+upgrade.cap1);
 ok(upgrade.same&&upgrade.open&&upgrade.stores===1,'la mejora no teletransporta, duplica ni vuelve sólido el almacén');
 

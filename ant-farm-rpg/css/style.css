@@ -36,6 +36,7 @@
   .canvas-wrap{flex:1;position:relative;overflow:hidden;min-height:0;background:linear-gradient(180deg,#7ec8e3 0%, #a8e0f0 22%, #2a0f00 22%);border:4px solid #000;box-shadow:none}
   .canvas-wrap::after{content:"";position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 80px rgba(0,0,0,0.25)}
   #farmCanvas{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:crosshair;image-rendering:pixelated}
+  #farmCanvas:focus-visible{outline:3px solid #ffcc00;outline-offset:-4px}
   .frame-label{display:none !important;}
   .hud-strips{ display:none !important; } .hud-strips-legacy{
   position:absolute !important; left:44px !important; top:50px !important; width:200px !important; display:flex !important; flex-direction:column !important; gap:4px !important;
@@ -582,6 +583,36 @@ body{ font-size:19px; }
 .linea-mente .lm-barra{ height:7px; background:#000; border:1px solid #2a2a2a; margin-top:3px; }
 .linea-mente .lm-barra > div{ height:100%; }
 
+/* Contextual map placement: it remains visible after the inventory curtain closes, so choosing a
+   location-based project cannot look like a no-op. This is one temporary state, not another toolbar. */
+.project-placement-hud{
+  --place-accent:#8fbf5f;position:fixed;z-index:1200;left:50%;bottom:66px;transform:translateX(-50%);
+  box-sizing:border-box;width:min(690px,calc(100vw - 32px));max-height:calc(100dvh - 150px);display:grid;
+  grid-template-columns:52px minmax(0,1fr) auto;align-items:center;gap:11px;padding:10px;overflow:auto;
+  border:4px solid #080503;border-top-color:var(--place-accent);background:linear-gradient(180deg,#25190f,#100b07);
+  box-shadow:6px 6px 0 #000,inset 0 0 0 2px rgba(255,255,255,.05);image-rendering:pixelated
+}
+.project-placement-hud[hidden]{display:none!important}
+.project-placement-mark{display:grid;place-items:center;width:48px;height:48px;box-sizing:border-box;border:3px solid #080503;background:var(--place-accent);box-shadow:inset 0 4px 0 rgba(255,255,255,.16),3px 3px 0 #050302;color:#fff9d9;font:7px/1 'Press Start 2P',monospace;text-shadow:1px 1px 0 #000}
+.project-placement-copy{min-width:0}
+.project-placement-kicker{display:block;color:#9bc9d8;font:5px/1.4 'Press Start 2P',monospace;letter-spacing:.03em}
+.project-placement-copy strong{display:block;margin-top:5px;color:#fff0c9;font:10px/1.3 'Press Start 2P',monospace;overflow-wrap:anywhere;text-shadow:2px 2px 0 #000}
+.project-placement-copy p{margin:5px 0 0;color:#cfbea0;font:15px/1.08 'VT323',monospace}
+#projectPlacementCommitment{color:#f0c75e;font:5px/1.45 'Press Start 2P',monospace}
+#projectPlacementInstruction{color:#a8d878;font:5px/1.45 'Press Start 2P',monospace}
+.project-placement-hud[data-invalid] #projectPlacementInstruction{color:#ff8f86}
+.project-placement-cancel{min-width:104px;min-height:44px;padding:8px!important;border:2px solid #080503;border-bottom-width:4px;background:#542b1e;color:#f2d2b5;box-shadow:3px 3px 0 #050302;font:6px/1.35 'Press Start 2P',monospace!important;cursor:pointer}
+.project-placement-cancel:hover,.project-placement-cancel:focus-visible{outline:2px solid #ffcc00;outline-offset:2px;background:#793a28;color:#fff}
+.project-placement-cancel kbd{display:block;margin-top:4px;color:#d39b78;font:5px/1 'Press Start 2P',monospace}
+html[data-topo-contrast="true"] .project-placement-hud{border-color:#ffd95c;background:#050302}
+@media (max-width:720px){
+  .project-placement-hud{bottom:58px;width:calc(100vw - 16px);max-height:calc(100dvh - 126px);grid-template-columns:42px minmax(0,1fr);gap:8px;padding:8px}
+  .project-placement-mark{width:40px;height:40px;font-size:6px}
+  .project-placement-copy strong{font-size:8px}
+  .project-placement-copy p{font-size:14px}
+  .project-placement-cancel{grid-column:1/-1;width:100%;min-height:40px;margin-top:1px}
+}
+
 /* === NEST STORES — responsive voxel inventory drawer (2026-10-19) ===
    Visual work only: every value still comes from the existing simulation ledger. */
 .inv-sheet{
@@ -618,9 +649,9 @@ body{ font-size:19px; }
 .inv-kicker{display:block;margin-bottom:5px;color:var(--inv-green);font:6px/1.4 'Press Start 2P',monospace;letter-spacing:.12em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .inv-heading h2{margin:0;color:var(--inv-gold);font:14px/1.25 'Press Start 2P',monospace;letter-spacing:.02em;text-shadow:3px 3px 0 #000;white-space:nowrap}
 .inv-heading p{margin:7px 0 0;color:#b9a786;font:16px/1 'VT323',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#btnCloseInv.inv-close{position:relative;width:44px;height:44px;min-width:44px;padding:0!important;border:2px solid #74372f;border-bottom-width:4px;background:#3b1713;color:#eab4a8;box-shadow:3px 3px 0 #050302;font:26px/1 'VT323',monospace!important;cursor:pointer;text-shadow:2px 2px 0 #000}
-#btnCloseInv.inv-close:hover,#btnCloseInv.inv-close:focus-visible{outline:2px solid var(--inv-gold);outline-offset:2px;background:#7f3029;color:#fff;transform:translate(1px,1px);box-shadow:1px 1px 0 #050302}
-#btnCloseInv.inv-close:active{transform:translate(3px,3px);box-shadow:none}
+.inv-close{position:relative;width:44px;height:44px;min-width:44px;padding:0!important;border:2px solid #74372f;border-bottom-width:4px;background:#3b1713;color:#eab4a8;box-shadow:3px 3px 0 #050302;font:26px/1 'VT323',monospace!important;cursor:pointer;text-shadow:2px 2px 0 #000}
+.inv-close:hover,.inv-close:focus-visible{outline:2px solid var(--inv-gold);outline-offset:2px;background:#7f3029;color:#fff;transform:translate(1px,1px);box-shadow:1px 1px 0 #050302}
+.inv-close:active{transform:translate(3px,3px);box-shadow:none}
 
 .inv-body{
   position:relative;z-index:1;flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:14px;
@@ -701,8 +732,11 @@ body{ font-size:19px; }
 .inv-project-cost{display:flex;flex-wrap:wrap;gap:5px;margin-top:9px}
 .inv-project-cost span{padding:5px 6px;border:2px solid #080503;background:#2a1c13;color:#9e8a68;font:5px/1.2 'Press Start 2P',monospace}
 .inv-project-cost b{color:var(--inv-gold);font-size:7px}
-.inv-project-effect,.inv-project-trade{margin:8px 0 0;color:#baa887;font:14px/1.08 'VT323',monospace}
-.inv-project-effect b,.inv-project-trade b{margin-right:5px;color:#79bd43;font:5px/1 'Press Start 2P',monospace}
+.inv-project-effect,.inv-project-detail,.inv-project-site,.inv-project-trade{margin:8px 0 0;color:#baa887;font:14px/1.12 'VT323',monospace}
+.inv-project-effect b,.inv-project-detail b,.inv-project-site b,.inv-project-trade b{margin-right:5px;color:#79bd43;font:5px/1 'Press Start 2P',monospace}
+.inv-project-detail{padding:7px;border-left:3px solid #5c7f3d;background:#130f09;color:#d2c2a0}
+.inv-project-detail b{color:#a9d876}
+.inv-project-site b{color:#70b8d1}
 .inv-project-trade b{color:#d89654}
 .inv-project-start,.inv-project-cancel{width:100%;min-height:44px;margin-top:9px;padding:8px!important;border:2px solid #080503;border-bottom-width:4px;background:#2b6a3d;color:#edffe5;box-shadow:3px 3px 0 #050302;font:6px/1.3 'Press Start 2P',monospace!important;cursor:pointer}
 .inv-project-start:hover,.inv-project-start:focus-visible{outline:2px solid var(--inv-gold);outline-offset:1px;background:#378b50}
@@ -726,6 +760,41 @@ body{ font-size:19px; }
 .inv-fact b{display:block;color:#eadbb9;font:11px/1 'Press Start 2P',monospace}
 .inv-fact span{display:block;margin-top:6px;color:#81715a;font:5px/1.3 'Press Start 2P',monospace;white-space:nowrap}
 .inv-empty-tools{padding:9px;border:2px dashed #493323;color:#796a54;font:14px/1 'VT323',monospace}
+
+/* Build M — material authority belongs to the player. Totals remain the one large ledger number;
+   commitments and spendable stock are separate facts, while KEEP stays the existing reserve control. */
+.inv-resource-count::before{content:'TOTAL';display:block;margin-bottom:5px;color:#75664f;font:4px/1 'Press Start 2P',monospace;text-shadow:none}
+.inv-resource-ledger{grid-column:2/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px;min-width:0}
+.inv-resource-ledger span{min-width:0;padding:4px 3px;border:1px solid #3c2a1c;background:#0d0906;color:#74664f;font:4px/1.35 'Press Start 2P',monospace;text-align:center;overflow-wrap:anywhere}
+.inv-resource-ledger b{display:block;margin-top:3px;color:#dbc79e;font-size:7px}
+.inv-adaptation-section{display:flex;flex-direction:column;gap:7px}
+.inv-adaptation-grid{display:grid;grid-template-columns:1fr;gap:7px}
+.inv-adaptation-card{min-width:0;padding:9px;border:3px solid var(--inv-ink);border-top-color:#6e5232;background:linear-gradient(180deg,#23170f,#100b07);box-shadow:3px 3px 0 #080503}
+.inv-adaptation-top{display:grid;grid-template-columns:42px minmax(0,1fr);align-items:center;gap:8px;min-width:0}
+.inv-adaptation-top>span:last-child{min-width:0}
+.inv-adaptation-top b{display:block;color:#efdfbc;font:7px/1.4 'Press Start 2P',monospace;overflow-wrap:anywhere}
+.inv-adaptation-top small{display:block;margin-top:5px;color:#b3a080;font:13px/1.05 'VT323',monospace}
+.inv-adaptation-glyph{position:relative;width:38px;height:34px;border:2px solid #080503;background:#332318;box-shadow:inset 0 3px 0 rgba(255,255,255,.1)}
+.inv-adaptation-glyph i,.inv-adaptation-glyph::before,.inv-adaptation-glyph::after{content:'';position:absolute;display:block}
+.inv-adaptation-glyph.adapt-mandibles i{left:8px;top:7px;width:15px;height:5px;border:3px solid #aeb8c1;border-left-color:#6f777f;background:transparent;transform:skewX(-18deg);box-shadow:0 11px 0 -2px #d7d1bd}
+.inv-adaptation-glyph.adapt-mandibles::after{right:5px;top:8px;width:4px;height:4px;background:#f5e8bd;box-shadow:0 12px 0 #aeb8c1}
+.inv-adaptation-glyph.adapt-carry i{left:8px;top:6px;width:18px;height:20px;border:3px solid #8fae50;background:repeating-linear-gradient(90deg,#253014 0 4px,#b1c76c 4px 6px);transform:skewX(-8deg)}
+.inv-adaptation-glyph.adapt-carry::after{left:4px;right:4px;top:15px;height:3px;background:#d8cf78;transform:rotate(-9deg)}
+.inv-adaptation-glyph.adapt-foreclaws i{left:6px;top:8px;width:22px;height:4px;background:#6d371f;transform:rotate(24deg);box-shadow:3px 9px 0 #6d371f}
+.inv-adaptation-glyph.adapt-foreclaws::after{right:3px;top:13px;width:8px;height:6px;background:#d58a57;box-shadow:-2px 10px 0 #b8643f,inset 2px 1px 0 #f0b17c}
+.inv-adaptation-detail{margin:8px 0 0;padding:7px;border-left:3px solid #7c8f45;background:#130f09;color:#cfbea0;font:14px/1.12 'VT323',monospace}
+.inv-adaptation-detail b{margin-right:5px;color:#b8d877;font:5px/1 'Press Start 2P',monospace}
+.inv-adaptation-cost{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+.inv-adaptation-cost span{padding:4px 5px;border:2px solid #080503;background:#2b1c12;color:#a99470;font:5px/1.25 'Press Start 2P',monospace}
+.inv-adaptation-cost b{color:var(--inv-gold);font-size:7px}
+.inv-adaptation-counts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;margin-top:7px}
+.inv-adaptation-counts span{padding:5px 3px;border:1px solid #44301f;background:#0e0906;color:#817159;font:4px/1.35 'Press Start 2P',monospace;text-align:center}
+.inv-adaptation-counts b{color:#e9d8b4;font-size:7px}
+.inv-adaptation-approve{width:100%;min-height:44px;margin-top:7px;padding:7px!important;border:2px solid #080503;border-bottom-width:4px;background:#2a6b3d;color:#edffe5;box-shadow:3px 3px 0 #050302;font:6px/1.3 'Press Start 2P',monospace!important;cursor:pointer}
+.inv-adaptation-approve:hover,.inv-adaptation-approve:focus-visible{outline:2px solid var(--inv-gold);outline-offset:1px;background:#388c51}
+.inv-adaptation-approve:disabled{background:#251914;color:#766853;box-shadow:2px 2px 0 #050302;cursor:not-allowed}
+.inv-adaptation-rule{margin:1px 0 0;padding:7px;border:2px solid #51321f;background:#130c08;color:#a49374;font:13px/1.08 'VT323',monospace}
+.inv-adaptation-rule b{margin-right:5px;color:#d69553;font:5px/1.2 'Press Start 2P',monospace}
 
 .inv-footer{position:relative;z-index:1;flex:0 0 auto;min-height:58px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 11px;border-top:3px solid var(--inv-ink);background:#0d0906}
 .inv-shortcuts{color:#76684f;font:5px/1.5 'Press Start 2P',monospace;white-space:nowrap}
@@ -772,6 +841,49 @@ html[data-topo-contrast="true"] .inv-resource-note,html[data-topo-contrast="true
 }
 @media (prefers-reduced-motion:reduce){.inv-sheet,.inv-meter-fill{transition:none!important}}
 html[data-topo-motion="reduced"] .inv-sheet,html[data-topo-motion="reduced"] .inv-meter-fill{transition:none!important}
+
+/* NUPTIAL FLIGHT — one curtain below the clock, using the same voxel geometry as NEST STORES. */
+.lineage-sheet{z-index:1102;--inv-green:#d99532;--inv-gold:#ffc64a}
+.lineage-header-mark{overflow:hidden;background:#160e09}
+.lineage-header-mark span{left:13px;top:12px;width:23px;height:23px;border:3px solid #080503;background:#ca7818;transform:rotate(45deg);box-shadow:inset 5px 5px 0 #ffc64a,inset -4px -4px 0 #754010}
+.lineage-header-mark span::before{left:5px;top:5px;width:7px;height:7px;border:0;background:#fff0a1;transform:none;box-shadow:8px 8px 0 #9b5612}
+.lineage-header-mark span::after{left:-8px;top:25px;width:35px;height:3px;border:0;background:#55300e;transform:rotate(-45deg)}
+.lineage-header .inv-heading{overflow:hidden}
+.lineage-header .inv-heading h2{font-size:9px;letter-spacing:0;overflow:hidden;text-overflow:ellipsis}
+.lineage-body{gap:11px}
+.lineage-run-card,.lineage-reset-card,.lineage-upgrade-card,.lineage-history-card{border:3px solid #080503;border-top-color:#76502d;background:linear-gradient(180deg,#28180e,#120b07);box-shadow:4px 4px 0 #080503;padding:10px}
+.lineage-run-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.lineage-run-top span,.lineage-formula-label{color:#a68a62;font:5px/1.4 'Press Start 2P',monospace;letter-spacing:.05em}
+.lineage-run-top b{color:#ffc64a;font:16px/1 'Press Start 2P',monospace;text-shadow:2px 2px 0 #000;white-space:nowrap}
+.lineage-run-card h3,.lineage-reset-card h3,.lineage-upgrades h3,.lineage-history-card h3{margin:0;color:#ffc64a;font:7px/1.4 'Press Start 2P',monospace}
+.lineage-formula{margin-top:9px;padding:8px;border:2px solid #080503;background:#0b0704;color:#cdbb96;font:14px/1.15 'VT323',monospace}
+.lineage-formula strong{display:block;margin-top:5px;color:#f0dbad;font-weight:normal}
+.lineage-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin-top:8px}
+.lineage-metrics span{min-width:0;padding:6px 3px;border:1px solid #4a301c;background:#130c08;color:#8f795a;font:4px/1.35 'Press Start 2P',monospace;text-align:center}
+.lineage-metrics b{display:block;margin-bottom:4px;color:#f2dfb4;font-size:8px}
+.lineage-status{margin-top:9px;padding:7px;border:2px solid #355e31;background:#18311d;color:#a8e99e;font:5px/1.45 'Press Start 2P',monospace;text-align:center}
+.lineage-status.locked{border-color:#71402b;background:#2c160e;color:#dda071}
+.lineage-reset-card p{margin:7px 0 0;color:#aa9878;font:14px/1.12 'VT323',monospace}
+.lineage-reset-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}
+.lineage-reset-grid div{padding:7px;border:2px solid #080503;background:#100a06}
+.lineage-reset-grid b{display:block;color:#d88758;font:5px/1.4 'Press Start 2P',monospace}.lineage-reset-grid div:last-child b{color:#8dcc69}
+.lineage-reset-grid span{display:block;margin-top:5px;color:#9d8b6d;font:13px/1.08 'VT323',monospace}
+.lineage-upgrades{display:flex;flex-direction:column;gap:7px}.lineage-upgrades>h3{display:flex;align-items:center;gap:7px}.lineage-upgrades>h3::after{content:'';height:2px;flex:1;background:#4a301c}
+.lineage-upgrade-card{padding:9px}
+.lineage-upgrade-head{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:7px}
+.lineage-upgrade-head b{color:#eee0bd;font:7px/1.4 'Press Start 2P',monospace}
+.lineage-ranks{display:flex;gap:3px}.lineage-ranks i{width:9px;height:9px;border:2px solid #080503;background:#2a1a10}.lineage-ranks i.on{background:#ffc64a;box-shadow:inset 2px 2px 0 #fff09a}
+.lineage-upgrade-card p{margin:7px 0;color:#9c8969;font:14px/1.08 'VT323',monospace}
+.lineage-upgrade-foot{display:flex;align-items:center;justify-content:space-between;gap:7px}
+.lineage-upgrade-effect{color:#d3be94;font:5px/1.4 'Press Start 2P',monospace}
+.lineage-buy{min-width:83px;min-height:38px;padding:7px!important;border:2px solid #080503;border-bottom-width:4px;background:#704017;color:#fff0bf;box-shadow:2px 2px 0 #050302;font:5px/1.3 'Press Start 2P',monospace!important;cursor:pointer}
+.lineage-buy:hover,.lineage-buy:focus-visible{outline:2px solid #ffc64a;outline-offset:1px;background:#965a20}.lineage-buy:disabled{background:#21150f;color:#685947;box-shadow:none;cursor:not-allowed}
+.lineage-history-card p{margin:7px 0 0;color:#9d8b6d;font:13px/1.12 'VT323',monospace}
+.lineage-footer .inv-shortcuts{display:none}
+.lineage-flight-action{width:100%;min-height:44px;flex:1;padding:8px!important;border:2px solid #7d4b1d;border-bottom-width:4px;background:#8d511d;color:#fff3c7;box-shadow:3px 3px 0 #050302;font:6px/1.3 'Press Start 2P',monospace!important;cursor:pointer}
+.lineage-flight-action:hover,.lineage-flight-action:focus-visible{outline:2px solid #ffc64a;outline-offset:2px;background:#ae6824}.lineage-flight-action:disabled{border-color:#403023;background:#211710;color:#6f604d;box-shadow:none;cursor:not-allowed}
+@media (max-width:520px){.lineage-reset-grid{grid-template-columns:1fr}.lineage-metrics{gap:3px}.lineage-upgrade-foot{align-items:stretch;flex-direction:column}.lineage-buy{width:100%;min-height:44px}}
+@media (max-height:650px){.lineage-run-card,.lineage-reset-card,.lineage-upgrade-card{padding:8px}.lineage-formula{padding:6px}.lineage-footer .inv-shortcuts{display:none}.lineage-flight-action{min-height:44px}}
 
 /* === ONE-TIME OFFLINE RETURN RECEIPT ===
    A blocking, read-only layer. It reports the receipt that was already applied; its two buttons only
@@ -986,7 +1098,7 @@ html[data-topo-motion="reduced"] .offline-return,html[data-topo-motion="reduced"
   width:var(--topo-curtain-width)!important;
   max-width:calc(100vw - (var(--topo-right-axis) * 2))!important;
 }
-#rosterSheet,#antProfile,#queenProfile,#invSheet{
+#rosterSheet,#antProfile,#queenProfile,#invSheet,#lineageSheet{
   right:var(--curtain-runtime-right,var(--topo-right-axis))!important;
   left:auto!important;
   width:min(var(--curtain-runtime-width,var(--topo-curtain-width)),calc(100vw - 28px))!important;
@@ -1000,7 +1112,7 @@ html[data-topo-motion="reduced"] .offline-return,html[data-topo-motion="reduced"
   background-image:linear-gradient(90deg,rgba(255,255,255,.018) 50%,transparent 50%)!important;
   background-size:16px 16px!important;
 }
-#invSheet{
+#invSheet,#lineageSheet{
   transform:translateY(-12px) scaleY(0);
   transform-origin:top right!important;
   transition:transform .22s cubic-bezier(.2,.8,.2,1),opacity .16s linear!important;
@@ -1060,3 +1172,29 @@ html[data-topo-motion="reduced"] .offline-return,html[data-topo-motion="reduced"
 #rosterSheet .ficha-hormiga .fh-dato{font-size:8px;}
 #rosterSheet .ficha-hormiga .fh-dato span{font-size:7px!important;}
 #invSheet .inv-resource-card>.inv-reserve-control{grid-column:1/-1;width:100%;box-sizing:border-box;margin-top:1px;}
+
+/* The single live toolbar must remain physically reachable on phones. Its old 520 px minimum placed
+   PAUSE/x1 beyond the left edge and STORES beyond the right edge, with overflow hidden. At tablet and
+   phone widths the same controls wrap into two voxel rows—no duplicate strip and no hidden action. */
+@media (max-width:720px){
+  #velAntBar{
+    left:40px!important;right:4px!important;top:4px!important;width:auto!important;
+    min-width:0!important;max-width:none!important;height:106px!important;
+    display:flex!important;flex-wrap:wrap!important;align-content:stretch!important;overflow:hidden!important;
+  }
+  #velAntBar>div:nth-child(2){flex:0 0 100%!important;width:100%!important;height:50px!important;padding-top:3px!important;padding-bottom:3px!important;}
+  #velAntBar>div:nth-child(3),#velAntBar>div:nth-child(5),#velAntBar>div:nth-child(7){display:none!important;}
+  #velAntBar #mapToolControls,#velAntBar #btnRoster,#velAntBar>div:nth-child(8){height:50px!important;min-height:50px!important;}
+  #calendarWidget{top:116px!important;}
+}
+@media (max-width:389px){
+  #velAntBar>div:nth-child(2)>span:first-child{display:none!important;}
+  #velAntBar #btnVelPause,#velAntBar #btnVel1,#velAntBar #btnVel2,#velAntBar #btnVel4,#velAntBar #btnVel8{width:34px!important;min-width:34px!important;}
+  #velAntBar #btnVel16{width:36px!important;min-width:36px!important;}
+  #velAntBar #btnFood,#velAntBar #btnPhero{width:48px!important;min-width:48px!important;}
+  #velAntBar #btnRoster{width:70px!important;min-width:70px!important;}
+  #velAntBar #btnRoster>span{display:none!important;}
+}
+@media (max-width:350px){
+  #velAntBar{left:4px!important;}
+}

@@ -21,13 +21,14 @@ const state=run(`(()=>{
     w.traits={...(w.traits||{}),exploracion:22+i,recoleccion:24+i};w.jobExperience={build:0,dig:0,forage:0,explore:0,nurse:0};w._jobBookReady=false;
   });
   const scout=workers[4];scout.traits.exploracion=96;scout.traits.recoleccion=78;scout.jobExperience.explore=4;scout.jobExperience.forage=3;scout.affinity='EXPLORADORA';
-  return {limit5:_surfaceExcursionLimit(5),limit6:_surfaceExcursionLimit(6),limit9:_surfaceExcursionLimit(9),limit10:_surfaceExcursionLimit(10),
+  return {limit2:_surfaceExcursionLimit(2),limit4:_surfaceExcursionLimit(4),limit5:_surfaceExcursionLimit(5),limit6:_surfaceExcursionLimit(6),limit9:_surfaceExcursionLimit(9),limit10:_surfaceExcursionLimit(10),
     choice:_surfaceExcursionChoice(workers),scoutId:scout.id,food:meadow};
 })()`);
 
 console.log('\n· an early trip has a strict, colony-sized slot');
-ok(state.limit5===0,'five workers keep every available pair of mandibles in the founding nest');
-ok(state.limit6===1&&state.limit9===1,'six to nine workers unlock exactly one voluntary scout',state.limit6+' / '+state.limit9);
+ok(state.limit2===0,'two workers keep both pairs of mandibles in the founding nest');
+ok(state.limit4===1&&state.limit5===1,'a fresh four- or five-worker farm may send exactly one founder',state.limit4+' / '+state.limit5);
+ok(state.limit6===1&&state.limit9===1,'six to nine workers still keep exactly one voluntary scout',state.limit6+' / '+state.limit9);
 ok(state.limit10===2,'a mature ten-worker colony may support the existing quarter-sized cap',String(state.limit10));
 
 console.log('\n· traits, age and learned work choose her without a manual control');
