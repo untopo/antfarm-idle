@@ -1198,3 +1198,91 @@ html[data-topo-motion="reduced"] .offline-return,html[data-topo-motion="reduced"
 @media (max-width:350px){
   #velAntBar{left:4px!important;}
 }
+
+/* Compact ant surfaces (2026-10-21): profiles are decisions, not databases. The simulation keeps its
+   genome, neural, genealogy and mood models; the normal player surface deliberately exposes only
+   identity, current work, condition and an action that can be taken now. */
+.ant-sheet{
+  position:fixed;top:0;right:var(--topo-right-axis,14px);z-index:91;
+  width:var(--topo-curtain-width,300px);max-width:calc(100vw - 28px);max-height:calc(100dvh - 28px);
+  box-sizing:border-box;background:#17110d;border:4px solid #000;border-top:0;box-shadow:6px 6px 0 #000;
+  overflow:hidden;transform:translateY(-12px) scaleY(0);transform-origin:top right;opacity:0;
+  transition:transform .22s cubic-bezier(.2,.8,.2,1),opacity .18s linear;color:#fff8dc;
+}
+.ant-sheet-shell{display:flex;flex-direction:column;min-height:0;max-height:inherit;background:#17110d;}
+.ant-sheet-header{
+  min-height:54px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex:0 0 auto;
+  padding:8px 9px;background:#050505;border-bottom:3px solid #000;box-sizing:border-box;
+}
+.ant-sheet-heading{min-width:0;display:flex;flex-direction:column;gap:4px;}
+.ant-sheet-kicker{font-family:'Press Start 2P',monospace;font-size:6px;line-height:1;color:#8a7a5a;letter-spacing:.7px;}
+.ant-sheet-heading h2{margin:0;font-family:'Press Start 2P',monospace;font-size:11px;line-height:1.2;color:#ffcc00;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ant-sheet-heading p{margin:0;font-family:'VT323',monospace;font-size:15px;line-height:1;color:#c9b896;}
+.ant-sheet-header-actions{display:flex;align-items:center;gap:5px;flex:0 0 auto;}
+.ant-sheet-close,.ant-sheet-back{
+  min-width:34px;height:34px;display:grid;place-items:center;background:#ff3b30;color:#fff;border:2px solid #000;
+  box-shadow:2px 2px 0 #000;font-family:'Press Start 2P',monospace;font-size:13px;line-height:1;cursor:pointer;
+}
+.ant-sheet-back{width:auto;padding:0 7px;background:#1a140f;color:#ffcc00;font-size:8px;}
+.ant-sheet-close:hover,.ant-sheet-back:hover{border-color:#ffcc00;filter:brightness(1.08);}
+.ant-sheet-close:focus-visible,.ant-sheet-back:focus-visible{outline:2px solid #fff8dc;outline-offset:1px;}
+
+.roster-sheet .ant-sheet-shell{max-height:inherit;}
+.roster-filters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:7px 9px;background:#0a0a0a;border-bottom:3px solid #000;flex:0 0 auto;}
+.roster-filters .chip-roster{min-width:0;padding:6px 3px;font-size:8px;white-space:nowrap;text-align:center;}
+.roster-body{padding:7px 9px 10px;display:flex;flex-direction:column;gap:5px;overflow-y:auto;overscroll-behavior:contain;flex:1 1 auto;min-height:0;}
+.ficha-hormiga{
+  min-height:49px;grid-template-columns:24px minmax(0,1fr) auto!important;gap:7px!important;padding:6px 7px!important;
+  border-color:#090909!important;background:#050505!important;box-shadow:2px 2px 0 #222!important;
+}
+.ficha-hormiga:hover,.ficha-hormiga[data-seleccionada="1"]{background:#21160d!important;border-color:#ffcc00!important;}
+.ficha-hormiga .fh-caste{font-size:18px!important;}
+.ficha-hormiga .fh-copy{display:block;min-width:0;}
+.ficha-hormiga .fh-nombre{font-size:10px!important;line-height:1.2;}
+.ficha-hormiga .fh-tarea{font-size:15px!important;line-height:1.05;margin-top:5px;color:#c9b896!important;}
+.ficha-hormiga .fh-tarea b{font-weight:normal;color:#ffcc00;}
+.ficha-hormiga .fh-warning{font-family:'Press Start 2P',monospace;font-size:6px;line-height:1.25;color:#ff9a62;text-align:right;white-space:nowrap;}
+.roster-limit{padding:8px 4px;text-align:center;font-family:'VT323',monospace;font-size:15px;color:#8a7a5a;}
+
+.compact-ant-profile{overflow-y:auto!important;overscroll-behavior:contain;}
+.compact-ant-profile .ant-sheet-shell{min-height:100%;}
+.compact-profile-body{display:flex;flex-direction:column;gap:8px;padding:9px;background:#17110d;}
+.compact-profile-identity{display:grid;grid-template-columns:76px minmax(0,1fr);gap:9px;align-items:center;}
+.compact-portrait{width:76px;height:76px;position:relative;display:grid;place-items:center;background:#050505;border:2px solid #000;box-shadow:2px 2px 0 #000;overflow:hidden;}
+.compact-portrait canvas{display:block;width:72px;height:72px;image-rendering:pixelated;}
+.compact-portrait-accent{position:absolute;left:0;right:0;top:0;height:4px;background:#ffcc00;box-shadow:0 2px 0 #000;}
+.compact-identity-copy{min-width:0;display:flex;flex-direction:column;align-items:flex-start;}
+.compact-label{font-family:'Press Start 2P',monospace;font-size:7px;line-height:1.15;color:#8a7a5a;letter-spacing:.35px;}
+.compact-identity-copy strong{margin-top:5px;font-family:'Press Start 2P',monospace;font-size:9px;line-height:1.35;color:#fff8dc;overflow-wrap:anywhere;}
+.compact-condition-label{margin-top:10px;}
+.compact-condition{margin-top:4px;font-family:'VT323',monospace;font-size:18px;line-height:1;color:#2de67a;}
+.compact-now{padding:8px 9px;background:#050505;border:2px solid #000;box-shadow:2px 2px 0 #000;}
+.compact-now strong{display:block;margin-top:5px;font-family:'VT323',monospace;font-size:21px;font-weight:normal;line-height:1.05;color:#fff8dc;}
+.compact-alert{padding:7px 8px;background:#32130d;border:2px solid #ff6a3d;font-family:'Press Start 2P',monospace;font-size:7px;line-height:1.4;color:#ffd2b8;}
+.compact-egg{padding:7px 9px;background:#0a080d;border:2px solid #000;}
+.compact-egg-copy{display:flex;align-items:center;justify-content:space-between;gap:8px;font-family:'Press Start 2P',monospace;font-size:7px;color:#8a7a5a;}
+.compact-egg-copy strong{font-size:9px;color:#b47aff;}
+.compact-progress{height:8px;margin-top:6px;background:#000;border:1px solid #2a1a33;overflow:hidden;}
+.compact-progress span{display:block;height:100%;width:0;background:#b47aff;transition:width .18s linear;}
+.compact-profile-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:1px;}
+.compact-profile-actions .pixel-btn{min-width:0;min-height:38px;justify-content:center;padding:7px 4px!important;font-size:8px!important;line-height:1.25;text-align:center;white-space:normal;}
+.compact-primary{background:#ffcc00!important;color:#000!important;}
+.compact-danger{background:#8f251f!important;color:#fff!important;}
+.compact-feed{background:#2f8d54!important;color:#fff!important;}
+.compact-move{grid-column:1/-1;background:#6d43a1!important;color:#fff!important;}
+.compact-profile-actions [hidden]{display:none!important;}
+.compact-action-note{margin:0;font-family:'VT323',monospace;font-size:15px;line-height:1.1;color:#8a7a5a;}
+.compact-feed-note{padding-top:1px;color:#c9b896;}
+.compact-profile-actions button:disabled{opacity:.42!important;filter:grayscale(.5);cursor:not-allowed;}
+.queen-compact-profile .compact-portrait-accent{background:#b47aff;}
+.queen-compact-profile .compact-now strong{color:#f2d8ff;}
+
+@media (max-width:389px){
+  .ant-sheet-heading h2{font-size:10px;}
+  .compact-profile-body{padding:8px;}
+  .compact-profile-actions .pixel-btn{font-size:7px!important;}
+}
+/* Profile root owns vertical scrolling. Its inner shell must grow to content height rather than becoming
+   a second clipped viewport; otherwise a short laptop can reach the actions but audit tools correctly
+   report the nested shell itself as cut. */
+.compact-ant-profile .ant-sheet-shell{min-height:0!important;max-height:none!important;}

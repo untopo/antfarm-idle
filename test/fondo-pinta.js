@@ -20,7 +20,11 @@ const ok = (cond, nombre, detalle) => {
   if (!cond) fallos++;
 };
 
-vm.runInContext(`topoCreateFreshWorld(48,28); paused=false; gameSpeed=64;
+// This is a rendering/expansion test, not a race against autonomous diggers. Keeping the simulation
+// paused still runs the render loop, but guarantees the world is 28 rows until _expandir() owns the
+// one expansion under test. At x64 an unusually fast founder could previously expand it during the
+// 400 paint frames, so the assertion accidentally measured a second, unrelated geological band.
+vm.runInContext(`topoCreateFreshWorld(48,28); paused=true; gameSpeed=64;
 window._paso = () => loop(performance.now());
 window._foto = () => JSON.stringify({
   rows: ROWS, alto: soilCacheCanvas.height, ancho: soilCacheCanvas.width,
@@ -50,7 +54,8 @@ window._pinta = () => {
 };
 window._expandir = () => { expandWorld(14); return _foto(); };`, ctx);
 
-// 400 pasos de simulacion: el mapa ya se pinto una vez y el lote debe estar limpio
+// 400 paint frames: the cache has rendered and its dirty batch is clean, while paused ants cannot
+// reach the depth boundary and steal the manual expansion that this harness is about to measure.
 let t = 1;
 for (let d = 0; d < 400; d++) { sb.performance.now = () => t; t += 42; sb._paso(); }
 const antes = JSON.parse(sb._foto());

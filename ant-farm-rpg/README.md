@@ -12,11 +12,25 @@ node dev-server.js 8017      # raiz: ant-farm-rpg/, sin cache (Cache-Control: no
 
 Servir con `no-store` importa: con HTML nuevo y `app.js` de la cache vieja el juego se comporta de
 forma distinta a como está escrito y no se puede depurar. `index.html`, `css/style.css` y los assets
-llevan **un solo** `?v=` (`20261020m`); al tocar CSS o JS se sube en todos los sitios a la vez.
+llevan **un solo** `?v=` (`20261021n`); al tocar CSS o JS se sube en todos los sitios a la vez.
 
 Depuración: `?debug=1` en la URL (o `localStorage.antfarm_debug='1'`) enciende el registro del juego
 (`tlog`) que está callado por defecto. En la consola: `_topoDbg()` devuelve día, obreras, comida,
 dimensiones y si está pausado.
+
+## Build N: perfiles legibles de un vistazo
+
+La lista de la colonia ya responde sólo a tres preguntas: quién es, qué hace y cómo está. Conserva un único
+filtro útil (`ALL / QUEENS / WORKERS`) y retira edad, generación, barras repetidas y accesos que duplicaban la
+ficha. Los perfiles de obreras y reina dejan de ser pequeños paneles de depuración: no hay pestañas, árbol,
+«cerebro» visual, ADN ni historial individual. La simulación de rasgos, experiencia y linaje sigue intacta,
+pero se expresa en lenguaje normal mediante tarea y condición actuales.
+
+Cada ficha ofrece únicamente decisiones inmediatas: localizar o exiliar una obrera; localizar, alimentar o
+reubicar a la reina cuando corresponde. El progreso del huevo permanece porque cambia la decisión de alimentar,
+y esa acción declara antes del clic su coste y efecto. La hoja usa un solo desplazamiento vertical, mantiene sus
+acciones alcanzables en una ventana baja y cabe completa en móvil sin crear menús nuevos ni abrir `COLONIA` o
+`HISTORIAL`.
 
 ## Build M: vuelo nupcial y salida física
 

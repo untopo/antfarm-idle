@@ -4916,6 +4916,7 @@ function closeAntProfile(immediate=false){
     m.style.top='0'; m.style.height=''; m.style.right=''; m.style.width=''; m.style.maxWidth='';
     m.removeAttribute('data-open');
     m.removeAttribute('data-ant');
+    m.setAttribute('aria-hidden','true');
     clampView();
     return;
   }
@@ -4923,6 +4924,7 @@ function closeAntProfile(immediate=false){
   try{ _esconderVuelta(); }catch(e){}
   m.style.opacity='0';
   m.removeAttribute('data-open');
+  m.setAttribute('aria-hidden','true');
   setTimeout(()=>{
     if(m.getAttribute('data-open')) return; // reopened quickly
     m.style.display='none'; m.style.top='0'; m.style.height=''; m.style.right=''; m.style.width=''; m.style.maxWidth='';
@@ -4930,190 +4932,141 @@ function closeAntProfile(immediate=false){
     clampView();
   }, 220);
 }
+const PROFILE_TASKS = {
+  EXPLORAR:'Exploring the nest', CAVANDO:'Digging', VOLVER_COMIDA:'Returning with food', VOLVER_TIERRA:'Hauling soil',
+  DESCANSAR:'Resting', BUSCAR:'Searching', TANDEM_LEADER:'Guiding another ant', TANDEM_FOLLOWER:'Following a guide',
+  LLEVANDO_BASURA:'Hauling waste', TRABAJAR_JARDIN:'Tending the fungus bed', IDLE:'Waiting', ALIMENTAR_REINA:'Feeding the queen',
+  CUIDAR_CRIA:'Tending brood', PELEAR:'Fighting', HUIR:'Fleeing', HUÍR:'Fleeing', CONTROLAR_AGUA:'Controlling a flood',
+  HUIR_AGUA:'Escaping water', HUIR_INUNDACION:'Escaping a flood', HAUL_PROJECT:'Collecting project stock',
+  DELIVER_PROJECT:'Carrying stock to a worksite', BUILD_PROJECT:'Building the active project', BUILD_STORE:'Building the founding store'
+};
+function _antTaskLabel(ant){
+  const state=ant&&ant.state?String(ant.state):'IDLE';
+  if(PROFILE_TASKS[state]) return PROFILE_TASKS[state];
+  const plain=state.toLowerCase().replace(/_/g,' ');
+  return plain.charAt(0).toUpperCase()+plain.slice(1);
+}
+function _queenTaskLabel(q){
+  if(q&&q._moveTarget) return 'Relocating to a larger chamber';
+  const state=String(q&&q.state||'GRÁVIDA');
+  if(state==='HAMBRIENTA') return 'Waiting for food';
+  if(state==='HUIR_INUNDACION'||state==='HUIR_AGUA') return 'Escaping a flood';
+  if(state==='GRÁVIDA') return 'Laying an egg';
+  return _antTaskLabel(q);
+}
+function _profileCasteLabel(ant){
+  if(ant&&ant.isQueen) return 'QUEEN';
+  if(ant&&ant.caste==='major') return 'SOLDIER';
+  if(ant&&ant.caste==='minim') return 'MINIM';
+  return 'WORKER';
+}
+function _profileIdentityLabel(ant){
+  if(!ant) return 'WORKER';
+  if(ant.isQueen) return (ant.parents&&ant.parents.length)?'QUEEN':'QUEEN · FOUNDRESS';
+  const bits=[];
+  const ranks={'LÍDER':'LEADER','JEFE':'SUPERVISOR','CAPATAZ':'FOREANT'};
+  if(ranks[ant.rank]) bits.push(ranks[ant.rank]);
+  const caste=_profileCasteLabel(ant); bits.push(caste);
+  let profession='WORKER';
+  try{ profession=(PROFESSION_LABELS[antProfession(ant)]||'WORKER'); }catch(e){}
+  if(profession!=='WORKER' && profession!==caste) bits.push(profession);
+  return [...new Set(bits)].join(' · ');
+}
+function _profileMoodWord(ant){
+  const m=ant&&ant.mood||{};
+  if((m.fear||0)>.62) return 'AFRAID';
+  if((m.stress||0)>.66) return 'STRESSED';
+  if((m.anger||0)>.62) return 'ANGRY';
+  if((m.sadness||0)>.62) return 'SAD';
+  if((m.loyalty===undefined?1:m.loyalty)<.34) return 'RESTLESS';
+  if((m.joy||0)>.64) return 'CONTENT';
+  return 'CALM';
+}
+function _profileConditionText(ant){
+  const health=Math.max(0,Math.min(100,Math.round(Number(ant&&ant.health)||0)));
+  let body='HEALTHY';
+  if(health<35) body='CRITICAL · '+health+'% HEALTH';
+  else if(health<70) body='INJURED · '+health+'% HEALTH';
+  else if(health<95) body='RECOVERING · '+health+'% HEALTH';
+  else if((Number(ant&&ant.fatigue)||0)>80) body='EXHAUSTED';
+  else if((Number(ant&&ant.fatigue)||0)>62) body='TIRED';
+  return body+' · '+_profileMoodWord(ant);
+}
+function _profileConditionColor(ant){
+  const health=Math.max(0,Math.min(100,Math.round(Number(ant&&ant.health)||0))),m=ant&&ant.mood||{};
+  if(health<35)return '#ff5a4f';
+  if(health<95||(Number(ant&&ant.fatigue)||0)>62||(m.fear||0)>.62||(m.stress||0)>.66||(m.anger||0)>.62||(m.sadness||0)>.62||(m.loyalty===undefined?1:m.loyalty)<.34)return '#ffb33b';
+  return '#2de67a';
+}
+function _profileAlertText(ant){
+  if(!ant) return '';
+  if((Number(ant.health)||0)<35) return 'Needs care now.';
+  if(ant.state==='HUIR_AGUA'||ant.state==='HUIR_INUNDACION') return 'In immediate flood danger.';
+  const home=queens&&queens[0]?queens[0].faction:0;
+  if(!ant.isQueen&&ant.faction!==home) return 'Lives outside the founding colony.';
+  return '';
+}
+function _profileFactionColor(ant){
+  try{ return society.factions.find(f=>f.id===ant.faction)?.color || (ant.isQueen?'#b47aff':'#ffcc00'); }
+  catch(e){ return ant&&ant.isQueen?'#b47aff':'#ffcc00'; }
+}
+function _drawCompactAntPortrait(canvas,ant){
+  if(!canvas||!ant||!canvas.getContext) return;
+  const g=canvas.getContext('2d'),w=canvas.width,h=canvas.height,col=_profileFactionColor(ant);
+  g.imageSmoothingEnabled=false;g.clearRect(0,0,w,h);g.fillStyle='#050505';g.fillRect(0,0,w,h);
+  g.fillStyle='#16100c';for(let y=9;y<h;y+=9)for(let x=(y/9%2?4:0);x<w;x+=9)g.fillRect(x,y,1,1);
+  g.fillStyle=col;g.fillRect(0,0,w,3);
+  let seed=0;for(const ch of String(ant.id||''))seed=(seed*31+ch.charCodeAt(0))|0;
+  g.save();g.translate(Math.round(w/2),Math.round(h/2)-1);_hormigaVoxel(g,ant,ant.isQueen?1.62:1.72,false,seed);g.restore();
+}
+function _refreshAntProfileCompact(ant){
+  if(!ant) return;
+  const title=hudText('profileTitle',antDisplayName(ant));if(title)title.title=ant.nameMeaning||'';
+  hudText('profileIdentity',_profileIdentityLabel(ant));
+  const condition=hudText('profileCondition',_profileConditionText(ant));if(condition)condition.style.color=_profileConditionColor(ant);
+  hudText('profileTask',_antTaskLabel(ant));
+  const accent=document.getElementById('profileAccent');if(accent)accent.style.background=_profileFactionColor(ant);
+  const alert=document.getElementById('profileAlert'),warning=_profileAlertText(ant);
+  if(alert){alert.hidden=!warning;alert.textContent=warning;}
+  _drawCompactAntPortrait(document.getElementById('profileCanvas'),ant);
+}
+function _centerOnAnt(ant){
+  if(!ant)return;
+  const b=getPanBounds();
+  view.x=clamp(ant.x-VIEW_W/view.zoom/2,b.minX,b.maxX);
+  view.y=clamp(ant.y-VIEW_H/view.zoom/2,b.minY,b.maxY);
+}
 function showAntProfile(ant){
   if(!ant||!isExploredPixel(ant.x,ant.y))return false;
   try{cerrarLineage(true);}catch(e){}
   try{cerrarInventario(true);}catch(e){}
-  try{cerrarRoster(true);}catch(e){} // one right curtain: profiles never overlap another sheet
-  const modal=document.getElementById('antProfile');
-  const facCol=society.factions.find(f=>f.id===ant.faction)?.color || '#ffcc00';
-  hudText('profileTitle', `${antDisplayName(ant)} [${ant.role}] F${ant.faction}`); document.getElementById('profileTitle').title=ant.nameMeaning||ant.id;
-  hudStyle('profileFactionDot', facCol);
-  const ageD=(ant.age/DAY_LENGTH).toFixed(1), maxD=(ant.maxAge/DAY_LENGTH).toFixed(1);
-  hudText('profileId', `${antDisplayName(ant)} (${ant.id}) - ${ageD}d / ${maxD}d - ❤ ${Math.floor(ant.health)}%${ant.isQueen?' 👑':''}`); document.getElementById('profileId').title=ant.nameMeaning||'';
-  const _roleLine=`${ant.role} · F${ant.faction} · G${ant.genome.gen} · ${ant.genome.id}`,_roleEl=document.getElementById('profileRole');
-  hudText('profileRole',_roleLine);_roleEl.title=_roleLine;
-  const _fitRoleLine=()=>{
-    _roleEl.style.fontSize='17px';
-    if(_roleEl.clientWidth>0&&_roleEl.scrollWidth>_roleEl.clientWidth){
-      const px=Math.max(14,17*_roleEl.clientWidth/_roleEl.scrollWidth*.97);_roleEl.style.fontSize=px.toFixed(1)+'px';
-    }
+  try{cerrarRoster(true);}catch(e){}
+  const modal=document.getElementById('antProfile');if(!modal)return false;
+  _refreshAntProfileCompact(ant);
+  const follow=document.getElementById('btnFollowAnt');
+  if(follow)follow.onclick=()=>{
+    workers.forEach(w=>w.selected=false);ant.selected=true;selectedAntIndex=workers.indexOf(ant);_centerOnAnt(ant);closeAntProfile();
   };
-  _fitRoleLine();
-  // mood icons
-  const moodEl=document.getElementById('profileMoodIcons');
-  moodEl.innerHTML='';
-  for(let k in ant.mood){
-    const v=ant.mood[k];
-    const icons={joy:'😊',anger:'😠',fear:'😨',sadness:'😢',loyalty:'🤝',stress:'😓'};
-    const col={joy:'#2de67a',anger:'#ff3b30',fear:'#ffcc00',sadness:'#6b7cff',loyalty:'#00e5ff',stress:'#ff8c00'}[k];
-    const abbr={joy:'ALE',anger:'IRA',fear:'MIE',sadness:'TRI',loyalty:'LEA',stress:'EST'}[k];
-    const d=document.createElement('div');
-    d.style.cssText='background:#000;border:1px solid #1a1a1a;padding:3px 2px;display:flex;flex-direction:column;align-items:center;gap:1px;line-height:1;text-align:center';
-    d.innerHTML=`<span style="font-size:11px;line-height:1;color:${col}">${icons[k]}</span><span style="font-family:\'Press Start 2P\';font-size:5px;color:#8a7a5a;letter-spacing:0.2px">${abbr}</span><span style="font-family:\'Press Start 2P\';font-size:7px;color:${col}">${Math.round(v*100)}%</span>`;
-    d.title=`${k} ${Math.round(v*100)}%`;
-    moodEl.appendChild(d);
-  }
-  // traits
-  const tEl=document.getElementById('profileTraits');
-  tEl.innerHTML='';
-  for(let k of ['exploracion','construccion','recoleccion','cuidado','comunica']){
-    const v=ant.traits[k];
-    const col=k==='exploracion'?'#00e5ff':k==='construccion'?'#ff3b30':k==='recoleccion'?'#2de67a':k==='cuidado'?'#b47aff':'#ffcc00';
-    const label=k==='exploracion'?'EXPL':k==='construccion'?'DIG':k==='recoleccion'?'GATH':k==='cuidado'?'CARE':'COMM';
-    const d=document.createElement('div');
-    d.style.cssText='background:rgba(255,255,255,0.03);border:1px solid #1a1a1a;padding:4px';
-    d.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;font-family:\'Press Start 2P\';font-size:6px;color:#c9b896;letter-spacing:0.3px"><span>${label}</span><span style="color:${col};font-size:7px">${v}</span></div><div style="height:8px;background:#0a0a0a;border:1px solid #000;margin-top:3px;position:relative;overflow:hidden"><div style="height:100%;width:${v}%;background:${col};box-shadow:inset 0 1px 0 rgba(255,255,255,0.2)"></div></div>`;
-    tEl.appendChild(d);
-  }
-  hudText('profileFitness', (ant.fitness||0).toFixed(2));
-  hudText('profileDeliveries', `${ant.deliveries} deliveries · ${ant.digsDone} tunnels excavated · ${ant.commsSent} ink marks`);
-  try{
-    const _tk = [['exploracion','exploring the nest'],['construccion','digging and building'],['recoleccion','gathering food'],['cuidado','tending brood'],['comunica','communicating with others']];
-    const _ord = _tk.map(k => ({ n: k[1], v: Math.round(ant.traits[k[0]] || 0) })).sort((a, b) => b.v - a.v);
-    const _g = document.getElementById('profileTraitsGist');
-    if(_g) _g.textContent = 'Best trait: ' + _ord[0].n + ' (' + _ord[0].v + ' of 100). Weakest: ' + _ord[_ord.length - 1].n + ' (' + _ord[_ord.length - 1].v + ').';
-  }catch(e){}
-  hudText('profileCrimes', `${ant.crimes} fights · ${ant.followers} followers`);
-  hudText('profileBelief', ant.belief? `believes in ${ant.belief}-ism` : (ant.followers>0? `leads ${ant.followers}` : '— no cult'));
-  // árbol
-  const treeEl=document.getElementById('profileTree');
-  let treeHtml='';
-  if(ant.parents && ant.parents.length){
-    treeHtml+=`<div>👑 Madre: <b style="color:#b47aff">${ant.parents[0]}</b> <span style="color:#8a7a5a">+ ${ant.parents[1]||'-'}</span></div>`;
-    treeHtml+=`<div style="margin:4px 0;color:#8a7a5a">↓</div>`;
-  } else {
-    treeHtml+=`<div style="color:#8a7a5a">Fundadora - sin padres registrados</div><div style="margin:4px 0">↓</div>`;
-  }
-  treeHtml+=`<div><b style="background:${facCol};color:#000;padding:1px 4px">${ant.id}</b> <span style="color:#8a7a5a">GEN-${ant.genome.gen}</span> ${ant.isQueen?'👑':''}</div>`;
-  if(ant.children && ant.children.length){
-    treeHtml+=`<div style="margin:4px 0;color:#8a7a5a">↓ hijos</div><div>${ant.children.slice(0,6).join(' - ')}${ant.children.length>6?' …':''}</div>`;
-  } else if(ant.deliveries>0){
-    treeHtml+=`<div style="margin-top:6px;color:#8a7a5a">Ha contribuido genéticamente a ${ant.deliveries} crías</div>`;
-  }
-  // buscar hijos reales: buscar brood/workers con parents que incluyan este id
-  const kids = [...workers, ...queens].filter(o=> o.parents && o.parents.includes(ant.id)).map(o=>o.id);
-  if(kids.length && (!ant.children||ant.children.length===0)){
-    treeHtml+=`<div style="margin:4px 0;color:#8a7a5a">↓ descendencia directa</div><div>${kids.join(' - ')}</div>`;
-  }
-  treeEl.innerHTML=treeHtml;
-  // historial
-  const histEl=document.getElementById('profileHistory');
-  histEl.innerHTML='';
-  if(ant.history && ant.history.length){
-    ant.history.slice(0,5).forEach(h=>{
-      const d=document.createElement('div');
-      d.style.cssText='border-bottom:1px solid #1a1a1a;padding:4px 0';
-      d.innerHTML=`<span style="color:#8a7a5a">D${h.day} ${Math.floor(h.time)}h</span> - ${h.msg}`;
-      histEl.appendChild(d);
-    });
-  } else {
-    histEl.innerHTML='<span style="color:#8a7a5a">Sin historial - es joven</span>';
-  }
-  // canvas mini
-  const pc=document.getElementById('profileCanvas');
-  if(pc){
-    const pctx=pc.getContext('2d');
-    pctx.imageSmoothingEnabled=false;
-    pctx.clearRect(0,0,64,64);
-    pctx.fillStyle='#0a0a0a'; pctx.fillRect(0,0,64,64);
-    // dibujar hormiga grande compacta
-    pctx.fillStyle= facCol; pctx.fillRect(0,0,64,3);
-    pctx.fillStyle='#1a140f'; pctx.fillRect(6,12,52,36);
-    // EL RETRATO CON EL MISMO PINCEL que el lienzo: la hormiga de la hoja y la del barro son
-    // la misma figura, aquI mas grande. Antes esto era un rectAngulo liso de un solo color,
-    // porque los PNG del avatar se fueron del proyecto y el pincel de reserva no pintaba nada
-    // que se pareciera a una hormiga. El tamano se pasa por `s`, no por ctx.scale: escalar con
-    // decimales borra los bordes y el retrato es lo unico que se mira de cerca sin zoom.
-    pctx.save(); pctx.translate(30,30);
-    _hormigaVoxel(pctx, ant, 1.6, false, ant.id|0);
-    pctx.restore();
-    pctx.fillStyle='#fff'; pctx.font='bold 8px "Press Start 2P"'; pctx.textAlign='center'; pctx.fillText(ant.role.slice(0,3),32,58);
-  }
-  // botones
-  document.getElementById('btnFollowAnt').onclick=()=>{
-    workers.forEach(w=>w.selected=false); ant.selected=true; selectedAntIndex=workers.indexOf(ant);
-    closeAntProfile();
-  };
-  document.getElementById('btnExileAnt').onclick=()=>{
+  const exile=document.getElementById('btnExileAnt');
+  if(exile)exile.onclick=()=>{
     const newFac=society.nextFaction++;
-    society.factions.push({id:newFac,name:'Exilio '+ant.id,color:'#ff3b30',members:1,belief:'-',leader:ant.id});
-    ant.faction=newFac; ant.mood.anger=Math.min(1,ant.mood.anger+0.3); ant.mood.loyalty=0.1;
-    pushEvent('war',`⚔ ${ant.id} exiliada a F${newFac} - destierro político`,`Facción nueva por decisión del jugador`);
-        notifyCanon('⚔ EXILIO', `${ant.id} desterrada a facción ${newFac}`, 5000);
-    closeAntProfile(); updateColonyUI();
+    society.factions.push({id:newFac,name:'Exile '+antDisplayName(ant),color:'#ff3b30',members:1,belief:'-',leader:ant.id});
+    ant.faction=newFac;ant.mood.anger=Math.min(1,ant.mood.anger+0.3);ant.mood.loyalty=0.1;
+    pushEvent('war','⚔ '+antDisplayName(ant)+' leaves the founding colony','A separate faction was created by the player');
+    notifyCanon('⚔ EXILE',antDisplayName(ant)+' formed a separate faction',5000);
+    closeAntProfile();updateColonyUI();
   };
-  // FIX: no apilar - si ya hay perfil abierto, ciérralo inmediato antes de abrir nuevo
-  // dropdown desde debajo del calendario, mismo ancho que calendario (168px) para cuadre perfecto
-  try{ closeQueenProfile(true); }catch(e){}
-  // si ya está abierto este mismo modal con otra hormiga, solo actualiza contenido sin apilar
-  const isOpen = modal.getAttribute('data-open')==='1' && modal.style.display!=='none';
-  const prevAnt = modal.getAttribute('data-ant');
-  if(isOpen && prevAnt===ant.id){
-    // misma hormiga, solo refrescar y pulso
-    modal.style.transform='translateY(0) scaleY(1)';modal.style.opacity='1';_fitRoleLine();
-    return;
-  }
-  if(isOpen){
-    // otra hormiga distinta: cierra inmediato y reabre para evitar stack visual
-    modal.style.display='none';
-    modal.removeAttribute('data-open');
-  }
-  // One measured right-column geometry owns profiles, roster and stores.
-  _asentarBajoCalendario(modal);
-  modal.style.height='';
-  modal.style.border = '4px solid #000';
-  modal.style.borderTop = 'none';
-  modal.style.boxShadow = '6px 6px 0 #000';
-  modal.style.overflowY='auto';
-  modal.style.transformOrigin='top';
-  modal.style.transform='translateY(-12px) scaleY(0)';
-  modal.style.opacity='0';
-  modal.style.display='block';_fitRoleLine();
-  modal.setAttribute('data-open','1');
-  modal.setAttribute('data-ant', ant.id);
-  void modal.offsetWidth;
-  modal.style.transition='transform 0.22s cubic-bezier(.2,.8,.2,1), opacity 0.22s';
-  modal.style.transform='translateY(0) scaleY(1)';
-  modal.style.overflowY='auto'; asentarHoja(modal);
-  requestAnimationFrame(()=>{ asentarHoja(modal); });
-  modal.style.opacity='1';
-  // tabs
-  try{
-    const tabs=modal.querySelectorAll('#profileTabs [data-ptab]');
-    // `cerebro` va aqui dentro o la pestana 🧠 MENTE no se abriria nunca: el boton cambia el display de lo
-    // que hay en ESTE mapa, y una hoja que no esta apuntada se queda escondida para siempre (medido: la
-    // pestana se marcaba activa y el panel seguia en display:none).
-    const panes={rasgos:document.getElementById('profileTab_rasgos'), estado:document.getElementById('profileTab_estado'), arbol:document.getElementById('profileTab_arbol'), hist:document.getElementById('profileTab_hist'), cerebro:document.getElementById('profileTab_cerebro')};
-    tabs.forEach(btn=>{
-      btn.onclick=(e)=>{
-        e.stopPropagation();
-        tabs.forEach(b=>{ b.style.background='#1a140f'; b.style.color='#8a7a5a'; });
-        btn.style.background='var(--amber)'; btn.style.color='#000';
-        const tab=btn.dataset.ptab;
-        for(let k in panes){ if(panes[k]) panes[k].style.display = (k===tab?'block':'none'); }
-      };
-    });
-    // default to rasgos
-    tabs.forEach(b=>{ b.style.background='#1a140f'; b.style.color='#8a7a5a'; });
-    const first=modal.querySelector('#profileTabs [data-ptab="rasgos"]');
-    if(first){ first.style.background='var(--amber)'; first.style.color='#000'; }
-    for(let k in panes){ if(panes[k]) panes[k].style.display = (k==='rasgos'?'block':'none'); }
-  }catch(e){}
-  // no empuja el mapa - overlay limpio, el reloj ya no tapa porque el pan tiene margen extra
-  clampView(); updateZoomLabel();
-
+  try{closeQueenProfile(true);}catch(e){}
+  const same=modal.getAttribute('data-open')==='1'&&modal.style.display!=='none'&&modal.getAttribute('data-ant')===ant.id;
+  if(same){modal.style.transform='translateY(0) scaleY(1)';modal.style.opacity='1';asentarHoja(modal);return true;}
+  if(modal.getAttribute('data-open')){modal.style.display='none';modal.removeAttribute('data-open');}
+  _asentarBajoCalendario(modal);modal.style.height='';modal.style.overflowY='auto';
+  modal.style.transformOrigin='top right';modal.style.transform='translateY(-12px) scaleY(0)';modal.style.opacity='0';modal.style.display='block';
+  modal.setAttribute('data-open','1');modal.setAttribute('data-ant',ant.id);modal.setAttribute('aria-hidden','false');
+  void modal.offsetWidth;modal.style.transform='translateY(0) scaleY(1)';modal.style.opacity='1';asentarHoja(modal);
+  requestAnimationFrame(()=>asentarHoja(modal));clampView();updateZoomLabel();return true;
 }
+
 function handleDeath(ant, reason){
   // A carried project unit was already removed from the store. If its carrier dies it is physically
   // lost and becomes outstanding again; no fictitious refund is credited to the ledger.
@@ -9299,25 +9252,17 @@ function updateColonyUIInner(){
       else log.textContent='Bosquecillos jóvenes crecen. Hongos en cuevas húmedas. Sigue lloviendo.';
     }
   }catch(e){}
-  // si ficha de reina abierta, refrescar en vivo (vida, huevos, progreso)
+  // The compact cards stay honest while the simulation runs; no technical pane is rebuilt.
   try{
+    const am=document.getElementById('antProfile');
+    if(am&&am.getAttribute('data-open')){
+      const a=workers.find(w=>w.id===am.getAttribute('data-ant'));
+      if(a)_refreshAntProfileCompact(a);else closeAntProfile(true);
+    }
     const qm=document.getElementById('queenProfile');
-    if(qm && qm.style.display!=='none' && qm.style.transform==='translateX(0)'){
-      const q=queens[selectedQueenIndex]||queens[0];
-      if(q){
-        // refresco ligero sin reabrir animación
-        const ageD=(q.age/DAY_LENGTH).toFixed(1), maxD=(q.maxAge/DAY_LENGTH).toFixed(1);
-        const elId=document.getElementById('queenProfileId'); if(elId) elId.textContent = `${queenDisplayName(q)} (${q.id}) - ${ageD}d / ${maxD}d - ❤ ${Math.floor(q.health)}%`;
-        const elEggs=document.getElementById('queenEggsLaid'); if(elEggs) elEggs.textContent=q.eggsLaid||0;
-        const elHealth=document.getElementById('queenHealthVal'); if(elHealth) elHealth.textContent=Math.floor(q.health)+'%';
-        const elProg=document.getElementById('queenProgressBar'); if(elProg) elProg.style.width=(q.progress||0)+'%';
-        const elProgLbl=document.getElementById('queenProgressLbl'); if(elProgLbl) elProgLbl.textContent='huevo '+Math.floor(q.progress||0)+'%';
-        const elBrood=document.getElementById('queenBroodCount'); if(elBrood) elBrood.textContent=brood.filter(b=> b.mother===q.id || (!b.mother && q===queens[0])).length;
-        const growth=queenGrowthFromGenome(q.genome,q.age,q.maxAge);
-        const elLvl=document.getElementById('queenGrowthLvl'); if(elLvl) elLvl.textContent=growth.nivel;
-        const elSize=document.getElementById('queenGrowthSize'); if(elSize) elSize.textContent=growth.talla+' px';
-        const elProg2=document.getElementById('queenGrowthProg'); if(elProg2) elProg2.textContent=growth.progreso+'% vida';
-      }
+    if(qm&&qm.getAttribute('data-open')){
+      const q=queens.find(x=>x.id===qm.getAttribute('data-queen'))||queens[selectedQueenIndex]||queens[0];
+      if(q)_refreshQueenProfileCompact(q);else closeQueenProfile(true);
     }
   }catch(e){}
   try{ if(typeof updateCalendarWidget==='function') updateCalendarWidget(); }catch(e){}
@@ -9331,26 +9276,14 @@ function _panelVisible(){
     return true;
   }catch(e){ return true; }
 }
-function _panelHojaVisible(){
-  // La hoja de perfil, abierta y con su pestana 🧠 MENTE ensefando, TAMBIEN hay que repintarla: el panel
-  // lateral esta sellado y si solo se mira `_panelVisible()` la hoja se quedaria con el ultimo cuadro pinte
-  // y con las frases de cuando se abrio. Se responde con el id de la hormiga ensenada, que es la firma.
-  try{
-    const m=document.getElementById('antProfile'); if(!m || !m.getAttribute('data-open')) return null;
-    const p=document.getElementById('profileTab_cerebro'); if(!p || p.style.display==='none') return null;
-    return m.getAttribute('data-ant')||'';
-  }catch(e){ return null; }
-}
 function _panelsMaybeDraw(){
-  const hoja=_panelHojaVisible();
-  if(!_panelVisible() && hoja===null) return;
+  if(!_panelVisible())return;
   const now=performance.now();
-  const sig=selectedAntIndex+'|'+((workers[selectedAntIndex]&&workers[selectedAntIndex].id)||'')+'|'+workers.length+'|'+(hoja||'');
-  if(now-_panelsAt<140 && sig===_panelsSig) return;
-  _panelsAt=now; _panelsSig=sig;
-  if(_panelVisible()){ drawNN(); drawSensors(); drawChart(); }
-  try{ pintarCerebroHoja(); }catch(e){}
+  const sig=selectedAntIndex+'|'+((workers[selectedAntIndex]&&workers[selectedAntIndex].id)||'')+'|'+workers.length;
+  if(now-_panelsAt<140&&sig===_panelsSig)return;
+  _panelsAt=now;_panelsSig=sig;drawNN();drawSensors();drawChart();
 }
+// The sealed technical renderer still serves the internal simulation panel; normal profiles never call it.
 // pintarRed pinta la rejilla de neuronas de UNA hormiga en el canvas que le den. Antes era el cuerpo de
 // drawNN a secas; se parte en dos para que la hoja de perfil pueda ensenar la MISMA rejilla sin copiar la
 // matematica (dos copias de esto se desincronizan en cuanto alguien toca un grosor, y aqui ya la toqué: la
@@ -9455,179 +9388,69 @@ function drawChart(){
   hudText('chartLabel', `${fitnessHistory.length} gen - max ${(Math.max(...fitnessHistory,0)).toFixed(2)} - IQ ${colonyIQ}`);
 }
 
-/* =====================================================================================
-   EL CEREBRO EN PALABRAS (dentro de la hoja de perfil)  ·  LA LISTA DE HORMIGAS ACTIVAS
-   Topo (dueño, 2026-10-16): «dentro de la hoja de perfil es mejor, con la misma estetica;
-   asegurate de que todo quepa bonito y ordenado y haz que la informacion sea facilmente
-   comprensible para cada persona... quiero una lista facil de acceder de todas las hormigas
-   activas, tal vez haciendo click al numero de hormigas activas».
-   Dos reglas de la casa que aqui mandan: (1) el panel lateral sigue sellado - la puerta a
-   estos datos es la HOJA, no un tercer sitio; (2) la rejilla la pinta `pintarRed`, la misma
-   funcion de siempre, asi que no hay dos versiones del cerebro que se desincronizen.
-   ===================================================================================== */
-// Frases CORTAS a proposito: caben en la columna de la lista (330 px) sin que la tarea se vaya con puntos
-// suspensivos, y en el cerebro son el resumen de una linea. La tarea larga, si alguien la quiere leida, esta
-// en el `title` de la fila.
-const MENTE_TAREAS = {
-  EXPLORAR:'explores the nest', CAVANDO:'digs', VOLVER_COMIDA:'returns with food', VOLVER_TIERRA:'hauls soil',
-  DESCANSAR:'rests', BUSCAR:'searches', TANDEM_LEADER:'guides another ant', TANDEM_FOLLOWER:'follows a guide',
-  LLEVANDO_BASURA:'hauls waste', TRABAJAR_JARDIN:'tends the garden', IDLE:'has no task', ALIMENTAR_REINA:'shares food',
-  CUIDAR_CRIA:'tends brood', PELEAR:'fights', HUÍR:'flees', CONTROLAR_AGUA:'controls a flood', HUIR_AGUA:'escapes water',
-  HAUL_PROJECT:'collects project stock', DELIVER_PROJECT:'carries stock to a worksite', BUILD_PROJECT:'builds the active project', BUILD_STORE:'builds the founding store',
-};
-const _pctv = v => Math.max(0, Math.min(100, Math.round((isFinite(v)?v:0)*100)));
-const _lado = a => a>0.22 ? 'to the right' : (a<-0.22 ? 'to the left' : 'straight ahead');
-const _grado = v => v>0.72 ? 'strongly' : (v>0.45 ? 'decisively' : (v>0.2 ? 'slightly' : 'not at all'));
-function _franja(pct, col){
-  return '<div class="lm-barra"><div style="width:' + pct + '%;background:' + col + '"></div></div>';
-}
-function _lineaMente(etq, texto, pct, col){
-  return '<div class="linea-mente"><b>' + etq + '</b><div><span>' + texto + '</span>'
-       + (pct===null ? '' : _franja(pct, col)) + '</div></div>';
-}
-// Todo lo que sabe la hormiga, contado como se lo contarias a alguien que nunca vio el codigo.
-function cerebroEnPalabras(ant){
-  const s = ant.sensors || {}, out = (ant.nnOut && ant.nnOut.length) ? ant.nnOut : [0,0,0,0,0];
-  const casillas = CELL || 16;
-  const filas = [], nums = [], gist = [];
-  // ---- lo que entra por las antenas y los ojos ----
-  const dFood = Math.round((1-(s.foodDist||0))*280/casillas);
-  if((s.foodDist||0) > 0.02){
-    filas.push(_lineaMente('SCENT', 'Smells food ' + _lado(s.foodAngle||0) + ', about ' + dFood + ' cells away' + (dFood<=5?' — almost on top of it':(dFood>24?' — still far away':'')), _pctv(s.foodDist||0), '#2de67a'));
-    gist.push('food pulls her ' + _lado(s.foodAngle||0));
-  } else {
-    filas.push(_lineaMente('SCENT', 'No food scent nearby', 2, '#2de67a'));
-    gist.push('smells no food');
-  }
-  const ph = s.pheroStr || 0;
-  if(ph > 0.1){
-    filas.push(_lineaMente('TRAIL', 'Follows a trail ' + _lado(s.pheroAng||0) + ' (' + _pctv(ph) + '% strength): another ant passed here', _pctv(ph), '#b47aff'));
-    gist.push('a trail calls her ' + _lado(s.pheroAng||0));
-  } else filas.push(_lineaMente('TRAIL', 'No pheromone trail nearby', Math.max(2, _pctv(ph)), '#b47aff'));
-  const ojos = [['left', s.wallLeft||0], ['ahead', s.wallCenter||0], ['right', s.wallRight||0]];
-  const ciego = ojos.map(o => ({k:o[0], v:o[1]})).sort((a,b) => b.v-a.v)[0];
-  const libres = ojos.filter(o => o[1] < 0.35).map(o => o[0]);
-  const vista = ciego.v > 0.7 ? ('A <b style="color:#ff3b30">wall is touching her</b> on the ' + ciego.k)
-            : ciego.v > 0.4  ? ('A wall is approaching on the ' + ciego.k)
-            : 'Sees open ground';
-  filas.push(_lineaMente('EYES', vista + (libres.length ? ' · can move ' + libres.join(' and ') : ''), _pctv(ciego.v), '#ffcc00'));
-  if(libres.length) gist.push('sees space ' + libres.join(' and ')); else gist.push('is between walls');
-  const fat = s.fatigue || 0;
-  filas.push(_lineaMente('BODY', 'Feels ' + (fat>0.66?'very tired':(fat>0.33?'tired':'fresh')) + ' (' + _pctv(fat) + '% fatigue)' + (ant.food?' · carries food in her mandibles':''), Math.max(2, fat), '#00e5ff'));
-  if(ant.food) gist.push('is carrying food'); else if(fat>0.55) gist.push('is low on energy');
-  const oye = Math.max(Math.abs(s.commIn1||0), Math.abs(s.commIn2||0));
-  filas.push(_lineaMente('INK', oye>0.35 ? 'Receives and reads another ant’s signal' : 'Receives no signal', Math.max(2, oye), '#ff8c00'));
-  // ---- lo que decide ----
-  const giro = out[0]||0, paso = ((out[1]||0)+1)/2, cava = ((out[2]||0)+1)/2, c1 = out[3]||0, c2 = out[4]||0;
-  filas.push('<div class="linea-mente" style="background:#000"><b style="color:#ffcc00">DECIDES</b><div><span>'
-    + (Math.abs(giro)<0.15 ? 'Keeps straight' : 'Turns ' + (giro>0?'right':'left') + ' ' + _grado(Math.abs(giro)))
-    + ' · moves ' + (paso>0.78?'quickly':(paso>0.5?'at a steady pace':(paso>0.25?'at a stroll':'at a crawl')))
-    + ' · ' + (cava>0.6 ? 'strong urge to dig' : (cava>0.35 ? 'mild urge to dig' : 'no urge to dig'))
-    + '</span>' + _franja(Math.round(paso*100), '#2de67a') + '</div></div>');
-  const concept = c1>0.6 ? 'FOOD' : (c2>0.6 ? 'HOME' : (Math.abs(c1)>0.4 ? 'DANGER' : 'HELP'));
-  const muy = Math.max(Math.abs(c1), Math.abs(c2)) > 0.52;
-  filas.push(_lineaMente('CALLS', muy ? 'Will paint a <b style="color:#00e5ff">' + concept + '</b> symbol to alert the others' : 'Is not calling anyone', Math.max(2, Math.round(Math.max(Math.abs(c1),Math.abs(c2))*100)), '#00e5ff'));
-  if(muy) gist.push('wants to signal ' + concept.toLowerCase());
-  // ---- los numeros, para el que los quiera ----
-  const clave = [['foodAngle','food angle'],['foodDist','food proximity'],['pheroStr','trail strength'],['pheroAng','trail angle'],['wallLeft','left eye -45°'],['wallCenter','center eye 0°'],['wallRight','right eye +45°'],['fatigue','fatigue'],['carrying','carrying'],['commIn1','ink 1'],['commIn2','ink 2']];
-  nums.push('INPUT (11 sensors, -1 to 1)');
-  for(const k of clave) nums.push('  ' + k[1] + ' = ' + ((s[k[0]]||0)).toFixed(2));
-  nums.push('OUTPUT (5 decisions)');
-  nums.push('  turn = ' + giro.toFixed(2) + '   stride = ' + paso.toFixed(2) + '   dig = ' + cava.toFixed(2) + '   t1 = ' + c1.toFixed(2) + '   t2 = ' + c2.toFixed(2));
-  nums.push('WIRING: ' + INPUT_SIZE + ' inputs → ' + ((ant.genome&&ant.genome.hiddenSize)||0) + ' hidden → ' + OUTPUT_SIZE + ' outputs · GEN ' + ((ant.genome&&ant.genome.gen)||0));
-  if(gameSpeed > 8) nums.push('At x16, neural steps are skipped; left and right eye values are approximate (0.52) instead of measured.');
-  return { html: filas.join(''), nums: nums.join('\n'), gist: (MENTE_TAREAS[ant.state] ? (ant.role||'worker').toLowerCase() + ' ' + MENTE_TAREAS[ant.state] : (ant.role||'worker').toLowerCase() + ' moving') + ', and ' + gist.join(', ') + '.' };
-}
-let _cerebroNums = false;
-function _hojaPerfilAbierta(id){
-  const m = document.getElementById(id);
-  return !!(m && m.getAttribute('data-open'));
-}
-function pintarCerebroHoja(){
-  if(!_hojaPerfilAbierta('antProfile') && !_hojaPerfilAbierta('queenProfile')) return;
-  // Solo la hoja de la OBRERA: la red (getSensorsForAnt + forwardNN) se le corre a las obreras en su paso
-  // (app.js:3441); a la reina no la mueve esa red, asi que ensenarle «lo que esta pensando» seria inventar.
-  for(const [hoja, lienzo, caja, numeros, panel] of [['antProfile','profileNn','profileMind','profileMindNums','profileTab_cerebro']]){
-    const pane = document.getElementById(panel); if(!pane || pane.style.display === 'none') continue;
-    const m = document.getElementById(hoja); if(!m || !m.getAttribute('data-open')) continue;
-    const id = m.getAttribute('data-ant'); if(!id) continue;
-    const ant = workers.find(w => w.id === id) || queens.find(q => q.id === id); if(!ant) continue;
-    const c = cerebroEnPalabras(ant);
-    const g = document.getElementById('profileMindGist');
-    if(g) g.textContent = c.gist;
-    const el = document.getElementById(caja); if(el) el.innerHTML = c.html;
-    const nm = document.getElementById(numeros);
-    if(nm){ nm.textContent = c.nums; nm.style.display = _cerebroNums ? 'block' : 'none'; }
-    const cv = document.getElementById(lienzo);
-    if(cv && cv.getContext) pintarRed(cv, cv.getContext('2d'), ant, { grande: true });
-  }
-}
-// ---- LA LISTA ----
-let _rosterAbierto = false, _rosterFiltro = 'TODAS', _rosterAt = 0, _rosterVuelta = false;
-const ROSTRO_GRUPOS = [['TODAS','todas'], ['REINA','♛ reinas'], ['OBRERA','🐜 obreras'], ['CHICA','· chicas'], ['SOLDADO','⚔ soldadoras']];
+/* Individual neural inputs, DNA and genealogy remain part of the simulation, but no longer compete
+   with immediate decisions in an ant profile. The active-ant roster below is the only normal doorway. */
+let _rosterAbierto=false,_rosterFiltro='TODAS',_rosterAt=0,_rosterVuelta=false;
+const ROSTRO_GRUPOS=[['TODAS','ALL'],['REINA','QUEENS'],['OBRERA','WORKERS']];
 function _rosterDe(ant){
-  if(ant.isQueen) return 'REINA';
-  if(ant.caste === 'major') return 'SOLDADO';
-  if(ant.caste === 'minim') return 'CHICA';
+  if(ant.isQueen)return 'REINA';
+  if(ant.caste==='major')return 'SOLDADO';
+  if(ant.caste==='minim')return 'CHICA';
   return 'OBRERA';
 }
-const ROSTRO_ICO = { REINA:'♛', OBRERA:'🐜', CHICA:'·', SOLDADO:'⚔' };
+const ROSTRO_ICO={REINA:'♛',OBRERA:'🐜',CHICA:'·',SOLDADO:'⚔'};
 function rosterActivas(){
-  const todas = queens.concat(workers);
-  return todas.filter(a => a && a.deathDay == null).filter(a => _rosterFiltro === 'TODAS' || _rosterDe(a) === _rosterFiltro);
+  const all=queens.concat(workers).filter(a=>a&&a.deathDay==null);
+  if(_rosterFiltro==='REINA')return all.filter(a=>a.isQueen);
+  if(_rosterFiltro==='OBRERA')return all.filter(a=>!a.isQueen);
+  return all;
 }
+function _rosterEscape(value){return String(value==null?'':value).replace(/[&<>"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));}
 function pintarRoster(){
-  _rosterAt = performance.now();
-  const cuerpo = document.getElementById('rosterCuerpo'); if(!cuerpo) return;
-  const todas = queens.concat(workers);
-  const por = { REINA:0, OBRERA:0, CHICA:0, SOLDADO:0 };
-  for(const a of todas) por[_rosterDe(a)]++;
-  const tit = document.getElementById('rosterTitle');
-  if(tit) tit.textContent = '🐜 HORMIGAS ACTIVAS · ' + todas.length;
-  const ch = document.getElementById('rosterFiltros');
-  if(ch && !ch.dataset.montado){
-    ch.dataset.montado = '1';
-    ch.innerHTML = ROSTRO_GRUPOS.map(g => '<button class="chip-roster" data-f="' + g[0] + '" aria-pressed="' + (g[0]===_rosterFiltro ? 'true' : 'false') + '">' + g[1] + (g[0]==='TODAS' ? ' ' + todas.length : (por[g[0]] ? ' ' + por[g[0]] : '')) + '</button>').join('');
-    for(const b of ch.querySelectorAll('[data-f]')) b.onclick = (e) => {
-      e.stopPropagation(); _rosterFiltro = b.dataset.f; ch.dataset.montado = ''; pintarRoster();
-    };
-  } else if(ch){
-    for(const b of ch.querySelectorAll('[data-f]')){ const n = b.dataset.f === 'TODAS' ? todas.length : por[b.dataset.f]; b.textContent = ROSTRO_GRUPOS.find(g => g[0] === b.dataset.f)[1] + (n ? ' ' + n : ''); b.setAttribute('aria-pressed', b.dataset.f === _rosterFiltro ? 'true' : 'false'); }
+  _rosterAt=performance.now();
+  const cuerpo=document.getElementById('rosterCuerpo');if(!cuerpo)return;
+  const all=queens.concat(workers).filter(a=>a&&a.deathDay==null);
+  hudText('rosterTitle','ACTIVE ANTS');
+  const summary=document.getElementById('rosterSummary');
+  if(summary)summary.textContent=queens.length+' '+(queens.length===1?'queen':'queens')+' · '+workers.length+' '+(workers.length===1?'worker':'workers');
+  const filters=document.getElementById('rosterFiltros');
+  if(filters&&!filters.dataset.montado){
+    filters.dataset.montado='1';
+    filters.innerHTML=ROSTRO_GRUPOS.map(g=>'<button class="chip-roster" type="button" data-f="'+g[0]+'" aria-pressed="'+(g[0]===_rosterFiltro?'true':'false')+'">'+g[1]+'</button>').join('');
+    for(const button of filters.querySelectorAll('[data-f]'))button.onclick=e=>{e.stopPropagation();_rosterFiltro=button.dataset.f;filters.dataset.montado='';pintarRoster();};
+  }else if(filters){
+    for(const button of filters.querySelectorAll('[data-f]'))button.setAttribute('aria-pressed',button.dataset.f===_rosterFiltro?'true':'false');
   }
-  const sel = document.querySelector('#antProfile[data-open]');
-  const lista = rosterActivas();
-  // El refresco periodico (cada 900 ms desde el contador de la barra) NO puede estar reescribiendo las
-  // filas siempre: se comia los clics que caian en medio y perdia el hover. Se compara una firma barata
-  // (quien esta, que esta haciendo, su vida y su edad) y si no cambio nada, se sale sin tocar el DOM.
-  const firma = _rosterFiltro + '|' + (sel ? sel.getAttribute('data-ant') : '') + '#' + lista.map(a => a.id + '|' + (a.state||'') + '|' + Math.round(a.health||0) + '|' + ((a.age||0)/DAY_LENGTH).toFixed(1)).join(',');
-  if (cuerpo.dataset.firma === firma) return;
-  cuerpo.dataset.firma = firma;
-  const scrolled = cuerpo.scrollTop;
-  const filas = lista.slice(0, 240).map(a => {
-    const vida = Math.max(0, Math.min(100, Math.round(a.health || 0)));
-    const edad = ((a.age || 0) / DAY_LENGTH).toFixed(1);
-    const tarea = MENTE_TAREAS[a.state] || (a.state ? String(a.state).toLowerCase().replace(/_/g, ' ') : 'sin reporte');
-    const completo = (a.role || 'OBRERA') + ' · ' + (MENTE_TAREAS[a.state] || (a.state ? String(a.state).toLowerCase().replace(/_/g, ' ') : 'sin reporte')) + ' · vida ' + vida + '% · ' + edad + ' días';
-    return '<button class="ficha-hormiga" data-id="' + a.id + '" title="' + completo.replace(/"/g, '') + '"' + (sel && sel.getAttribute('data-ant') === a.id ? ' data-seleccionada="1"' : '') + '>'
-      + '<span class="fh-caste" style="color:' + (a.isQueen ? '#ffcc00' : '#fff8dc') + '">' + ROSTRO_ICO[_rosterDe(a)] + '</span>'
-      + '<span style="min-width:0"><span class="fh-nombre">' + (typeof antDisplayName==='function'?antDisplayName(a):a.id) + ' · ' + a.id + '</span>'
-      + '<br><span class="fh-tarea">' + (a.role||'OBRERA') + ' · ' + tarea + '</span></span>'
-      + '<span class="fh-dato" style="text-align:right">❤ ' + vida + '%<br><span style="color:#8a7a5a;font-size:9px">' + edad + ' d · GEN ' + ((a.genome&&a.genome.gen)||0) + '</span></span>'
-      + '</button>';
+  const antSheet=document.querySelector('#antProfile[data-open]'),queenSheet=document.querySelector('#queenProfile[data-open]');
+  const selectedId=antSheet?antSheet.getAttribute('data-ant'):queenSheet?queenSheet.getAttribute('data-queen'):'';
+  const list=rosterActivas();
+  const signature=_rosterFiltro+'|'+selectedId+'#'+list.map(a=>a.id+'|'+(a.state||'')+'|'+Math.round(a.health||0)+'|'+(a.isQueen?Math.round(a.progress||0):antProfession(a))).join(',');
+  if(cuerpo.dataset.firma===signature)return;
+  cuerpo.dataset.firma=signature;
+  const scrolled=cuerpo.scrollTop;
+  const rows=list.slice(0,240).map(a=>{
+    const health=Math.max(0,Math.min(100,Math.round(a.health||0)));
+    const task=a.isQueen?_queenTaskLabel(a)+(a.state==='GRÁVIDA'?' · '+Math.floor(a.progress||0)+'%':''):_antTaskLabel(a);
+    const identity=a.isQueen?'QUEEN':_profileIdentityLabel(a);
+    const name=typeof antDisplayName==='function'?antDisplayName(a):a.id;
+    const warning=health<95?(health<35?'CRITICAL '+health+'%':health+'% HEALTH'):'';
+    const full=name+' · '+identity+' · '+task+(warning?' · '+warning:'');
+    return '<button class="ficha-hormiga" type="button" data-id="'+_rosterEscape(a.id)+'" aria-label="'+_rosterEscape(full)+'" title="'+_rosterEscape(full)+'"'+(selectedId===a.id?' data-seleccionada="1"':'')+'>'
+      +'<span class="fh-caste" style="color:'+(a.isQueen?'#ffcc00':'#fff8dc')+'">'+ROSTRO_ICO[_rosterDe(a)]+'</span>'
+      +'<span class="fh-copy"><span class="fh-nombre">'+_rosterEscape(name)+'</span><span class="fh-tarea"><b>'+_rosterEscape(identity)+'</b> · '+_rosterEscape(task)+'</span></span>'
+      +(warning?'<span class="fh-warning">'+_rosterEscape(warning)+'</span>':'<span aria-hidden="true"></span>')+'</button>';
   }).join('');
-  cuerpo.innerHTML = (lista.length ? filas : '<div style="font-family:\'VT323\',monospace;font-size:16px;color:#8a7a5a;padding:6px 2px">No hay ninguna en este filtro.</div>')
-    + (lista.length > 240 ? '<div style="font-family:\'VT323\',monospace;font-size:14px;color:#8a7a5a;text-align:center">…y ' + (lista.length-240) + ' más (la colonia no cabe entera en una hoja: usa los filtros)</div>' : '');
-  cuerpo.scrollTop = scrolled;
-  for(const b of cuerpo.querySelectorAll('.ficha-hormiga')) b.onclick = (e) => {
+  cuerpo.innerHTML=(list.length?rows:'<div class="roster-limit">No active ants in this view.</div>')+(list.length>240?'<div class="roster-limit">Showing the first 240 active ants.</div>':'');
+  cuerpo.scrollTop=scrolled;
+  for(const button of cuerpo.querySelectorAll('.ficha-hormiga'))button.onclick=e=>{
     e.stopPropagation();
-    const a = queens.find(q => q.id === b.dataset.id) || workers.find(w => w.id === b.dataset.id);
+    const a=queens.find(q=>q.id===button.dataset.id)||workers.find(w=>w.id===button.dataset.id);
     if(!a||!isExploredPixel(a.x,a.y))return;
-    _rosterVuelta=true;cerrarRoster();
-    if(a.isQueen) showQueenProfile(a); else showAntProfile(a);
-    const bot = document.getElementById(a.isQueen ? 'btnVolverQ' : 'btnVolver');
-    if(bot) bot.style.display = 'inline-block';
+    _rosterVuelta=true;cerrarRoster();if(a.isQueen)showQueenProfile(a);else showAntProfile(a);
+    const back=document.getElementById(a.isQueen?'btnVolverQ':'btnVolver');if(back)back.style.display='grid';
   };
 }
+
 function abrirRoster(){
   const sh = document.getElementById('rosterSheet'); if(!sh) return;
   try{ cerrarLineage(true); }catch(e){}
@@ -9636,7 +9459,7 @@ function abrirRoster(){
   // pantalla quedan dos cabeceras de la misma columna (medido en la captura: el perfil asomaba por debajo).
   try{ closeAntProfile(true); }catch(e){}
   try{ closeQueenProfile(); }catch(e){}
-  _rosterAbierto = true; sh.setAttribute('data-open','1'); sh.style.display = 'flex';
+  _rosterAbierto = true; sh.setAttribute('data-open','1'); sh.setAttribute('aria-hidden','false'); sh.style.display = 'flex';
   _asentarBajoCalendario(sh);
   pintarRoster();
   const b = document.getElementById('btnRoster'); if(b) b.setAttribute('data-abierto','1');
@@ -9644,7 +9467,7 @@ function abrirRoster(){
 }
 function cerrarRoster(immediate=false){
   const sh = document.getElementById('rosterSheet'); if(!sh) return;
-  _rosterAbierto = false; sh.removeAttribute('data-open');
+  _rosterAbierto = false; sh.removeAttribute('data-open'); sh.setAttribute('aria-hidden','true');
   sh.style.transform='translateY(-12px) scaleY(0)';sh.style.opacity='0';
   const b=document.getElementById('btnRoster');if(b)b.removeAttribute('data-abierto');
   const finish=()=>{if(!_rosterAbierto)sh.style.display='none';};
@@ -9652,41 +9475,24 @@ function cerrarRoster(immediate=false){
 }
 function alternarRoster(){ if(_rosterAbierto) cerrarRoster(); else abrirRoster(); }
 function cerrarHojasDerecha(){ try{ cerrarRoster(); }catch(e){} }
-function initRosterYCerebro(){
-  const b = document.getElementById('btnRoster');
-  if(b && !b.dataset.wired){ b.dataset.wired='1'; b.onclick = (e) => { if(e) e.stopPropagation(); alternarRoster(); }; }
-  const c = document.getElementById('btnCloseRoster');
-  if(c && !c.dataset.wired){ c.dataset.wired='1'; c.onclick = cerrarRoster; }
-  const sh = document.getElementById('rosterSheet');
-  if(sh && !sh.dataset.wired){ sh.dataset.wired='1'; sh.onclick = (e) => { if(e.target === sh) cerrarRoster(); }; }
-  for(const idb of ['btnVolver','btnVolverQ']){
-    const v = document.getElementById(idb);
-    if(v && !v.dataset.wired){ v.dataset.wired='1'; v.onclick = (e) => { e.stopPropagation(); v.style.display='none'; _rosterVuelta=false; abrirRoster(); }; }
+function initRoster(){
+  const b=document.getElementById('btnRoster');
+  if(b&&!b.dataset.wired){b.dataset.wired='1';b.onclick=e=>{if(e)e.stopPropagation();alternarRoster();};}
+  const c=document.getElementById('btnCloseRoster');
+  if(c&&!c.dataset.wired){c.dataset.wired='1';c.onclick=()=>cerrarRoster();}
+  const sh=document.getElementById('rosterSheet');
+  if(sh&&!sh.dataset.wired){sh.dataset.wired='1';sh.onclick=e=>{if(e.target===sh)cerrarRoster();};}
+  for(const id of ['btnVolver','btnVolverQ']){
+    const back=document.getElementById(id);
+    if(back&&!back.dataset.wired){back.dataset.wired='1';back.onclick=e=>{e.stopPropagation();back.style.display='none';_rosterVuelta=false;abrirRoster();};}
   }
-  // la pestana 🧠 MENTE: al elegirla (o al pulsar «ver numeros») se pinta la hoja, no el panel sellado
-  const tabs = document.getElementById('profileTabs');
-  if(tabs && !tabs.dataset.cerebro){
-    tabs.dataset.cerebro = '1';
-    tabs.addEventListener('click', () => { try{ pintarCerebroHoja(); }catch(e){} });
-  }
-  const n = document.getElementById('btnCerebroNumeros');
-  if(n && !n.dataset.wired){
-    n.dataset.wired = '1';
-    n.onclick = (e) => {
-      e.stopPropagation(); _cerebroNums = !_cerebroNums;
-      n.textContent = _cerebroNums ? 'a ocultar los números' : 'ver números';
-      n.style.background = _cerebroNums ? '#ffcc00' : '#1a140f';
-      n.style.color = _cerebroNums ? '#000' : '#8a7a5a';
-      try{ pintarCerebroHoja(); }catch(err){}
-    };
-  }
-  window.addEventListener('keydown', (e) => {
-    if(e.key !== 'l' && e.key !== 'L') return;
-    const t = e.target; if(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-    e.preventDefault(); alternarRoster();
+  window.addEventListener('keydown',e=>{
+    if(e.key!=='l'&&e.key!=='L')return;
+    const t=e.target;if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable))return;
+    e.preventDefault();alternarRoster();
   });
 }
-initRosterYCerebro();
+initRoster();
 
 /* INPUTS */
 function farmPointer(e){
@@ -10257,6 +10063,7 @@ function closeQueenProfile(immediate=false){
     m.style.top='0'; m.style.height=''; m.style.right=''; m.style.width=''; m.style.maxWidth='';
     m.removeAttribute('data-open');
     m.removeAttribute('data-queen');
+    m.setAttribute('aria-hidden','true');
     clampView();
     return;
   }
@@ -10264,12 +10071,42 @@ function closeQueenProfile(immediate=false){
   try{ _esconderVuelta(); }catch(e){}
   m.style.opacity='0';
   m.removeAttribute('data-open');
+  m.setAttribute('aria-hidden','true');
   setTimeout(()=>{
     if(m.getAttribute('data-open')) return;
     m.style.display='none'; m.style.top='0'; m.style.height=''; m.style.right=''; m.style.width=''; m.style.maxWidth='';
     m.removeAttribute('data-queen');
     clampView();
   }, 220);
+}
+function _queenRelocationCandidate(q){
+  if(!q||q._moveTarget)return null;
+  try{
+    const best=findLargestChamber();
+    return best&&Math.hypot(best.x-q.x,best.y-q.y)>40&&isNestCellConnected(Math.floor(best.x/CELL),Math.floor(best.y/CELL))?best:null;
+  }catch(e){return null;}
+}
+function _refreshQueenProfileCompact(q){
+  if(!q)return;
+  const title=hudText('queenProfileTitle',queenDisplayName(q));if(title)title.title=q.nameMeaning||'';
+  hudText('queenProfileIdentity',_profileIdentityLabel(q));
+  const condition=hudText('queenProfileCondition',_profileConditionText(q));if(condition)condition.style.color=_profileConditionColor(q);
+  hudText('queenProfileTask',_queenTaskLabel(q));
+  const progress=Math.max(0,Math.min(100,Math.floor(Number(q.progress)||0)));
+  hudText('queenProgressLbl',progress+'%');
+  const bar=document.getElementById('queenProgressBar');if(bar)bar.style.width=progress+'%';
+  const dot=document.getElementById('queenProfileDot');if(dot)dot.style.background=_profileFactionColor(q);
+  let warning=_profileAlertText(q);
+  if(!warning&&q.state==='HAMBRIENTA')warning='Egg laying is paused until food reaches her.';
+  const alert=document.getElementById('queenProfileAlert');if(alert){alert.hidden=!warning;alert.textContent=warning;}
+  const feed=document.getElementById('btnFeedQueen'),hint=document.getElementById('queenFeedHint');
+  const food=Math.max(0,Math.floor(Number(economyLedger&&economyLedger.food)||0));
+  const connected=!!_entityInKnownWalkspace(q),canFeed=food>=2&&connected;
+  if(feed){feed.disabled=!canFeed;feed.setAttribute('aria-disabled',canFeed?'false':'true');}
+  if(hint)hint.textContent=!connected?'No connected route to the shared store.':food<2?'Needs 2 food · stores have '+food+'.':'Costs 2 food · advances health and egg progress by 18%.';
+  const move=document.getElementById('btnMoveQueen'),candidate=_queenRelocationCandidate(q);
+  if(move){move.hidden=!candidate;move.disabled=!candidate;move.title=candidate?'Move her to the largest connected chamber.':'';}
+  _drawCompactAntPortrait(document.getElementById('queenProfileCanvas'),q);
 }
 function showQueenProfile(q){
   if(!q)q=queens[selectedQueenIndex]||queens[0];
@@ -10278,217 +10115,38 @@ function showQueenProfile(q){
   try{cerrarInventario(true);}catch(e){}
   try{cerrarRoster(true);}catch(e){}
   ensureQueenMeta(q);
-  const modal=document.getElementById('queenProfile');
-  if(!modal){ console.warn('queenProfile missing'); return; }
-  const fac = society.factions.find(f=>f.id===q.faction);
-  const facCol = fac? fac.color : '#b47aff';
-  const facName = fac? fac.name : 'Colonia';
-  // título
-  const titleEl=document.getElementById('queenProfileTitle');
-  if(titleEl) { titleEl.textContent = `${queenDisplayName(q)} 👑 REINA F${q.faction}`; titleEl.title=q.nameMeaning||''; }
-  const dot=document.getElementById('queenProfileDot');
-  if(dot) dot.style.background=facCol;
-  // id / edad / vida
-  const ageD=(q.age/DAY_LENGTH).toFixed(1), maxD=(q.maxAge/DAY_LENGTH).toFixed(1);
-  const idEl=document.getElementById('queenProfileId');
-  if(idEl) idEl.textContent = `${queenDisplayName(q)} (${q.id}) - ${ageD}d / ${maxD}d - ❤ ${Math.floor(q.health)}%`;
-  const roleEl=document.getElementById('queenProfileRole');
-  if(roleEl) roleEl.textContent = `REINA - F${q.faction} - ${facName} - GEN-${q.genome.gen} - ${q.genome.id} - LVL ${queenGrowthFromGenome(q.genome,q.age,q.maxAge).nivel}`;
-  // mood
-  const moodEl=document.getElementById('queenProfileMood');
-  if(moodEl){
-    moodEl.innerHTML='';
-    for(let k in q.mood){
-      const v=q.mood[k];
-      const icons={joy:'😊',anger:'😠',fear:'😨',sadness:'😢',loyalty:'🤝',stress:'😓'};
-      const col={joy:'#2de67a',anger:'#ff3b30',fear:'#ffcc00',sadness:'#6b7cff',loyalty:'#00e5ff',stress:'#ff8c00'}[k]||'#fff';
-      const abbr={joy:'ALE',anger:'IRA',fear:'MIE',sadness:'TRI',loyalty:'LEA',stress:'EST'}[k]||k.slice(0,3).toUpperCase();
-      const d=document.createElement('div');
-      d.style.cssText='background:#000;border:1px solid #1a1a1a;padding:3px 2px;display:flex;flex-direction:column;align-items:center;gap:1px;line-height:1;text-align:center';
-      d.innerHTML=`<span style="font-size:11px;line-height:1;color:${col}">${icons[k]||'●'}</span><span style="font-family:\'Press Start 2P\';font-size:5px;color:#8a7a5a;letter-spacing:0.2px">${abbr}</span><span style="font-family:\'Press Start 2P\';font-size:7px;color:${col}">${Math.round(v*100)}%</span>`;
-      d.title=`${k} ${Math.round(v*100)}%`;
-      moodEl.appendChild(d);
-    }
-  }
-  // personalidad 6
-  const persEl=document.getElementById('queenProfilePersonalities');
-  if(persEl){
-    persEl.innerHTML='';
-    const pers=q.personality||queenPersonalityFromGenome(q.genome);
-    const cols={fertilidad:'#ff6b9d', feromona:'#b47aff', maternal:'#2de67a', dominancia:'#ff3b30', resiliencia:'#00e5ff', longevidad:'#ffcc00'};
-    const labels={fertilidad:'FERTIL', feromona:'FEROMONA', maternal:'MATERNAL', dominancia:'DOMIN', resiliencia:'RESIST', longevidad:'LONGEV'};
-    for(let k of ['fertilidad','feromona','maternal','dominancia','resiliencia','longevidad']){
-      const v=pers[k];
-      const col=cols[k];
-      const d=document.createElement('div');
-      d.innerHTML=`<div style="display:flex;justify-content:space-between;font-family:Press Start 2P;font-size:7px;color:#8a7a5a"><span>${labels[k]}</span><span style="color:${col}">${v}</span></div><div style="height:8px;background:#000;border:1px solid #000;margin-top:2px"><div style="height:100%;width:${v}%;background:${col}"></div></div>`;
-      persEl.appendChild(d);
-    }
-  }
-  // traits genome
-  const traitsEl=document.getElementById('queenProfileTraits');
-  if(traitsEl){
-    traitsEl.innerHTML='';
-    const ttraits=q.traits||traitsFromGenome(q.genome);
-    for(let k of ['exploracion','construccion','recoleccion','cuidado','comunica']){
-      const v=ttraits[k];
-      const col=k==='exploracion'?'#00e5ff':k==='construccion'?'#ff3b30':k==='recoleccion'?'#2de67a':k==='cuidado'?'#b47aff':'#ffcc00';
-      const d=document.createElement('div');
-      d.innerHTML=`<div style="display:flex;justify-content:space-between;font-family:Press Start 2P;font-size:7px;color:#8a7a5a"><span>${k.slice(0,4).toUpperCase()}</span><span style="color:${col}">${v}</span></div><div style="height:8px;background:#000;border:1px solid #000;margin-top:2px"><div style="height:100%;width:${v}%;background:${col}"></div></div>`;
-      traitsEl.appendChild(d);
-    }
-  }
-  // crecimiento / evolución
-  const growth=queenGrowthFromGenome(q.genome,q.age,q.maxAge);
-  const elLvl=document.getElementById('queenGrowthLvl'); if(elLvl) elLvl.textContent=growth.nivel;
-  const elSize=document.getElementById('queenGrowthSize'); if(elSize) elSize.textContent=growth.talla+' px';
-  const elProg=document.getElementById('queenGrowthProg'); if(elProg) elProg.textContent=growth.progreso+'% vida';
-  const elHealth=document.getElementById('queenHealthVal'); if(elHealth) elHealth.textContent=Math.floor(q.health)+'%';
-  const elEggs=document.getElementById('queenEggsLaid'); if(elEggs) elEggs.textContent=q.eggsLaid||0;
-  const elBrood=document.getElementById('queenBroodCount'); if(elBrood) elBrood.textContent=brood.filter(b=> b.mother===q.id || (!b.mother && q===queens[0])).length;
-  const elGen=document.getElementById('queenGenomeId'); if(elGen) elGen.textContent=`GEN-${q.genome.gen} - ${q.genome.id} - ${q.genome.hiddenSize} nodos`;
-  const elDna=document.getElementById('queenDnaStr'); if(elDna) elDna.textContent=genomeToDNA(q.genome).slice(0,120);
-  const workersOfFaction = workers.filter(w=>w.faction===q.faction).length;
-  const elPop=document.getElementById('queenFollowers'); if(elPop) elPop.textContent=workersOfFaction+' obreras - F'+q.faction;
-  const elState=document.getElementById('queenStateLabel'); if(elState) elState.textContent=q.state||'GRÁVIDA';
-  const elProgBar=document.getElementById('queenProgressBar'); if(elProgBar) elProgBar.style.width=(q.progress||0)+'%';
-  const elProgLbl=document.getElementById('queenProgressLbl'); if(elProgLbl) elProgLbl.textContent='huevo '+Math.floor(q.progress||0)+'%';
-  // árbol / linaje
-  const treeEl=document.getElementById('queenProfileTree');
-  if(treeEl){
-    let html='';
-    if(q.parents && q.parents.length){
-      html+=`<div>👑 Madre: <b style="color:#b47aff">${q.parents[0]}</b> <span style="color:#8a7a5a">+ ${q.parents[1]||'-'}</span></div><div style="margin:4px 0;color:#8a7a5a">↓</div>`;
-    } else {
-      html+=`<div style="color:#8a7a5a">Fundadora - sin padres registrados (Día 0)</div><div style="margin:4px 0">↓</div>`;
-    }
-    html+=`<div><b style="background:${facCol};color:#000;padding:1px 4px">${queenDisplayName(q)}</b> <span style="color:#8a7a5a">GEN-${q.genome.gen}</span> 👑</div>`;
-    // hijos: buscar workers/queens con parents que incluyan q.id
-    const kids = [...workers, ...queens].filter(o=> o.parents && o.parents.includes(q.id)).map(o=>o.id);
-    const direct = q.children||[];
-    const allKids = [...new Set([...direct, ...kids])];
-    if(allKids.length){
-      html+=`<div style="margin:6px 0;color:#8a7a5a">↓ ${allKids.length} descendientes directos</div><div style="line-height:1.6">${allKids.slice(0,12).join(' - ')}${allKids.length>12?' …':''}</div>`;
-    } else {
-      html+=`<div style="margin-top:6px;color:#8a7a5a">Sin descendencia registrada aún - pon el primer huevo</div>`;
-    }
-    treeEl.innerHTML=html;
-  }
-  // historial
-  const histEl=document.getElementById('queenProfileHistory');
-  if(histEl){
-    histEl.innerHTML='';
-    const h = q.history||[];
-    if(h.length){
-      h.slice(0,6).forEach(ev=>{
-        const d=document.createElement('div');
-        d.style.cssText='border-bottom:1px solid #1a1a1a;padding:4px 0';
-        d.innerHTML=`<span style="color:#8a7a5a">D${ev.day||0} ${Math.floor(ev.time||0)}h</span> - ${ev.msg}`;
-        histEl.appendChild(d);
-      });
-    } else {
-      histEl.innerHTML='<span style="color:#8a7a5a">Sin historial - es joven. Cada huevo y migración quedará aquí.</span>';
-    }
-  }
-  // canvas
-  const pc=document.getElementById('queenProfileCanvas');
-  if(pc){
-    const pctx=pc.getContext('2d');
-    pctx.imageSmoothingEnabled=false;
-    pctx.clearRect(0,0,64,64);
-    pctx.fillStyle='#000'; pctx.fillRect(0,0,64,64);
-    pctx.fillStyle=facCol; pctx.fillRect(0,0,64,3);
-    // la reina, con el mismo pintor y su corona (ver el retrato de la obrera)
-    pctx.save(); pctx.translate(32,32);
-    _hormigaVoxel(pctx, q, 1.5, false, q.id|0);
-    pctx.restore();
-    pctx.fillStyle='#fff'; pctx.font='bold 6px "Press Start 2P"'; pctx.textAlign='center'; pctx.fillText('REINA',32,56);
-    pctx.font='5px "Press Start 2P"'; pctx.fillStyle=facCol; pctx.fillText('F'+q.faction,32,62);
-  }
-  // botones
-  const btnFollow=document.getElementById('btnFollowQueen');
-  if(btnFollow) btnFollow.onclick=()=>{
-    // centrar cámara en reina
-    const b2=getPanBounds();view.x=clamp(q.x-VIEW_W/view.zoom/2,b2.minX,b2.maxX);view.y=clamp(q.y-VIEW_H/view.zoom/2,b2.minY,b2.maxY);
-    pushEvent('evo',`👁 Siguiendo a ${queenDisplayName(q)}`, `Cámara centrada en reina F${q.faction}`);
-  };
-  const btnFeed=document.getElementById('btnFeedQueen');
-  if(btnFeed) btnFeed.onclick=()=>{
-    if(economyLedger.food>=2&&_entityInKnownWalkspace(q)&&capacidadAlmacen()>0){
+  const modal=document.getElementById('queenProfile');if(!modal)return false;
+  _refreshQueenProfileCompact(q);
+  const follow=document.getElementById('btnFollowQueen');
+  if(follow)follow.onclick=()=>{_centerOnAnt(q);closeQueenProfile();};
+  const feed=document.getElementById('btnFeedQueen');
+  if(feed)feed.onclick=()=>{
+    if(economyLedger.food>=2&&_entityInKnownWalkspace(q)){
       economyLedger.debitFood(2,{reason:'player feeds queen'});q.health=Math.min(100,q.health+18);q.mood.joy=Math.min(1,q.mood.joy+.08);q.progress=Math.min(100,q.progress+18);
-      if(!q.history)q.history=[];q.history.unshift({day,time:q.age/3600,msg:'Fed from the shared reserve · +18% health'});
-      if(q.history.length>20)q.history.pop();
-      pushEvent('food',`🍽 Queen ${queenDisplayName(q)} fed · +18% health`,'2 food rations spent');
-      showQueenProfile(q);
-      if(typeof updateColonyUI==='function') updateColonyUI();
-    }else{
-      if(typeof showNotify==='function')showNotify('warn',economyLedger.food>=2?'No connected route':'Not enough food',economyLedger.food>=2?'Reconnect the queen and the physical store first.':'You need 2 food rations to feed the queen.',2500);
+      if(!q.history)q.history=[];q.history.unshift({day,time:q.age/3600,msg:'Fed from the shared reserve · +18% health and egg progress'});if(q.history.length>20)q.history.pop();
+      pushEvent('food','🍽 '+queenDisplayName(q)+' was fed','2 food spent · health and egg progress +18%');
+      _refreshQueenProfileCompact(q);if(typeof updateColonyUI==='function')updateColonyUI();
+    }else if(typeof showNotify==='function')showNotify('warn',economyLedger.food>=2?'No connected route':'Not enough food',economyLedger.food>=2?'Reconnect the queen to the shared store first.':'You need 2 food to feed the queen.',2500);
+  };
+  const move=document.getElementById('btnMoveQueen');
+  if(move)move.onclick=()=>{
+    const best=_queenRelocationCandidate(q);
+    if(best){
+      q._moveTarget={x:best.x,y:best.y};pushEvent('evo','👑 '+queenDisplayName(q)+' begins relocating','Destination is the largest connected chamber');
+      if(!q.history)q.history=[];q.history.unshift({day,time:q.age/3600,msg:'Migration begins through the connected tunnel network'});closeQueenProfile();
     }
   };
-  const btnMove=document.getElementById('btnMoveQueen');
-  if(btnMove) btnMove.onclick=()=>{
-    // intentar migrar a cámara más grande
-    const best=findLargestChamber();
-    if(best&&Math.hypot(best.x-q.x,best.y-q.y)>40&&isNestCellConnected(Math.floor(best.x/CELL),Math.floor(best.y/CELL))){
-      q._moveTarget={x:best.x,y:best.y};
-      pushEvent('evo',`👑 ${queenDisplayName(q)} begins a chamber migration`,`Connected destination [${Math.floor(best.x/CELL)},${Math.floor(best.y/CELL)}]`);
-      if(!q.history) q.history=[];q.history.unshift({day,time:q.age/3600,msg:'🚚 Migration begins through the tunnel network'});
-      showQueenProfile(q);
-    } else {
-      if(typeof showNotify==='function') showNotify('warn','No hay cámara mejor','Cava una sala más grande primero',2500);
-    }
-  };
-  // FIX: dropdown idéntico a hormiga - 220px, top bajo calendario, sin scroll interno, tabs
-  try{ closeAntProfile(true); }catch(e){}
-  const isOpenQ = modal.getAttribute('data-open')==='1' && modal.style.display!=='none';
-  const prevQ = modal.getAttribute('data-queen');
-  if(isOpenQ && prevQ===q.id){
-    modal.style.transform='translateY(0) scaleY(1)'; modal.style.opacity='1';
-    return;
-  }
-  if(isOpenQ){
-    modal.style.display='none';
-    modal.removeAttribute('data-open');
-  }
-  _asentarBajoCalendario(modal);
-  modal.style.height='';
-  modal.style.border = '4px solid #000';
-  modal.style.borderTop = 'none';
-  modal.style.boxShadow = '6px 6px 0 #000';
-  modal.style.overflow='hidden'; modal.style.overflowY='auto';
-  modal.style.transformOrigin='top';
-  modal.style.transform='translateY(-12px) scaleY(0)';
-  modal.style.opacity='0';
-  modal.style.display='block';
-  modal.setAttribute('data-open','1');
-  modal.setAttribute('data-queen', q.id);
-  void modal.offsetWidth;
-  modal.style.transition='transform 0.22s cubic-bezier(.2,.8,.2,1), opacity 0.22s';
-  modal.style.transform='translateY(0) scaleY(1)';
-  modal.style.overflowY='auto'; asentarHoja(modal);
-  requestAnimationFrame(()=>{ asentarHoja(modal); });
-  modal.style.opacity='1';
-  // tabs idénticos a hormiga - 4 pestañas rasgo/estado/arbol/hist
-  try{
-    const tabs=modal.querySelectorAll('#queenProfileTabs [data-qtab]');
-    const panes={rasgos:document.getElementById('queenTab_rasgos'), estado:document.getElementById('queenTab_estado'), arbol:document.getElementById('queenTab_arbol'), hist:document.getElementById('queenTab_hist')};
-    tabs.forEach(btn=>{
-      btn.onclick=(e)=>{
-        e.stopPropagation();
-        tabs.forEach(b=>{ b.style.background='#1a140f'; b.style.color='#8a7a5a'; });
-        btn.style.background='var(--amber)'; btn.style.color='#000';
-        const tab=btn.dataset.qtab;
-        for(let k in panes){ if(panes[k]) panes[k].style.display = (k===tab?'block':'none'); }
-      };
-    });
-    tabs.forEach(b=>{ b.style.background='#1a140f'; b.style.color='#8a7a5a'; });
-    const first=modal.querySelector('#queenProfileTabs [data-qtab="rasgos"]');
-    if(first){ first.style.background='var(--amber)'; first.style.color='#000'; }
-    for(let k in panes){ if(panes[k]) panes[k].style.display = (k==='rasgos'?'block':'none'); }
-  }catch(e){}
-  clampView(); updateZoomLabel();
-  selectedQueenIndex=queens.indexOf(q);
+  try{closeAntProfile(true);}catch(e){}
+  const same=modal.getAttribute('data-open')==='1'&&modal.style.display!=='none'&&modal.getAttribute('data-queen')===q.id;
+  if(same){modal.style.transform='translateY(0) scaleY(1)';modal.style.opacity='1';asentarHoja(modal);return true;}
+  if(modal.getAttribute('data-open')){modal.style.display='none';modal.removeAttribute('data-open');}
+  _asentarBajoCalendario(modal);modal.style.height='';modal.style.overflowY='auto';modal.style.transformOrigin='top right';
+  modal.style.transform='translateY(-12px) scaleY(0)';modal.style.opacity='0';modal.style.display='block';
+  modal.setAttribute('data-open','1');modal.setAttribute('data-queen',q.id);modal.setAttribute('aria-hidden','false');
+  void modal.offsetWidth;modal.style.transform='translateY(0) scaleY(1)';modal.style.opacity='1';asentarHoja(modal);
+  requestAnimationFrame(()=>asentarHoja(modal));clampView();updateZoomLabel();selectedQueenIndex=queens.indexOf(q);return true;
 }
+
 
 
 // === CALENDARIO DE LA COLONIA - Sistema único colmena (inspirado Stardew pero propio) ===
@@ -12436,11 +12094,12 @@ function asentarHoja(el){
     // overflow. The clock has its own mini responsive form, and the curtain uses exactly what is left.
     const alto=Math.max(48,(window.innerHeight||800)-top-8);
     el.style.setProperty('max-height',alto+'px','important');
-    if(el.id==='invSheet'||el.id==='lineageSheet'){
-      // These redesigned drawers own a fixed header and footer; only their body scrolls.
+    if(el.id==='invSheet'||el.id==='lineageSheet'||el.id==='rosterSheet'){
+      // Drawers own a fixed header; only their content body scrolls.
       el.style.setProperty('overflow','hidden');
-      const cuerpo=document.getElementById(el.id==='lineageSheet'?'lineageBody':'invBody');
-      if(cuerpo){ cuerpo.style.overflowY='auto'; cuerpo.style.overscrollBehavior='contain'; }
+      const bodyId=el.id==='lineageSheet'?'lineageBody':el.id==='invSheet'?'invBody':'rosterCuerpo';
+      const cuerpo=document.getElementById(bodyId);
+      if(cuerpo){cuerpo.style.overflowY='auto';cuerpo.style.overscrollBehavior='contain';}
     }else{
       const oy=getComputedStyle(el).overflowY;
       if(oy!=='auto' && oy!=='scroll') el.style.overflowY='auto';

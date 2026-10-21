@@ -7,8 +7,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ANT FARM</title>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache">
-<link rel="stylesheet" href="css/style.css?v=20261020m">
-<link rel="stylesheet" href="css/startup.css?v=20261020m">
+<link rel="stylesheet" href="css/style.css?v=20261021n">
+<link rel="stylesheet" href="css/startup.css?v=20261021n">
 
 <style id="topoHideUntilStart">
   #appRoot{display:none !important}
@@ -635,197 +635,106 @@
   </footer>
 </section>
 
-<!-- LISTA DE HORMIGAS ACTIVAS — la puerta es el numero de la barra de arriba (Topo: «que al pinchar
-     cuantas hormigas hay aparezca la lista»). Misma piel que las demas hojas: caja crema, marco negro,
-     el cuerpo scrollea y el pie no se mueve. -->
-<div id="rosterSheet" style="display:none;flex-direction:column;position:fixed;top:0;right:var(--topo-right-axis,14px);width:var(--topo-curtain-width,300px);max-width:calc(100vw - 28px);max-height:calc(100vh - 28px);background:#fff8dc;border:4px solid #000;border-top:none;box-shadow:6px 6px 0 #000;z-index:91;overflow:hidden;transform:translateY(-12px) scaleY(0);opacity:0;transition:transform 0.22s cubic-bezier(.2,.8,.2,1), opacity 0.22s;transform-origin:top">
-  <div style="flex:1 1 auto;min-height:0;display:flex;flex-direction:column;background:#1a140f">
-    <div style="background:#000;padding:9px 10px;display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:3px solid #000">
-      <span style="font-family:'Press Start 2P',monospace;font-size:11px;color:#ffcc00;letter-spacing:0.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span id="rosterTitle">🐜 HORMIGAS ACTIVAS</span></span>
-      <button id="btnCloseRoster" style="background:#ff3b30;color:#fff;border:2px solid #000;padding:6px 9px;font-family:'Press Start 2P',monospace;font-size:10px;cursor:pointer;box-shadow:2px 2px 0 #000;line-height:1">✕</button>
+<!-- ACTIVE ANTS — one short roster, opened only from the worker count in the live toolbar. -->
+<section id="rosterSheet" class="ant-sheet roster-sheet" role="dialog" aria-modal="false" aria-labelledby="rosterTitle" aria-hidden="true" tabindex="-1" style="display:none">
+  <div class="ant-sheet-shell">
+    <div class="ant-sheet-header">
+      <div class="ant-sheet-heading">
+        <span class="ant-sheet-kicker">COLONY</span>
+        <h2 id="rosterTitle">ACTIVE ANTS</h2>
+        <p id="rosterSummary">—</p>
+      </div>
+      <button id="btnCloseRoster" class="ant-sheet-close" type="button" aria-label="Close active ants">×</button>
     </div>
-    <div id="rosterFiltros" style="display:flex;gap:4px;padding:8px 10px;background:#0a0a0a;border-bottom:3px solid #000;flex-wrap:wrap"></div>
-    <div id="rosterCuerpo" class="hoja-cuerpo" style="padding:8px 10px 10px;display:flex;flex-direction:column;gap:6px;overflow-y:auto;flex:1 1 auto;min-height:0"></div>
-    <div style="padding:8px 10px;border-top:3px solid #000;background:#000;font-family:'VT323',monospace;font-size:14px;color:#8a7a5a;line-height:1.15">Pincha una fila para abrir su perfil y su cerebro.</div>
+    <div id="rosterFiltros" class="roster-filters" aria-label="Filter active ants"></div>
+    <div id="rosterCuerpo" class="roster-body hoja-cuerpo" tabindex="0" aria-label="Active ants"></div>
   </div>
-</div>
+</section>
 
-<!-- PERFIL DE HORMIGA — usa la cortina común y deja el cuerpo recorrer en pantallas cortas -->
-<div id="antProfile" class="hoja-cuerpo" style="display:none;position:fixed;top:0;right:var(--topo-right-axis,14px);width:var(--topo-curtain-width,300px);max-width:calc(100vw - 28px);max-height:calc(100vh - 28px);background:#fff8dc;border:4px solid #000;border-top:none;box-shadow:6px 6px 0 #000;z-index:90;overflow:hidden;transform:translateY(-12px) scaleY(0);opacity:0;transition:transform 0.22s cubic-bezier(.2,.8,.2,1), opacity 0.22s;transform-origin:top">
-  <div style="background:#1a140f;min-height:100%;display:flex;flex-direction:column">
-    <div style="background:#000;padding:8px 10px;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #000">
-      <span style="font-family:'Press Start 2P',monospace;font-size:12px;color:#ffcc00;letter-spacing:0.3px;line-height:1.25;overflow-wrap:break-word;max-width:230px" id="profileTitle">A3X9 [RECOLECTORA]</span>
-      <button id="btnVolver" title="Volver a la lista de hormigas" style="display:none;background:#1a140f;color:#ffcc00;border:2px solid #000;padding:6px 7px;font-family:'Press Start 2P',monospace;font-size:10px;cursor:pointer;box-shadow:2px 2px 0 #000;line-height:1">◂ LISTA</button><button id="btnCloseProfile" style="background:#ff3b30;color:#fff;border:2px solid #000;padding:4px 8px;font-family:'Press Start 2P',monospace;font-size:10px;cursor:pointer;box-shadow:2px 2px 0 #000">✕</button>
+<!-- WORKER PROFILE — deliberately one view: who she is, what she is doing, how she is, and two actions. -->
+<section id="antProfile" class="ant-sheet compact-ant-profile hoja-cuerpo" role="dialog" aria-modal="false" aria-labelledby="profileTitle" aria-hidden="true" tabindex="-1" style="display:none">
+  <div class="ant-sheet-shell">
+    <div class="ant-sheet-header compact-profile-header">
+      <div class="ant-sheet-heading">
+        <span class="ant-sheet-kicker">ANT PROFILE</span>
+        <h2 id="profileTitle">WORKER</h2>
+      </div>
+      <div class="ant-sheet-header-actions">
+        <button id="btnVolver" class="ant-sheet-back" type="button" title="Back to active ants" aria-label="Back to active ants" style="display:none">◂ LIST</button>
+        <button id="btnCloseProfile" class="ant-sheet-close" type="button" aria-label="Close ant profile">×</button>
+      </div>
     </div>
-    <div style="padding:8px 10px;display:flex;flex-direction:column;gap:8px">
-      <div style="display:flex;gap:8px;align-items:flex-start">
-        <div style="width:88px;height:88px;min-width:88px;background:#000;border:2px solid #000;display:grid;place-items:center;position:relative;overflow:hidden;box-shadow:2px 2px 0 #000">
-          <canvas id="profileCanvas" width="88" height="88" style="image-rendering:pixelated;width:88px;height:88px"></canvas>
-          <span id="profileFactionDot" style="position:absolute;top:3px;right:3px;width:10px;height:10px;background:#ffcc00;border:2px solid #000;box-shadow:1px 1px 0 #000"></span>
+    <div class="compact-profile-body">
+      <div class="compact-profile-identity">
+        <div class="compact-portrait">
+          <canvas id="profileCanvas" width="72" height="72" aria-label="Voxel portrait of this ant"></canvas>
+          <span id="profileAccent" class="compact-portrait-accent" aria-hidden="true"></span>
         </div>
-        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
-          <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#8a7a5a;letter-spacing:0.4px">ID • EDAD • VIDA</div>
-          <div style="font-family:'Press Start 2P',monospace;font-size:11px;color:#fff;line-height:1.4" id="profileId">A3X9 — 4d / 12d • ❤ 87%</div>
-          <div style="font-family:'VT323',monospace;font-size:17px;color:#c9b896;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:clip;max-width:100%" id="profileRole">WORKER · F0 · G3 · DNA</div>
-          <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#5a4a3a;margin-top:2px">ÁNIMO</div>
-        </div>
-      </div>
-      <div id="profileMoodIcons" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px"></div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px" id="profileTabs">
-        <button class="pixel-btn small" data-ptab="rasgos" style="min-width:0;width:auto;background:var(--amber);color:#000;padding:5px 0;font-size:9px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">RASGOS</button>
-        <button class="pixel-btn small" data-ptab="estado" style="min-width:0;width:auto;background:#1a140f;color:#8a7a5a;padding:5px 0;font-size:9px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">ESTADO</button>
-        <button class="pixel-btn small" data-ptab="arbol" style="min-width:0;width:auto;background:#1a140f;color:#8a7a5a;padding:5px 0;font-size:9px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">ÁRBOL</button>
-        <button class="pixel-btn small" data-ptab="cerebro" style="min-width:0;width:auto;background:#1a140f;color:#8a7a5a;padding:6px 0;font-size:10px;min-height:26px;letter-spacing:0;white-space:nowrap">🧠 MENTE</button>
-        <button class="pixel-btn small" data-ptab="hist" style="min-width:0;width:auto;background:#1a140f;color:#8a7a5a;padding:5px 0;font-size:9px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">HIST</button>
-      </div>
-      <div id="profileTab_rasgos">
-        <div style="background:#000;border:2px solid #000;padding:6px">
-          <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#8a7a5a;letter-spacing:0.3px">TRAITS · from 0 to 100</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:6px" id="profileTraits"></div>
-          <div id="profileTraitsGist" style="font-family:'VT323',monospace;font-size:15px;color:#c9b896;line-height:1.2;margin-top:6px;padding-top:5px;border-top:2px solid #1a1a1a">—</div>
+        <div class="compact-identity-copy">
+          <span class="compact-label">ROLE</span>
+          <strong id="profileIdentity">WORKER</strong>
+          <span class="compact-label compact-condition-label">CONDITION</span>
+          <span id="profileCondition" class="compact-condition">HEALTHY · CALM</span>
         </div>
       </div>
-      <div id="profileTab_estado" style="display:none">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
-          <div style="background:#000;border:2px solid #000;padding:6px;text-align:center">
-            <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#8a7a5a">QUÉ TAN BIEN LE VA</div>
-            <div style="font-family:'Press Start 2P',monospace;font-size:17px;color:#2de67a;line-height:1;margin-top:2px" id="profileFitness">1.24</div>
-            <div style="font-family:'VT323',monospace;font-size:14px;color:#8a7a5a;line-height:1" id="profileDeliveries">3 deliveries • 2 digs</div>
-          </div>
-          <div style="background:#000;border:2px solid #000;padding:6px;text-align:center">
-            <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#8a7a5a">PELEAS • SEGUIDORAS</div>
-            <div style="font-family:'Press Start 2P',monospace;font-size:17px;color:#ff3b30;line-height:1;margin-top:2px" id="profileCrimes">0 • 0</div>
-            <div style="font-family:'VT323',monospace;font-size:14px;color:#8a7a5a;line-height:1.15" id="profileBelief">— sin culto</div>
-          </div>
-        </div>
+      <div class="compact-now" aria-labelledby="profileNowLabel">
+        <span id="profileNowLabel" class="compact-label">NOW</span>
+        <strong id="profileTask">Exploring the nest</strong>
       </div>
-      <div id="profileTab_arbol" style="display:none">
-        <div style="background:#000;border:2px solid #000;padding:6px">
-          <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#b47aff">ÁRBOL</div>
-          <div style="font-family:'VT323',monospace;font-size:16px;color:#c9b896;margin-top:4px;line-height:1.25;max-height:none;overflow:visible" id="profileTree">—</div>
-        </div>
+      <div id="profileAlert" class="compact-alert" role="status" hidden></div>
+      <div class="compact-profile-actions">
+        <button id="btnFollowAnt" class="pixel-btn small compact-primary" type="button">FIND ON MAP</button>
+        <button id="btnExileAnt" class="pixel-btn small compact-danger" type="button">EXILE</button>
       </div>
-      <div id="profileTab_cerebro" style="display:none">
-        <div style="background:#000;border:2px solid #000;padding:7px">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
-            <span style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00;letter-spacing:0.3px">🧠 LO QUE ESTA PENSANDO</span>
-            <button class="pixel-btn small" id="btnCerebroNumeros" title="Enseñar los numeros crudos de las neuronas" style="min-width:0;width:auto;padding:4px 6px;font-size:9px;min-height:20px;background:#1a140f;color:#8a7a5a;border:2px solid #000;letter-spacing:0;white-space:nowrap">ver numeros</button>
-          </div>
-          <div style="font-family:'VT323',monospace;font-size:15px;color:#8a7a5a;line-height:1.15;margin-top:3px">Su cuerpo y sus antenas le dicen estas cosas, y de ahí sale lo que hace.</div>
-          <div id="profileMindGist" style="font-family:'VT323',monospace;font-size:17px;color:#fff8dc;line-height:1.2;margin-top:6px;background:#2a0f00;border:2px solid #000;padding:6px 7px">—</div>
-          <div id="profileMind" style="margin-top:6px;display:flex;flex-direction:column;gap:3px"></div>
-          <canvas id="profileNn" width="300" height="120" style="width:100%;height:120px;display:block;margin-top:7px;image-rendering:pixelated;background:#050505;border:2px solid #000"></canvas>
-          <div style="font-family:'VT323',monospace;font-size:13px;color:#7a6a4e;line-height:1.2;margin-top:4px">Each box is a neuron. <b style="color:#2de67a">Green</b> lines excite and <b style="color:#ff3b30">red</b> lines inhibit; thicker lines have more influence. LEFT = perception · CENTER = integration · RIGHT = decision (<span style="color:#ffcc00">TURN</span>, <span style="color:#2de67a">SPEED</span>, <span style="color:#ff3b30">DIG</span>, <span style="color:#00e5ff">T1</span>, <span style="color:#b47aff">T2</span>).</div>
-          <div id="profileMindNums" style="display:none;margin-top:6px;font-family:'VT323',monospace;font-size:14px;color:#c9b896;line-height:1.25;white-space:pre-wrap"></div>
-        </div>
-      </div>
-      <div id="profileTab_hist" style="display:none">
-        <div style="background:#0a0a1a;border:2px solid #1a1a3a;padding:6px">
-          <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#00e5ff">HISTORIAL — 5 últimos</div>
-          <div style="font-family:'VT323',monospace;font-size:16px;color:#8a7a5a;margin-top:4px;line-height:1.25;max-height:none;overflow:visible" id="profileHistory"></div>
-        </div>
-      </div>
-      <div style="display:flex;gap:6px;margin-top:2px">
-        <button id="btnFollowAnt" class="pixel-btn small" style="flex:1;padding:6px 4px;font-size:10px">👁 SEGUIR</button>
-        <button id="btnExileAnt" class="pixel-btn small" style="flex:1;background:#ff3b30;color:#fff;padding:6px 4px;font-size:10px">⚔ EXILIAR</button>
-      </div>
+      <p class="compact-action-note">Exile makes her leave the founding colony and form a separate faction.</p>
     </div>
   </div>
-</div>
+</section>
 
-
-<!-- PERFIL DE REINA — unificado visual y geométricamente con la misma cortina -->
-<div id="queenProfile" class="hoja-cuerpo" style="display:none;position:fixed;top:0;right:var(--topo-right-axis,14px);width:var(--topo-curtain-width,300px);max-width:calc(100vw - 28px);max-height:calc(100vh - 28px);background:#fff8dc;border:4px solid #000;border-top:none;box-shadow:6px 6px 0 #000;z-index:90;overflow:hidden;transform:translateY(-12px) scaleY(0);opacity:0;transition:transform 0.22s cubic-bezier(.2,.8,.2,1), opacity 0.22s;transform-origin:top">
-  <div style="background:#1a140f;min-height:100%;display:flex;flex-direction:column">
-    <div style="background:#000;padding:8px 10px;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #000">
-      <span style="font-family:'Press Start 2P',monospace;font-size:12px;color:#ffcc00;letter-spacing:0.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px" id="queenProfileTitle">ADA 👑 REINA F0</span>
-      <button id="btnVolverQ" title="Volver a la lista de hormigas" style="display:none;background:#1a140f;color:#ffcc00;border:2px solid #000;padding:6px 7px;font-family:'Press Start 2P',monospace;font-size:10px;cursor:pointer;box-shadow:2px 2px 0 #000;line-height:1">◂ LISTA</button><button id="btnCloseQueen" style="background:#ff3b30;color:#fff;border:2px solid #000;padding:4px 8px;font-family:'Press Start 2P',monospace;font-size:10px;cursor:pointer;box-shadow:2px 2px 0 #000">✕</button>
+<!-- QUEEN PROFILE — the same single-view contract, with egg progress and only useful actions. -->
+<section id="queenProfile" class="ant-sheet compact-ant-profile queen-compact-profile hoja-cuerpo" role="dialog" aria-modal="false" aria-labelledby="queenProfileTitle" aria-hidden="true" tabindex="-1" style="display:none">
+  <div class="ant-sheet-shell">
+    <div class="ant-sheet-header compact-profile-header">
+      <div class="ant-sheet-heading">
+        <span class="ant-sheet-kicker">QUEEN PROFILE</span>
+        <h2 id="queenProfileTitle">QUEEN</h2>
+      </div>
+      <div class="ant-sheet-header-actions">
+        <button id="btnVolverQ" class="ant-sheet-back" type="button" title="Back to active ants" aria-label="Back to active ants" style="display:none">◂ LIST</button>
+        <button id="btnCloseQueen" class="ant-sheet-close" type="button" aria-label="Close queen profile">×</button>
+      </div>
     </div>
-    <div style="padding:8px 10px;display:flex;flex-direction:column;gap:8px">
-      <div style="display:flex;gap:8px;align-items:flex-start">
-        <div style="width:88px;height:88px;min-width:88px;background:#000;border:2px solid #000;display:grid;place-items:center;position:relative;overflow:hidden;box-shadow:2px 2px 0 #000">
-          <canvas id="queenProfileCanvas" width="88" height="88" style="image-rendering:pixelated;width:88px;height:88px"></canvas>
-          <span id="queenProfileDot" style="position:absolute;top:3px;right:3px;width:10px;height:10px;background:#ffcc00;border:2px solid #000;box-shadow:1px 1px 0 #000"></span>
-          <span style="position:absolute;bottom:2px;left:2px;background:#b47aff;color:#fff;font-family:'Press Start 2P',monospace;font-size:9px;padding:1px 3px;line-height:1">♛ REINA</span>
+    <div class="compact-profile-body">
+      <div class="compact-profile-identity">
+        <div class="compact-portrait compact-queen-portrait">
+          <canvas id="queenProfileCanvas" width="72" height="72" aria-label="Voxel portrait of the queen"></canvas>
+          <span id="queenProfileDot" class="compact-portrait-accent" aria-hidden="true"></span>
         </div>
-        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
-          <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#8a7a5a;letter-spacing:0.4px">ID • EDAD • VIDA</div>
-          <div style="font-family:'Press Start 2P',monospace;font-size:12px;color:#fff;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:#000;padding:2px 4px;border:1px solid #1a1a1a" id="queenProfileId">sin colonia — elige un tamaño</div>
-          <div style="font-family:'VT323',monospace;font-size:17px;color:#c9b896;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="queenProfileRole">REINA • F0 • GEN-0</div>
-          <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#5a4a3a;margin-top:2px">ESTADO</div>
-          <div style="display:flex;gap:4px;align-items:center">
-            <div style="flex:1;height:8px;background:#1a1a1a;border:1px solid #000;position:relative;overflow:hidden"><div id="queenProgressBar" style="position:absolute;left:0;top:0;bottom:0;width:0%;background:#b47aff"></div></div>
-            <span style="font-family:'Press Start 2P',monospace;font-size:9px;color:#b47aff;white-space:nowrap" id="queenProgressLbl">0%</span>
-          </div>
-          <div style="font-family:'VT323',monospace;font-size:14px;color:#8a7a5a;line-height:1" id="queenStateLabel">GRÁVIDA</div>
+        <div class="compact-identity-copy">
+          <span class="compact-label">ROLE</span>
+          <strong id="queenProfileIdentity">QUEEN · FOUNDRESS</strong>
+          <span class="compact-label compact-condition-label">CONDITION</span>
+          <span id="queenProfileCondition" class="compact-condition">HEALTHY · CALM</span>
         </div>
       </div>
-      <div id="queenProfileMood" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px"></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:3px" id="queenProfileTabs">
-        <button class="pixel-btn small" data-qtab="rasgos" style="min-width:0;width:auto;background:var(--amber);color:#000;padding:5px 0;font-size:9px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">RASGOS</button>
-        <button class="pixel-btn small" data-qtab="estado" style="min-width:0;width:auto;background:#1a140f;color:#8a7a5a;padding:5px 0;font-size:9px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">ESTADO</button>
-        <button class="pixel-btn small" data-qtab="arbol" style="min-width:0;width:auto;background:#1a140f;color:#8a7a5a;padding:5px 0;font-size:9px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">ÁRBOL</button>
-        <button class="pixel-btn small" data-qtab="hist" style="min-width:0;width:auto;background:#1a140f;color:#8a7a5a;padding:5px 0;font-size:9px;min-height:22px;letter-spacing:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;text-align:center">HIST</button>
+      <div class="compact-now" aria-labelledby="queenNowLabel">
+        <span id="queenNowLabel" class="compact-label">NOW</span>
+        <strong id="queenProfileTask">Laying an egg</strong>
       </div>
-      <div id="queenTab_rasgos">
-        <div style="background:#000;border:2px solid #000;padding:6px">
-          <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#ff6b9d;letter-spacing:0.3px">👑 PERSONALIDAD 6 RASGOS</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:6px" id="queenProfilePersonalities"></div>
-          <div style="font-family:'VT323',monospace;font-size:14px;color:#8a7a5a;margin-top:6px;line-height:1">Fertilidad=huevos/día • Feromona=control • Maternal=cuidado</div>
-          <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#8a7a5a;margin-top:8px">RASGOS BASE (genoma)</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:4px" id="queenProfileTraits"></div>
-        </div>
+      <div class="compact-egg" aria-label="Next egg progress">
+        <div class="compact-egg-copy"><span>NEXT EGG</span><strong id="queenProgressLbl">0%</strong></div>
+        <div class="compact-progress" aria-hidden="true"><span id="queenProgressBar"></span></div>
       </div>
-      <div id="queenTab_estado" style="display:none">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
-          <div style="background:#000;border:2px solid #000;padding:6px;text-align:center">
-            <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#8a7a5a">NIVEL</div>
-            <div style="font-family:'Press Start 2P',monospace;font-size:17px;color:#ffcc00;line-height:1;margin-top:2px" id="queenGrowthLvl">0</div>
-            <div style="font-family:'VT323',monospace;font-size:14px;color:#8a7a5a;line-height:1" id="queenGrowthSize">48 px</div>
-          </div>
-          <div style="background:#000;border:2px solid #000;padding:6px;text-align:center">
-            <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#8a7a5a">VIDA</div>
-            <div style="font-family:'Press Start 2P',monospace;font-size:17px;color:#2de67a;line-height:1;margin-top:2px" id="queenGrowthProg">0% vida</div>
-            <div style="font-family:'VT323',monospace;font-size:14px;color:#8a7a5a;line-height:1" id="queenHealthVal">100%</div>
-          </div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">
-          <div style="background:#000;border:2px solid #000;padding:6px;text-align:center">
-            <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#8a7a5a">🥚 HUEVOS TOTAL</div>
-            <div style="font-family:'VT323',monospace;font-size:20px;color:#ffcc00" id="queenEggsLaid">0</div>
-          </div>
-          <div style="background:#000;border:2px solid #000;padding:6px;text-align:center">
-            <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#8a7a5a">🐣 CRÍAS / COLONIA</div>
-            <div style="font-family:'VT323',monospace;font-size:16px;color:#b47aff" id="queenBroodCount">0</div>
-            <div style="font-family:'VT323',monospace;font-size:14px;color:#00e5ff" id="queenFollowers">0 obreras</div>
-          </div>
-        </div>
-        <div style="margin-top:6px;background:#000;border:2px solid #000;padding:6px">
-          <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#8a7a5a">GENOMA</div>
-          <div style="font-family:'VT323',monospace;font-size:16px;color:#c9b896" id="queenGenomeId">GEN-0 • — • 8 nodos</div>
-          <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#5a5a5a;word-break:break-all" id="queenDnaStr">0000</div>
-        </div>
-      </div>
-      <div id="queenTab_arbol" style="display:none">
-        <div style="background:#000;border:2px solid #000;padding:6px">
-          <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#b47aff">🌳 LINAJE REAL</div>
-          <div style="font-family:'VT323',monospace;font-size:16px;color:#c9b896;margin-top:4px;line-height:1.25;max-height:none;overflow:visible" id="queenProfileTree">—</div>
-        </div>
-      </div>
-      <div id="queenTab_hist" style="display:none">
-        <div style="background:#0a0a1a;border:2px solid #1a1a3a;padding:6px">
-          <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#00e5ff">📜 HISTORIAL — 6 últimos</div>
-          <div style="font-family:'VT323',monospace;font-size:16px;color:#8a7a5a;margin-top:4px;line-height:1.25;max-height:none;overflow:visible" id="queenProfileHistory"></div>
-        </div>
-      </div>
-      <div style="display:flex;gap:6px;margin-top:2px">
-        <button id="btnFollowQueen" class="pixel-btn small" style="flex:1;padding:6px 4px;font-size:10px">👁 SEGUIR</button>
-        <button id="btnFeedQueen" class="pixel-btn small" style="flex:1;background:#2de67a;color:#000;padding:6px 4px;font-size:10px">🍽 FEED (2)</button>
-        <button id="btnMoveQueen" class="pixel-btn small" style="flex:1;background:#b47aff;color:#fff;padding:6px 4px;font-size:10px">🚚 MIGRAR</button>
+      <div id="queenProfileAlert" class="compact-alert" role="status" hidden></div>
+      <p id="queenFeedHint" class="compact-action-note compact-feed-note">Costs 2 food · advances health and egg progress by 18%.</p>
+      <div class="compact-profile-actions queen-profile-actions">
+        <button id="btnFollowQueen" class="pixel-btn small compact-primary" type="button">FIND ON MAP</button>
+        <button id="btnFeedQueen" class="pixel-btn small compact-feed" type="button">FEED · 2 FOOD</button>
+        <button id="btnMoveQueen" class="pixel-btn small compact-move" type="button" hidden>RELOCATE</button>
       </div>
     </div>
   </div>
-</div>
+</section>
 
 <!-- CONTROLES ESQUINA FIJA - siempre visibles, zoom no los afecta -->
 <!-- CALENDARIO PERMANENTE — fijo arriba-derecha, medio reloj Stardew adaptado colmena -->
@@ -985,19 +894,19 @@
   <!-- Motor del juego — núcleo profesional modular -->
   
 
-<script src="core/bandas.js?v=20261020m"></script>
-<script src="core/mundo.js?v=20261020m"></script>
-<script src="core/tesoros.js?v=20261020m"></script>
-<script src="core/economia.js?v=20261020m"></script>
-<script src="core/proyectos.js?v=20261020m"></script>
-<script src="core/agua.js?v=20261020m"></script>
-<script src="core/offline.js?v=20261020m"></script>
-<script src="core/lineage.js?v=20261020m"></script>
-<script src="assets/textures/colony-atlas.manifest.js?v=20261020m"></script>
-<script src="js/texture-pack.js?v=20261020m"></script>
-<script src="js/i18n-en.js?v=20261020m"></script>
-<script src="js/app.js?v=20261020m"></script>
-<script src="js/splash-topo.js?v=20261020m"></script>
+<script src="core/bandas.js?v=20261021n"></script>
+<script src="core/mundo.js?v=20261021n"></script>
+<script src="core/tesoros.js?v=20261021n"></script>
+<script src="core/economia.js?v=20261021n"></script>
+<script src="core/proyectos.js?v=20261021n"></script>
+<script src="core/agua.js?v=20261021n"></script>
+<script src="core/offline.js?v=20261021n"></script>
+<script src="core/lineage.js?v=20261021n"></script>
+<script src="assets/textures/colony-atlas.manifest.js?v=20261021n"></script>
+<script src="js/texture-pack.js?v=20261021n"></script>
+<script src="js/i18n-en.js?v=20261021n"></script>
+<script src="js/app.js?v=20261021n"></script>
+<script src="js/splash-topo.js?v=20261021n"></script>
 <script>
 // Vigia del arranque: si js/app.js no termino de cargar, decirlo en pantalla en vez de dejar
 // botones sordos. Es lo unico que vive en el HTML; el juego entero esta en js/app.js.
