@@ -49,10 +49,12 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ok   ' + m); } else { fai
   await sleep(400);
   await page.click('#createSizeScreen [data-size="small"]');
   await sleep(400);
-  await page.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (!h) return; const b = [...h.querySelectorAll('button')].find(x => /^(SÍ|YES)$/i.test(x.textContent.trim())); if (b) b.click(); });
+  await page.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (!h) return; const b = [...h.querySelectorAll('button')].find(x => /^(SÍ|YES|CREATE WORLD|ARCHIVE & CREATE)$/i.test(x.textContent.trim())); if (b) b.click(); });
   try { await page.waitForFunction('window.COLS===48 && window.ROWS===28', { timeout: 40000 }); } catch (e) { console.log('  (no confirmo el mundo)'); }
   await page.evaluate(() => { const b = document.getElementById('btnOnboardingStart'); if (b) b.click(); });
-  await page.evaluate(() => { try { setGameSpeed(64); } catch (e) { window.gameSpeed = 64; } });
+  // Harness-only acceleration: public setGameSpeed() correctly caps at x4. Assigning the internal
+  // simulation rate keeps this long-life browser test fast without exposing another player control.
+  await page.evaluate(() => { gameSpeed=64;turbo=true; });
   console.log(`mundo pequeno 48x28 creado en Chrome · esperando ${DIAS} dias a x64`);
 
   const foto = () => page.evaluate(() => JSON.stringify((() => {

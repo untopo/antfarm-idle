@@ -32,7 +32,7 @@
       problem:'Loose ceilings can refill a worked tunnel.',
       effect:'The 5 × 3 cell zone around the chosen anchor cannot cave in.',
       details:'A physical brace frame prevents collapse code from refilling those 15 local cells; it does not protect the rest of the nest.',
-      siteHint:'Choose one open, explored, connected and dry underground cell at the centre of the area to protect.',
+      siteHint:'Choose one open, explored, connected and dry underground cell at the center of the area to protect.',
       tradeoff:'Protection is local; distant passages stay exposed.'
     }),
     fungus_bed:Object.freeze({

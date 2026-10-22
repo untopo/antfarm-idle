@@ -1,10 +1,12 @@
 # ANT FARM
 
-Una hormiguera que se cava sola. Eres el topo que la cuida: eliges de qué tamaño es la tierra,
+Una hormiguera que se cava sola. Eres el topo que la cuida: eliges el tamaño y, si quieres, un nombre corto,
 confirmas, y entonces —y no antes— empieza a existir el mundo: la reina, las obreras, la miel,
 la lluvia que cae con su peso y la tierra que las hormigas sacan y amontonan a la boca del túnel.
 
 **Jugarla en el navegador:** <https://untopo.github.io/antfarm-idle/>
+
+La interfaz pública ofrece ×1, ×2 y ×4. `?debug=1` reserva ×8, ×16 y `+1 DAY` para pruebas.
 
 No instala nada, no pide cuenta. Si el enlace de arriba todavía no responde, es que Pages no está
 publicado aún; se construye solo con cada `push` a `master` (mira *Actions → publicar-demo*).
@@ -35,7 +37,7 @@ conectado, que los oficios emerjan de experiencia/edad/rasgos/necesidad, que nin
 materiales sin aprobación, que las herramientas antiguas migren a adaptaciones corporales y que la cadena de
 mandíbulas I–IV cobre exactamente cada escalón sin saltos, que el guardado sobreviva a recargar la página, que
 SMALL/MEDIUM/BIG lleven hormigas físicas hasta su Underworld y WORLD CORE
-sin losas ni tecnología imposible, y que el botón «+1 DÍA» simule el día entero y cave bloques. Necesita `npm install` (Puppeteer) y Chrome:
+sin losas ni tecnología imposible, y que el botón de prueba `+1 DAY` de `?debug=1` simule el día entero y cave bloques. Necesita `npm install` (Puppeteer) y Chrome:
 `bash scripts/setup-sandbox.sh` reinstala lo que falte y **no deja** correr la suite si el navegador
 no arranca — una comprobación que se salta en silencio no es una comprobación.
 
@@ -54,8 +56,8 @@ incidentes con sus números medidos y qué quedó pendiente. Las notas siguen en
 
 ## Cosas que este proyecto no hace
 
-No pide cuenta, no guarda datos fuera de tu navegador (el registro vive en `localStorage`), no tiene
-analítica, y no te enseña nada que no puedas ver: si quieres saber por qué una hormiga hizo lo que
+No pide cuenta, no guarda datos fuera de tu navegador (el registro vive en `localStorage`) y no tiene
+analítica. Un iframe y la URL directa pueden recibir almacenes locales separados, por lo que SETTINGS permite exportar backups portátiles. Tampoco te enseña nada que no puedas ver: si quieres saber por qué una hormiga hizo lo que
 hizo, la consola del navegador lo cuenta.
 
 *Arte y texto originales del proyecto. Las texturas están en `ant-farm-rpg/assets/`; las que ya no

@@ -7,12 +7,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ANT FARM</title>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache">
-<link rel="stylesheet" href="css/style.css?v=20261021o">
-<link rel="stylesheet" href="css/startup.css?v=20261021o">
+<link rel="stylesheet" href="css/style.css?v=20261022p">
+<link rel="stylesheet" href="css/startup.css?v=20261022p">
 
 <style id="topoHideUntilStart">
   #appRoot{display:none !important}
   #velAntBar, #calendarWidget{visibility:hidden !important; pointer-events:none !important}
+  [data-debug-only][hidden]{display:none !important}
   @media (max-width: 700px){ #velMatChips{display:none !important} }
   body.game-started #appRoot{display:flex !important}
   body.game-started #velAntBar, body.game-started #calendarWidget{visibility:visible !important; pointer-events:auto !important}
@@ -34,7 +35,7 @@
   <canvas id="mainMenuCanvas" aria-hidden="true"></canvas>
   <h1 class="topo-sr-only">ANT FARM</h1>
   <nav id="mainMenuOptions" class="topo-main-options" aria-label="Main menu">
-    <button type="button" class="topo-menu-option" id="btnMainContinue" hidden>
+    <button type="button" class="topo-menu-option" id="btnMainContinue" data-no-translate hidden>
       <span class="topo-menu-ant" aria-hidden="true"></span><span class="topo-menu-label">CONTINUE</span><span id="mainContinueMeta" class="topo-sr-only"></span>
     </button>
     <button type="button" class="topo-menu-option" id="btnMainCreate">
@@ -150,10 +151,15 @@
           <div><strong>FULLSCREEN</strong><small>Use the entire display when the browser allows it.</small></div>
           <button type="button" class="topo-action-button" id="btnFullscreen">ENTER FULLSCREEN</button>
         </div>
+        <div class="topo-setting-row">
+          <div><strong>FIRST STEPS</strong><small>Review honey, trail and digging controls at any time.</small></div>
+          <button type="button" class="topo-action-button" id="btnSettingsFirstSteps">REPLAY FIRST STEPS</button>
+        </div>
       </section>
 
       <section class="topo-settings-section" aria-labelledby="settingsDataTitle">
         <div class="topo-section-heading"><span class="topo-section-rune" aria-hidden="true">▤</span><div><h3 id="settingsDataTitle">FARMS & DATA</h3><p>Portable backups and deliberate deletion.</p></div></div>
+        <div class="topo-storage-notice" role="note"><strong>LOCAL SAVE</strong><span>Farm data stays in this browser. An embedded iframe and the direct game URL may use separate storage. Export a backup before switching, clearing site data or testing elsewhere.</span></div>
         <div id="settingsFarms" class="topo-settings-farms" aria-live="polite"></div>
         <div class="topo-data-actions">
           <button type="button" class="topo-action-button" id="btnExportSave">EXPORT BACKUP</button>
@@ -187,8 +193,10 @@
         <div><span>ENGINE</span><b>HTML5 Canvas · JavaScript · CSS</b></div>
         <div><span>TYPE</span><b>Press Start 2P · VT323</b></div>
       </div>
-      <p class="topo-credit-thanks">Thank you for looking after the colony. Every tunnel remembers.</p>
-      <div class="topo-build-stamp">ANT FARM · BUILD 20261021N</div>
+      <p class="topo-credit-disclosure"><strong>AI ASSISTANCE</strong> Coding, testing and review used AI assistance under the creative direction and final approval of Topo Studios.</p>
+      <div class="topo-credit-links"><a href="https://github.com/untopo/antfarm-idle" target="_blank" rel="noopener noreferrer">SOURCE REPOSITORY</a><a href="https://github.com/untopo/antfarm-idle/issues" target="_blank" rel="noopener noreferrer">REPORT A BUG · FEEDBACK</a></div>
+      <p class="topo-credit-thanks">Thank you for looking after the colony. Every tunnel remembers.<br><small>© 2026 Topo Studios. All rights reserved.</small></p>
+      <div class="topo-build-stamp">ANT FARM · BUILD 20261022P</div>
     </div>
     <footer class="topo-panel-footer"><button type="button" id="btnCreditsReplay" class="topo-footer-button">REPLAY INTRO</button><span>MADE BELOW THE SURFACE</span></footer>
   </div>
@@ -197,7 +205,7 @@
 <section id="onboardingModal" class="topo-subscreen" role="dialog" aria-modal="true" aria-labelledby="onboardingTitle" aria-hidden="true">
   <div class="topo-panel topo-panel-onboarding" style="--topo-panel-width:720px">
     <header class="topo-panel-header">
-      <div><span class="topo-panel-kicker">DAY 0</span><h2 id="onboardingTitle">YOUR FARM IS READY</h2><p>Four clear actions are enough to begin.</p></div>
+      <div><span class="topo-panel-kicker" id="onboardingWorldName" data-no-translate>DAY 0 · NEW BURROW</span><h2 id="onboardingTitle">YOUR FARM IS READY</h2><p>Four clear actions are enough to begin.</p></div>
       <span class="topo-ready-light">WORLD ALIVE</span>
     </header>
     <div class="topo-panel-body topo-first-steps">
@@ -206,7 +214,7 @@
       <article><span class="topo-step-number">03</span><div class="topo-step-icon topo-phero-icon" aria-hidden="true"></div><div><strong>FOLLOW TRAIL · DRAG</strong><p>Arm <b>TRAIL</b>, drag from the ants toward a destination, then release. It guides; it never drops food.</p></div></article>
       <article><span class="topo-step-number">04</span><div class="topo-step-icon topo-dig-icon" aria-hidden="true"></div><div><strong>DIG</strong><p>Hold <b>SHIFT</b> and click a known underground frontier to order a tunnel.</p></div></article>
     </div>
-    <footer class="topo-panel-footer topo-onboarding-footer"><span>THE COLONY SAVES ITSELF</span><button type="button" id="btnOnboardingStart" class="topo-enter-farm">ENTER THE FARM</button></footer>
+    <footer class="topo-panel-footer topo-onboarding-footer"><span id="onboardingFooterNote">THE COLONY SAVES ITSELF</span><button type="button" id="btnOnboardingStart" class="topo-enter-farm">ENTER THE FARM</button></footer>
   </div>
 </section>
 
@@ -217,7 +225,7 @@
       <span class="topo-generation-pulse" aria-hidden="true"></span>
     </header>
     <div class="topo-panel-body topo-generation-body">
-      <div class="topo-generation-meta"><span id="genSizeLabel">MEDIUM 64×36</span><span id="genSeedLabel">SEED —</span></div>
+      <div class="topo-generation-meta"><span id="genSizeLabel" data-no-translate>MEDIUM 64×36</span><span id="genSeedLabel">SEED —</span></div>
       <div class="topo-generation-window" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
       <div class="topo-progress-track"><div id="genBar"></div><div id="genBarText">0%</div></div>
       <div id="genStatus" class="topo-generation-status">Carving terrain...</div>
@@ -243,7 +251,7 @@
         <div class="h-stat">FIT <b id="hFit">0.00</b></div>
         <div class="h-stat live">IQ <b id="hIQ">100</b></div>
         <div class="h-stat iq">♛ <b id="hQueen">GRÁVIDA</b></div>
-        <button class="pixel-btn small" id="btnAnthro" style="background:#b47aff;color:#fff;padding:6px 8px;font-size:7px" title="Cambiar a antropomorfo">👤 ANTHRO</button>
+        <button class="pixel-btn small" id="btnAnthro" style="background:#b47aff;color:#fff;padding:6px 8px;font-size:7px" title="Switch anthropomorphic style">👤 ANTHRO</button>
       </div>
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -256,8 +264,8 @@
         <button class="pixel-btn small" id="btnSpeed1" style="background:var(--amber);color:#000;min-width:36px">x1</button>
         <button class="pixel-btn small" id="btnSpeed2" style="background:#2a2012;color:#fff8dc;min-width:36px">x2</button>
         <button class="pixel-btn small" id="btnSpeed4" style="background:#2a2012;color:#fff8dc;min-width:36px">x4</button>
-        <button class="pixel-btn small" id="btnSpeed8" style="background:#2a2012;color:#fff8dc;min-width:36px">x8</button>
-        <button class="pixel-btn small" id="btnSpeed16" style="background:#2a2012;color:#fff8dc;min-width:36px">x16</button>
+        <button class="pixel-btn small" id="btnSpeed8" data-debug-only hidden style="background:#2a2012;color:#fff8dc;min-width:36px">x8</button>
+        <button class="pixel-btn small" id="btnSpeed16" data-debug-only hidden style="background:#2a2012;color:#fff8dc;min-width:36px">x16</button>
 
 
 
@@ -297,8 +305,8 @@
             <button class="zoom-btn" id="btnSpeed1b" style="width:40px;height:30px;font-size:10px;background:var(--amber);color:#000">x1</button>
             <button class="zoom-btn" id="btnSpeed2b" style="width:40px;height:30px;font-size:10px;background:#000;color:#fff8dc">x2</button>
             <button class="zoom-btn" id="btnSpeed4b" style="width:40px;height:30px;font-size:10px;background:#000;color:#fff8dc">x4</button>
-            <button class="zoom-btn" id="btnSpeed8b" style="width:40px;height:30px;font-size:10px;background:#000;color:#fff8dc">x8</button>
-            <button class="zoom-btn" id="btnSpeed16b" style="width:44px;height:30px;font-size:10px;background:#000;color:#fff8dc">x16</button>
+            <button class="zoom-btn" id="btnSpeed8b" data-debug-only hidden style="width:40px;height:30px;font-size:10px;background:#000;color:#fff8dc">x8</button>
+            <button class="zoom-btn" id="btnSpeed16b" data-debug-only hidden style="width:44px;height:30px;font-size:10px;background:#000;color:#fff8dc">x16</button>
 
 
 
@@ -315,7 +323,7 @@
       <div class="canvas-wrap" id="canvasWrap">
         <canvas id="farmCanvas" width="960" height="576" tabindex="0" aria-label="Ant farm world map. Arrow keys pan; use the visible map tools for honey and trails."></canvas>
         <div class="notify-stack" id="notifyStack"></div>
-        <div class="frame-label"><span>🔬 VIDRIO v4 REAL</span><span style="opacity:0.35">|</span><span id="frameInfo">PIXEL REAL · CAVADO ANIMADO</span><span style="opacity:0.35">|</span><span style="font-size:7px">DRAG / WHEEL TO PAN · −/+ ZOOM · DOUBLE-CLICK CENTRES</span></div>
+        <div class="frame-label"><span>🔬 VIDRIO v4 REAL</span><span style="opacity:0.35">|</span><span id="frameInfo">PIXEL REAL · CAVADO ANIMADO</span><span style="opacity:0.35">|</span><span style="font-size:7px">DRAG / WHEEL TO PAN · −/+ ZOOM · DOUBLE-CLICK CENTERS</span></div>
 
         
         <div class="depth-ruler" id="depthRuler" role="scrollbar" tabindex="0" aria-label="Depth navigator" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="30" aria-valuenow="0" aria-valuetext="Surface" title="Depth — click, drag or use the arrow keys">
@@ -334,7 +342,7 @@
       </div>
         <div class="narration" id="narration">
           <div class="ico">💬</div>
-          <div class="txt" id="narrationTxt"><b>Colonia despierta.</b> <small>Todo es pixel gordo y legible. Mira las burbujas sobre cada hormiga.</small></div>
+          <div class="txt" id="narrationTxt"><b>The colony awakens.</b> <small>Chunky, readable pixels show every ant at work.</small></div>
         </div>
       </div>
     </div>
@@ -371,7 +379,7 @@
         </div>
         <div class="ai-section">
           <div class="ai-head"><span>♛ REINA + CRÍA</span><span id="queenStatus">GRÁVIDA</span></div>
-          <div class="queen-box" id="queenBox" style="cursor:pointer" title="Click para ficha única de la reina">
+          <div class="queen-box" id="queenBox" style="cursor:pointer" title="Open the queen’s profile">
             <div class="queen-avatar">♛</div>
             <div style="flex:1">
               <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--purple)">ADA REINA</div>
@@ -401,7 +409,7 @@
             </div>
           </div>
           <div style="margin-top:8px;background:#000;border:2px solid #000;padding:8px">
-            <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#8a7a5a;margin-bottom:6px">ÁNIMO COLECTIVO</div>
+            <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#8a7a5a;margin-bottom:6px">COLLECTIVE MOOD</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-family:'VT323',monospace;font-size:13px" id="moodBars"></div>
           </div>
           <div style="margin-top:8px;display:flex;gap:6px">
@@ -465,7 +473,7 @@
             <div id="ecoRelics" style="margin-top:6px;max-height:86px;overflow-y:auto;font-family:'VT323',monospace;font-size:12px;color:#c9b896"><span style="color:#5a4a6a">nada asombroso todavía</span></div>
             <div id="ecoUmbral" style="margin-top:6px;background:#0a0a12;border:2px solid #000;padding:4px 6px;font-family:'VT323',monospace;font-size:12px;color:#c9b896">la losa del fondo aguanta</div>
           </div>
-          <div style="margin-top:8px;background:#0f1f0a;border:2px solid #1a3a1a;padding:6px;font-family:'VT323',monospace;font-size:12px;color:#2de67a" id="ecoLog">La pradera respira. El pasto crece poco a poco.</div>
+          <div style="margin-top:8px;background:#0f1f0a;border:2px solid #1a3a1a;padding:6px;font-family:'VT323',monospace;font-size:12px;color:#2de67a" id="ecoLog">The meadow breathes. Grass grows little by little.</div>
         </div>
       </div>
 
@@ -491,7 +499,7 @@
             <div class="trait"><div class="trait-top"><b style="color:var(--cyan)">EXPLORA</b><span id="tExp">0</span></div><div class="trait-bar"><div id="bExp" style="background:var(--cyan);height:100%;width:0%"></div></div><small>Ve lejos</small></div>
             <div class="trait"><div class="trait-top"><b style="color:var(--red)">CAVA</b><span id="tCav">0</span></div><div class="trait-bar"><div id="bCav" style="background:var(--red);height:100%;width:0%"></div></div><small>Construye</small></div>
             <div class="trait"><div class="trait-top"><b style="color:var(--green)">RECOLECTA</b><span id="tRec">0</span></div><div class="trait-bar"><div id="bRec" style="background:var(--green);height:100%;width:0%"></div></div><small>Precisa</small></div>
-            <div class="trait"><div class="trait-top"><b style="color:var(--purple)">CUIDA</b><span id="tCui">0</span></div><div class="trait-bar"><div id="bCui" style="background:var(--purple);height:100%;width:0%"></div></div><small>Cría</small></div>
+            <div class="trait"><div class="trait-top"><b style="color:var(--purple)">NURTURES</b><span id="tCui">0</span></div><div class="trait-bar"><div id="bCui" style="background:var(--purple);height:100%;width:0%"></div></div><small>Brood care</small></div>
             <div class="trait" style="grid-column:span 2"><div class="trait-top"><b style="color:var(--cyan)">⬡ COMUNICA</b><span id="tCom">0</span></div><div class="trait-bar"><div id="bCom" style="background:var(--cyan);height:100%;width:0%"></div></div><small>Pinta tinta — más alto = más charla</small></div>
           </div>
         </div>
@@ -746,12 +754,12 @@
     <!-- VEL + botones -->
     <div style="position:relative;flex:1;display:flex;align-items:center;gap:3px;padding:3px 6px 3px 7px;z-index:1">
       <span style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00;letter-spacing:0.4px;margin-right:2px;text-shadow:1px 1px 0 #000, 0 0 4px rgba(255,204,0,0.6);line-height:1">VEL</span>
-      <button class="pixel-btn small" id="btnVelPause" title="Pausa (Espacio)" style="min-width:38px;width:38px;height:38px;padding:0;background:#1a0f00;border:2px solid #000;color:#6a5a3a;font-size:14px;display:grid;place-items:center;box-shadow:1px 1px 0 #000">⏸</button>
-      <button class="pixel-btn small" id="btnVel1" title="x1 (tecla 1)" style="min-width:40px;width:40px;height:38px;padding:0;background:#ffcc00;border:2px solid #000;color:#000;font-family:'Press Start 2P';font-size:12px;display:grid;place-items:center;box-shadow:1px 1px 0 #000;text-shadow:none">x1</button>
+      <button class="pixel-btn small" id="btnVelPause" title="Pause (Space)" style="min-width:38px;width:38px;height:38px;padding:0;background:#1a0f00;border:2px solid #000;color:#6a5a3a;font-size:14px;display:grid;place-items:center;box-shadow:1px 1px 0 #000">⏸</button>
+      <button class="pixel-btn small" id="btnVel1" title="x1 (key 1)" style="min-width:40px;width:40px;height:38px;padding:0;background:#ffcc00;border:2px solid #000;color:#000;font-family:'Press Start 2P';font-size:12px;display:grid;place-items:center;box-shadow:1px 1px 0 #000;text-shadow:none">x1</button>
       <button class="pixel-btn small" id="btnVel2" title="x2" style="min-width:40px;width:40px;height:38px;padding:0;background:#3e2a14;border:2px solid #000;color:#fff8dc;font-family:'Press Start 2P';font-size:10px;display:grid;place-items:center;box-shadow:1px 1px 0 #000">x2</button>
       <button class="pixel-btn small" id="btnVel4" title="x4" style="min-width:40px;width:40px;height:38px;padding:0;background:#3e2a14;border:2px solid #000;color:#fff8dc;font-family:'Press Start 2P';font-size:10px;display:grid;place-items:center;box-shadow:1px 1px 0 #000">x4</button>
-      <button class="pixel-btn small" id="btnVel8" title="x8" style="min-width:40px;width:40px;height:38px;padding:0;background:#3e2a14;border:2px solid #000;color:#fff8dc;font-family:'Press Start 2P';font-size:10px;display:grid;place-items:center;box-shadow:1px 1px 0 #000">x8</button>
-      <button class="pixel-btn small" id="btnVel16" title="x16" style="min-width:42px;width:42px;height:38px;padding:0;background:#3e2a14;border:2px solid #000;color:#fff8dc;font-family:'Press Start 2P';font-size:10px;display:grid;place-items:center;box-shadow:1px 1px 0 #000">x16</button>
+      <button class="pixel-btn small" id="btnVel8" data-debug-only hidden title="x8" style="min-width:40px;width:40px;height:38px;padding:0;background:#3e2a14;border:2px solid #000;color:#fff8dc;font-family:'Press Start 2P';font-size:10px;display:grid;place-items:center;box-shadow:1px 1px 0 #000">x8</button>
+      <button class="pixel-btn small" id="btnVel16" data-debug-only hidden title="x16" style="min-width:42px;width:42px;height:38px;padding:0;background:#3e2a14;border:2px solid #000;color:#fff8dc;font-family:'Press Start 2P';font-size:10px;display:grid;place-items:center;box-shadow:1px 1px 0 #000">x16</button>
     </div>
     <div style="position:relative;width:3px;background:#000;flex-shrink:0;z-index:1;margin:3px 0;box-shadow:inset 1px 0 0 rgba(255,255,255,0.08)"></div>
     <!-- MAP TOOLS — explicit, mutually exclusive and always visible -->
@@ -761,7 +769,7 @@
     </div>
     <div style="position:relative;width:3px;background:#000;flex-shrink:0;z-index:1;margin:3px 0;box-shadow:inset 1px 0 0 rgba(255,255,255,0.08)"></div>
     <!-- OBRERAS -->
-    <button id="btnRoster" title="Ver la lista de todas las hormigas activas (tecla L)" aria-label="Lista de hormigas activas" style="position:relative;width:104px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:2px 4px;flex-shrink:0;z-index:1;background:transparent;border:none;color:inherit;font:inherit;cursor:pointer">
+    <button id="btnRoster" title="View every active worker (L)" aria-label="Active worker list" style="position:relative;width:104px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:2px 4px;flex-shrink:0;z-index:1;background:transparent;border:none;color:inherit;font:inherit;cursor:pointer">
 
       <div style="display:flex;align-items:center;gap:5px">
         <span style="width:22px;height:16px;display:inline-flex;align-items:center;justify-content:center;font-size:22px;line-height:1;filter:drop-shadow(1px 1px 0 #000) drop-shadow(0 0 2px rgba(255,255,255,0.5))">🐜</span>
@@ -783,7 +791,7 @@
         <span style="white-space:nowrap">🌿<b id="velMatFiber" style="color:#2de67a">0</b> 🪨<b id="velMatStone" style="color:#c9c9c9">0</b> 🧱<b id="velMatClay" style="color:#e08a5a">0</b></span>
         <span style="white-space:nowrap">🪵<b id="velMatWood" style="color:#c9a06a">0</b> ⌛<b id="velMatSand" style="color:#e8cf8a">0</b> 🏠<b id="velMatRooms" style="color:#c9b896">0</b></span>
       </div>
-      <button class="pixel-btn small" id="btnInventory" title="Inventario del nido — lo que hay dentro y las materias primas" aria-label="Inventario" style="min-width:38px;width:38px;height:38px;padding:0;background:#2a0f00;border:2px solid #000;color:#ffcc00;font-size:17px;display:grid;place-items:center;box-shadow:1px 1px 0 #000;line-height:1">☰</button>
+      <button class="pixel-btn small" id="btnInventory" title="Nest inventory — stored food, raw materials and projects" aria-label="Nest inventory" style="min-width:38px;width:38px;height:38px;padding:0;background:#2a0f00;border:2px solid #000;color:#ffcc00;font-size:17px;display:grid;place-items:center;box-shadow:1px 1px 0 #000;line-height:1">☰</button>
     </div>
   </div>
 
@@ -799,7 +807,7 @@
     <button id="btnCancelProjectPlacement" class="project-placement-cancel" type="button" aria-label="Cancel project placement">CANCEL <kbd>ESC</kbd></button>
   </section>
 
-  <div id="calendarWidget" style="box-sizing:border-box" title="Click abre calendario — 12 días por estación">
+  <div id="calendarWidget" style="box-sizing:border-box" title="Open calendar — 12 days per season">
   <div class="rc-hud">
     <div class="rc-card" id="rcCard">
       <div class="rc-bgs" id="rcBgs"></div>
@@ -840,22 +848,22 @@
     <span class="rc-mini-day" id="rcMiniDay">1</span>
     <div class="rc-mini-bar"><div class="rc-mini-bar-fill" id="rcMiniBar"></div></div>
   </div>
-  <button id="calCollapseBtn" title="Minimizar / Expandir">—</button>
+  <button id="calCollapseBtn" title="Minimize / Expand">—</button>
     <div id="calAntRow" style="height:28px;min-height:28px;background:#3e2a14;border-top:3px solid #000;display:flex;align-items:center;justify-content:center;gap:5px;padding:0 6px;box-sizing:border-box;image-rendering:pixelated">
       <button class="pixel-btn" id="btnLineage" type="button" title="Open Nuptial Flight and permanent upgrades" aria-label="Open Nuptial Flight and permanent upgrades" aria-expanded="false" style="flex:1 1 auto;height:22px;min-width:0;padding:0 6px;font-family:'Press Start 2P';font-size:6px;line-height:1;display:flex;align-items:center;justify-content:center;gap:4px;background:#2a160d;border:2px solid #000;color:#ffc64a;box-shadow:1px 1px 0 #000;white-space:nowrap"><span aria-hidden="true">◆</span><b id="lineageAmberHud">0.00</b><span>AMBER</span></button>
-      <button class="pixel-btn" id="btnDay1" title="Simulate one full day with the real loop" style="flex:0 0 auto;height:22px;padding:0 7px;font-family:'Press Start 2P';font-size:8px;line-height:1;display:grid;place-items:center;background:#3e2a14;border:2px solid #000;color:#fff8dc;box-shadow:1px 1px 0 #000">&#9197; +1 DAY</button>
+      <button class="pixel-btn" id="btnDay1" data-debug-only hidden title="Simulate one full day with the real loop" style="flex:0 0 auto;height:22px;padding:0 7px;font-family:'Press Start 2P';font-size:8px;line-height:1;display:grid;place-items:center;background:#3e2a14;border:2px solid #000;color:#fff8dc;box-shadow:1px 1px 0 #000">&#9197; +1 DAY</button>
     </div>
 </div>
 
 <!-- HISTORIA IMPORTANTE -->
-<div id="historyFab" title="Historia importante (inventos, religión, crímenes)">📜</div>
+<div id="historyFab" title="Important history (inventions, religion, crimes)">📜</div>
 <div id="historyDrawer">
   <div class="hd-head"><span style="font-family:'Press Start 2P';font-size:8px;color:#ffcc00">📜 HISTORIA IMPORTANTE</span><span style="display:flex;gap:4px;align-items:center"><select id="historyFilter" style="background:#000;color:#fff;border:2px solid #000;font-family:VT323;font-size:12px"><option value="all">TODO</option><option value="canon">★ CANON</option><option value="invention">INVENTO</option><option value="crime">CRIMEN</option><option value="evo">EVO</option></select><button onclick="toggleHistory(false)" style="background:#ff3b30;color:#fff;border:2px solid #000;padding:4px 8px;font-family:'Press Start 2P';font-size:7px">✕</button></span></div>
   <div style="background:#000;padding:6px 8px;display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #1a1a1a"><span style="font-family:VT323;font-size:12px;color:#8a7a5a" id="historyCount">0 eventos</span><button onclick="importantHistory=[];renderHistoryDrawer()" style="background:#1a140f;color:#8a7a5a;border:2px solid #000;padding:2px 6px;font-family:VT323;font-size:11px">LIMPIAR</button></div>
   <div class="hd-body" id="historyBody"></div>
 </div>
-<button id="hudToggle" style="display:none" title="Plegar a la izquierda (mini) / Expandir">←</button>
-<button id="narrationToggle" title="Ocultar/mostrar barra inferior">—</button>
+<button id="hudToggle" style="display:none" title="Collapse left (mini) / Expand">←</button>
+<button id="narrationToggle" title="Hide/show bottom bar">—</button>
 <!-- CALENDARIO GRANDE — 12 días por estación, 6 días por semana, único colmena -->
   <div id="calendarModal">
     <div class="cal-modal-box">
@@ -867,10 +875,10 @@
         </div>
       </div>
       <div class="cal-season-tabs" id="calSeasonTabs">
-        <div class="cal-tab s-prima active" data-s="0">🌱 BROTE<br><small style="font-size:6px">1-12</small></div>
-        <div class="cal-tab s-vera" data-s="1">☀️ SOL<br><small style="font-size:6px">13-24</small></div>
-        <div class="cal-tab s-oto" data-s="2">🍂 COSECHA<br><small style="font-size:6px">25-36</small></div>
-        <div class="cal-tab s-inv" data-s="3">❄️ ESCARCHA<br><small style="font-size:6px">37-48</small></div>
+        <div class="cal-tab s-spring active" data-s="0">🌱 BROTE<br><small style="font-size:6px">1-12</small></div>
+        <div class="cal-tab s-summer" data-s="1">☀️ SOL<br><small style="font-size:6px">13-24</small></div>
+        <div class="cal-tab s-autumn" data-s="2">🍂 COSECHA<br><small style="font-size:6px">25-36</small></div>
+        <div class="cal-tab s-winter" data-s="3">❄️ ESCARCHA<br><small style="font-size:6px">37-48</small></div>
       </div>
       <div id="calGrid" class="cal-grid"></div>
       <div class="cal-legend">
@@ -894,19 +902,19 @@
   <!-- Motor del juego — núcleo profesional modular -->
   
 
-<script src="core/bandas.js?v=20261021o"></script>
-<script src="core/mundo.js?v=20261021o"></script>
-<script src="core/tesoros.js?v=20261021o"></script>
-<script src="core/economia.js?v=20261021o"></script>
-<script src="core/proyectos.js?v=20261021o"></script>
-<script src="core/agua.js?v=20261021o"></script>
-<script src="core/offline.js?v=20261021o"></script>
-<script src="core/lineage.js?v=20261021o"></script>
-<script src="assets/textures/colony-atlas.manifest.js?v=20261021o"></script>
-<script src="js/texture-pack.js?v=20261021o"></script>
-<script src="js/i18n-en.js?v=20261021o"></script>
-<script src="js/app.js?v=20261021o"></script>
-<script src="js/splash-topo.js?v=20261021o"></script>
+<script src="core/bandas.js?v=20261022p"></script>
+<script src="core/mundo.js?v=20261022p"></script>
+<script src="core/tesoros.js?v=20261022p"></script>
+<script src="core/economia.js?v=20261022p"></script>
+<script src="core/proyectos.js?v=20261022p"></script>
+<script src="core/agua.js?v=20261022p"></script>
+<script src="core/offline.js?v=20261022p"></script>
+<script src="core/lineage.js?v=20261022p"></script>
+<script src="assets/textures/colony-atlas.manifest.js?v=20261022p"></script>
+<script src="js/texture-pack.js?v=20261022p"></script>
+<script src="js/i18n-en.js?v=20261022p"></script>
+<script src="js/app.js?v=20261022p"></script>
+<script src="js/splash-topo.js?v=20261022p"></script>
 <script>
 // Vigia del arranque: si js/app.js no termino de cargar, decirlo en pantalla en vez de dejar
 // botones sordos. Es lo unico que vive en el HTML; el juego entero esta en js/app.js.

@@ -9,7 +9,7 @@ async function boot(page){
   await page.goto(`http://127.0.0.1:${PORT}/ant-farm-rpg/index.html`,{waitUntil:'load',timeout:30000});
   await page.waitForFunction("!document.getElementById('splashScreen')||document.getElementById('splashScreen').style.display==='none'",{timeout:16000}).catch(()=>{});
   await page.click('#btnMainCreate');await sleep(350);await page.click('#createSizeScreen [data-size="small"]');await sleep(350);
-  await page.evaluate(()=>{const h=document.querySelector('.topo-dialog-host');const b=h&&[...h.querySelectorAll('button')].find(x=>/^(SÍ|YES)$/i.test(x.textContent.trim()));if(b)b.click();});
+  await page.evaluate(()=>{const h=document.querySelector('.topo-dialog-host');const b=h&&[...h.querySelectorAll('button')].find(x=>/^(SÍ|YES|CREATE WORLD|ARCHIVE & CREATE)$/i.test(x.textContent.trim()));if(b)b.click();});
   for(let i=0;i<20;i++){const seen=await page.evaluate(()=>{const m=document.getElementById('onboardingModal');if(!m||getComputedStyle(m).display==='none')return false;const b=document.getElementById('btnOnboardingStart')||[...m.querySelectorAll('button')].pop();if(b)b.click();return true;});if(seen)break;await sleep(220);}
   await page.waitForFunction("document.body.classList.contains('game-started')",{timeout:20000});await sleep(650);
 }
@@ -66,7 +66,7 @@ async function measure(page){return page.evaluate(()=>{
     await page.evaluate(()=>{const h=document.querySelector('.topo-dialog-host');const b=h&&[...h.querySelectorAll('button')].find(x=>/^(NO|CANCEL)$/i.test(x.textContent.trim()));if(b)b.click();});await sleep(120);
     ok((await page.evaluate(()=>worldSeed))===oldSeed,'cancel leaves the physical farm untouched');
     await page.click('#btnNuptialFlight');await sleep(120);
-    await page.evaluate(()=>{const h=document.querySelector('.topo-dialog-host');const b=h&&[...h.querySelectorAll('button')].find(x=>/^(YES|SÍ)$/i.test(x.textContent.trim()));if(b)b.click();});await sleep(550);
+    await page.evaluate(()=>{const h=document.querySelector('.topo-dialog-host');const b=h&&[...h.querySelectorAll('button')].find(x=>/^(YES|SÍ|CREATE WORLD|ARCHIVE & CREATE)$/i.test(x.textContent.trim()));if(b)b.click();});await sleep(550);
     const flown=await page.evaluate(()=>({seed:worldSeed,day,slabs:umbralesRotos,flights:getLineageState().flights,amber:getLineageState().amber,unlock:_offlineUnlocks.lineage,panel:getComputedStyle(document.getElementById('lineageSheet')).display}));
     ok(flown.seed!==oldSeed&&flown.day===1&&flown.slabs===0,'confirm replaces the old farm with a Day 1 seeded nest',JSON.stringify(flown));
     ok(flown.flights===1&&flown.amber>18&&flown.unlock&&flown.panel==='none','amber, rank wallet, receipt, and 12 h milestone cross the reset');

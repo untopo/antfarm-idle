@@ -193,7 +193,7 @@ const nameInfo = run(`(function(){
   return {q:queen.personalName, qMeaning:queen.nameMeaning, faction:society.factions[0].name, names, uniq:new Set(names).size, delPool, poolOnsets, poolNuc:L.pool.nucleus.length, stage:names.length?workers[0].nameStage:''};
 })()`);
 check(nameInfo.q !== 'Ada' && nameInfo.q, `la reina fundadora se llama "${nameInfo.q}" (ya no viene hardcodeada como Ada)`);
-check(/^Colonia /.test(nameInfo.faction) && nameInfo.faction !== 'Colonia Ada', `la faccion toma el nombre de la fundadora: "${nameInfo.faction}"`);
+check(/^Colony /.test(nameInfo.faction) && nameInfo.faction !== 'Colony Ada', `the faction takes the foundress name: "${nameInfo.faction}"`);
 check(nameInfo.uniq === nameInfo.names.length, `los nombres de las obreras son distintos entre si: ${nameInfo.names.join(', ')}`);
 check(nameInfo.delPool >= nameInfo.names.length - 1, `${nameInfo.delPool}/${nameInfo.names.length} nombres empiezan con un fonema del inventario de ESTA colonia (${nameInfo.poolOnsets.join('/')})`);
 const founders = new Set();
@@ -214,12 +214,12 @@ const rename = run(`(function(){
   evolveLanguages(1.0);
   const after=workers.map(w=>w.personalName);
   return { cambiados: after.filter((n,i)=>n!=='VIEJO'+i).length, total:after.length,
-           etapas:[...new Set(workers.map(w=>w.nameStage))], bautizo: events.slice(0, Math.max(1, events.length-evAntes+2)).some(e=>/Bautizo/.test(e.msg)) || events.some(e=>/Bautizo/.test(e.msg)),
+           etapas:[...new Set(workers.map(w=>w.nameStage))], bautizo: events.slice(0, Math.max(1, events.length-evAntes+2)).some(e=>/Colony naming/.test(e.msg)) || events.some(e=>/Colony naming/.test(e.msg)),
            muestra: after.slice(0,4), uniq:new Set(after).size };
 })()`);
 check(rename.cambiados === rename.total, `al pasar la lengua a otra etapa se rebautizan ${rename.cambiados}/${rename.total} hormigas (antes el goteo era casi nunca)`);
 check(rename.etapas.length === 1 && rename.etapas[0] !== 'codigo', `todas adoptan la etapa "${rename.etapas[0]}": ${rename.muestra.join(', ')}`);
-check(rename.bautizo, `queda un evento de historia "Bautizo en la colonia"`);
+check(rename.bautizo, `history keeps the English "Colony naming" event`);
 check(rename.uniq >= rename.total - 1, `los nombres siguen sin repetirse tras el bautizo`);
 
 console.log('\n== 7) el cache del suelo no se queda obsoleto ==');

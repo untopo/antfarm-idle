@@ -29,7 +29,7 @@ async function waitMenu(page){
 async function bootFarm(page){
   await page.goto(`http://127.0.0.1:${PORT}/ant-farm-rpg/index.html`,{waitUntil:'load',timeout:30000});await waitMenu(page);
   await page.click('#btnMainCreate');await sleep(380);await page.click('#createSizeScreen [data-size="small"]');await sleep(380);
-  await page.evaluate(()=>{const h=document.querySelector('.topo-dialog-host');if(!h)return;const b=[...h.querySelectorAll('button')].find(x=>/^(SÍ|YES)$/i.test(x.textContent.trim()));if(b)b.click();});
+  await page.evaluate(()=>{const h=document.querySelector('.topo-dialog-host');if(!h)return;const b=[...h.querySelectorAll('button')].find(x=>/^(SÍ|YES|CREATE WORLD|ARCHIVE & CREATE)$/i.test(x.textContent.trim()));if(b)b.click();});
   for(let i=0;i<24;i++){
     const seen=await page.evaluate(()=>{const m=document.getElementById('onboardingModal');if(!m||getComputedStyle(m).display==='none')return false;const b=document.getElementById('btnOnboardingStart')||[...m.querySelectorAll('button')].pop();if(b)b.click();return true;});
     if(seen)break;await sleep(250);

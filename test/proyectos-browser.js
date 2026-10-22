@@ -10,7 +10,7 @@ async function boot(page){
   await page.waitForFunction("window.colonyTexturePack&&colonyTexturePack.ready()&&colonyTexturePack.stats().sprites===80",{timeout:12000});
   await page.waitForFunction("document.getElementById('splashScreen').style.display==='none'",{timeout:16000}).catch(()=>{});
   await page.click('#btnMainCreate');await sleep(300);await page.click('#createSizeScreen [data-size="small"]');await sleep(350);
-  await page.evaluate(()=>{const h=document.querySelector('.topo-dialog-host');if(h){const b=[...h.querySelectorAll('button')].find(x=>/^(YES|SÍ)$/i.test(x.textContent.trim()));if(b)b.click();}});
+  await page.evaluate(()=>{const h=document.querySelector('.topo-dialog-host');if(h){const b=[...h.querySelectorAll('button')].find(x=>/^(YES|SÍ|CREATE WORLD|ARCHIVE & CREATE)$/i.test(x.textContent.trim()));if(b)b.click();}});
   for(let i=0;i<20;i++){const done=await page.evaluate(()=>{const m=document.getElementById('onboardingModal');if(!m||getComputedStyle(m).display==='none')return false;const b=document.getElementById('btnOnboardingStart')||[...m.querySelectorAll('button')].pop();if(b)b.click();return true;});if(done)break;await sleep(200);}
   await page.waitForFunction("document.body.classList.contains('game-started')",{timeout:20000});await sleep(500);
   await page.evaluate(()=>{

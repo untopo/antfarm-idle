@@ -17,10 +17,16 @@ let W=canvas.width, H=canvas.height;
 // ===== PERFORMANCE - capas cacheadas =====
 let soilCacheCanvas=null, soilCacheCtx=null, soilCacheDirty=true;
 let _soilRev=0; // Topo: version del suelo para cachear escaneos O(celdas)
-// === DEBUG: el registro del juego solo habla si se le pide (?debug=1 o localStorage antfarm_debug=1) ===
-const DEBUG_TOPO = (()=>{ try{ return /[?&]debug=1/.test(location.search) || localStorage.getItem('antfarm_debug')==='1'; }catch(e){ return false; } })();
+// Diagnostic logging may also be enabled persistently by developers. Public QA tools are stricter:
+// x8, x16 and +1 DAY exist only when the current URL explicitly includes ?debug=1.
+const TOPO_DEBUG_TOOLS = (()=>{ try{ return new URLSearchParams(location.search).get('debug')==='1'; }catch(e){ return false; } })();
+const DEBUG_TOPO = (()=>{ try{ return TOPO_DEBUG_TOOLS || localStorage.getItem('antfarm_debug')==='1'; }catch(e){ return TOPO_DEBUG_TOOLS; } })();
 function tlog(){ if(!DEBUG_TOPO) return; try{ console.log.apply(console, arguments); }catch(e){} }
-window.tlog=tlog; window.DEBUG_TOPO=DEBUG_TOPO;
+window.tlog=tlog; window.DEBUG_TOPO=DEBUG_TOPO; window.TOPO_DEBUG_TOOLS=TOPO_DEBUG_TOOLS;
+try{
+  document.documentElement.dataset.topoDebug=TOPO_DEBUG_TOOLS?'true':'false';
+  document.querySelectorAll('[data-debug-only]').forEach(el=>{ el.hidden=!TOPO_DEBUG_TOOLS; });
+}catch(e){}
 // _topoDbg(): foto del estado, para consola y para las pruebas de navegador
 window._topoDbg=()=>{ try{ return { day:(typeof day!=='undefined'?day:0), time:(typeof time!=='undefined'?time:0),
   ants:(typeof workers!=='undefined'?workers.length:0), cols:(typeof COLS!=='undefined'?COLS:0), rows:(typeof ROWS!=='undefined'?ROWS:0),
@@ -99,7 +105,7 @@ function cycleAnthroStyle(){
   // producian eran 404. El ciclo se queda como changeo de nombre porque hay tecla asignada.
   anthroStyle=(anthroStyle+1)%3;
   console.log('anthro style', anthroStyle);
-  pushToast(W/2, H/2, '👤 ESTILO '+(anthroStyle+1), '#b47aff');
+  pushToast(W/2, H/2, '👤 STYLE '+(anthroStyle+1), '#b47aff');
 }
 function checkAnthroEvo(){
   // realista: humanoide no sale en GEN2 instantáneo - requiere generaciones, tiempo y trabajo acumulado
@@ -108,7 +114,7 @@ function checkAnthroEvo(){
     useAnthro=true;
     const btn=document.getElementById('btnAnthro');
     if(btn){ btn.textContent='👤 ANTHRO'; btn.style.background='#b47aff'; }
-    pushToast(W/2, H/2-20, '👤 ¡Evolución humanoide!', '#b47aff');
+    pushToast(W/2, H/2-20, '👤 HUMANOID EVOLUTION!', '#b47aff');
   }
 }
 setTimeout(()=>{
@@ -278,6 +284,27 @@ let waterFlow=new Map(); // recent conservative transfers, keyed by "c,r" for fa
 let _waterVisualActive=false;
 // One seed owns geology, hydrology and the hidden past. Sites are materialised lazily as slabs open,
 // but their position and evidence were already determined by this seed.
+const WORLD_NAME_MAX=28;
+function sanitizeWorldName(value, fallback){
+  let out='';
+  try{ out=String(value==null?'':value).normalize('NFKC'); }catch(e){ out=String(value==null?'':value); }
+  // Names are rendered as text, never markup. Control, bidi-control and bracket characters are removed
+  // as a second boundary so exported/imported saves cannot spoof UI or break compact archive labels.
+  out=out.replace(/[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069<>\[\]{}\\]/g,' ')
+    .replace(/\s+/g,' ').trim();
+  out=Array.from(out).slice(0,WORLD_NAME_MAX).join('').trim();
+  if(out) return out;
+  const safeFallback=String(fallback==null?'':fallback).replace(/[\u0000-\u001f\u007f<>]/g,' ').replace(/\s+/g,' ').trim();
+  return Array.from(safeFallback||'UNNAMED BURROW').slice(0,WORLD_NAME_MAX).join('').trim()||'UNNAMED BURROW';
+}
+function worldSizeKeyForCols(cols){ return Number(cols)<=48?'small':Number(cols)>=96?'big':'medium'; }
+function defaultWorldName(sizeKey, cols){
+  const key=String(sizeKey||worldSizeKeyForCols(cols)).toUpperCase();
+  return (key==='SMALL'||key==='BIG'||key==='MEDIUM'?key:'NEW')+' BURROW';
+}
+let worldName=defaultWorldName('',64);
+window.sanitizeWorldName=sanitizeWorldName;
+window.getWorldName=()=>worldName;
 let worldSeed=0, worldProfile=null;
 let ancientSites=[];
 let ancientMasonry=[];
@@ -596,7 +623,7 @@ function golpearUmbral(ant){
     for(let i=0;i<4;i++) particles.push({x:c*CELL+6, y:u.r*CELL+8, vx:(Math.random()-0.5)*2.4, vy:-Math.random()*1.8, life:1, decay:0.035, color:'#c8c8d8', bloque:true});
     if(ant && Math.random()<0.35) pushToast(c*CELL+8, u.r*CELL-4, '><', '#c8c8d8', 0.8);
     markSoilDirty(c, u.r);
-    if(ant) logAntHistory(ant, 'muerde la losa ('+Math.round(u.hp)+' por aguantar)');
+    if(ant) logAntHistory(ant, 'bites the slab ('+Math.round(u.hp)+' durability left)');
   }catch(e){}
   if(u.hp<=0){ abrirUmbral(); return true; }
   return false;
@@ -622,9 +649,9 @@ function abrirUmbral(){
   // y seguir mostrando GEN0 hasta el día 4. El hito se liquida en el mismo instante en que ocurre.
   checkLevelUp();
   markSoilDirty(); reindexMagma();
-  pushEvent('evo', '🕳️ UMBRAL ROTO · '+NOMBRE_BANDA(nuevo), 'el mapa llega a '+ROWS+' filas - '+reliquias.length+' reliquias en la vitrina');
-  notifyCanon('🕳️ ¡NUEVA PROFUNDIDAD!', NOMBRE_BANDA(nuevo)+' - la colonia huele piedra mojada y algo mas duro', 6400);
-  pushImportant('invention', '🕳️ SE ABRIÓ '+NOMBRE_BANDA(nuevo), 'la losa de la fila '+u.r+' cedio · piso '+(suelo-SURFACE_ROW)+' disponible');
+  pushEvent('evo', '🕳️ THRESHOLD BROKEN · '+NOMBRE_BANDA(nuevo), 'the map now reaches '+ROWS+' rows · '+reliquias.length+' relics in the case');
+  notifyCanon('🕳️ NEW DEPTH!', NOMBRE_BANDA(nuevo)+' · the colony smells wet stone and something harder', 6400);
+  pushImportant('invention', '🕳️ OPENED '+NOMBRE_BANDA(nuevo), 'the slab on row '+u.r+' gave way · floor '+(suelo-SURFACE_ROW)+' available');
   tlog('[UMBRAL] roto en fila '+u.r+' · banda '+nuevo+' ('+NOMBRE_BANDA(nuevo)+') · ROWS='+ROWS);
   return true;
 }
@@ -1637,8 +1664,8 @@ function updateFloodResponse(dt){
       delete worker._pozoPrincipal;delete worker._lateralScout;delete worker._lateralRelayPending;
       worker.state='CONTROLAR_AGUA'; worker.targetFood=null; worker.digTarget=null; worker.buildTarget=null; worker._route=null;
       floodControl.workerId=worker.id; floodControl.incident++;
-      pushEvent('eco','🌊 Inundación detectada: una obrera prepara un dique',`Brecha ${floodControl.target.c},${floodControl.target.r}`);
-      pushToast(worker.x,worker.y-15,'🌊 ¡DIQUE!','#62c8ff',2.4);
+      pushEvent('eco','🌊 Flood detected: a worker prepares a barrier',`Breach ${floodControl.target.c},${floodControl.target.r}`);
+      pushToast(worker.x,worker.y-15,'🌊 BARRIER!','#62c8ff',2.4);
     }
   }
 }
@@ -1659,7 +1686,7 @@ function _sealFloodCell(ant,target){
   }
   if(trapped>0&&typeof displaceWaterMass==='function') displaceWaterMass(water,soil,target.c,target.r,trapped,floodBarriers);
   markSoilDirty(target.c,target.r);
-  pushEvent('eco',passable?'🪵 Entrada cubierta contra el agua':'🧱 Brecha de agua sellada',passable?'Techo drenante: corta el agua sin cerrar el paso de las hormigas':kind===2?'Dique de arcilla; el agua fue desplazada, no borrada':'Dique de tierra compactada; el agua fue desplazada, no borrada');
+  pushEvent('eco',passable?'🪵 Entrance covered against water':'🧱 Water breach sealed',passable?'Drainage cover: blocks water without blocking the ants':kind===2?'Clay barrier; water was displaced, not deleted':'Packed-earth barrier; water was displaced, not deleted');
   pushToast((target.c+0.5)*CELL,target.r*CELL,passable?'🪵 CUBIERTO':'🧱 SELLADO','#9de5ff',3);
   for(let i=0;i<12;i++) particles.push({x:(target.c+0.5)*CELL,y:(target.r+0.5)*CELL,vx:(Math.random()-.5)*1.5,vy:-Math.random(),life:1,decay:.04,color:'#8ecae6'});
   stats.xp+=20; colonyFitness+=0.3; if(ant){ ant.fitness=(ant.fitness||0)+0.4; recordJobExperience(ant,'build',.8); } checkLevelUp();
@@ -1740,7 +1767,7 @@ function updateEcosystem(dt){
           if(foods.length<9){
             spawnFoodAt(pl.x-6, SURFACE_Y-8, 1, 'berry');
             spawnFoodAt(pl.x+6, SURFACE_Y-8, 1, 'berry');
-            pushEvent('food','🫐 Arbusto da bayas','Maduros a '+pl.growth.toFixed(2));
+            pushEvent('food','🫐 Berry bush bears fruit','Maturity '+pl.growth.toFixed(2));
             if(inventions.clay) pl.fruitCooldown=DAY_LENGTH*0.55;
             else pl.fruitCooldown=DAY_LENGTH*(0.72+Math.random()*0.2);
           }
@@ -1757,7 +1784,7 @@ function updateEcosystem(dt){
             // textura de fruto también da fibra y ocasional madera
             if(inventions.wood && Math.random()<0.12) economyLedger.creditMaterial('wood',1,'fruit tree harvest');
             if(Math.random()<0.22) economyLedger.creditMaterial('fiber',1,'fruit tree harvest');
-            pushEvent('food','🍎 Manzanas caen del árbol','Frutal maduro '+pl.growth.toFixed(2));
+            pushEvent('food','🍎 Apples fall from the tree','Mature fruit tree '+pl.growth.toFixed(2));
             pl.fruitCooldown=DAY_LENGTH*(0.78+Math.random()*0.32);
           } else pl.fruitCooldown=DAY_LENGTH*0.18;
         } else if(pl.type==='sapling'){
@@ -1831,7 +1858,7 @@ function checkInventions(){
     inventions.stone=true; pushImportant('invention','▦ Invention: stonework','The colony can shape stone and approve reinforced mandible edges.'); notifyCanon('▦ STONEWORK','Stone practice learned.',6000); pushToast(W/2,H/2-18,'▦ STONE','#8a8a8a',2.5);
   }
   if(!inventions.clay && gen>=4 && colonyIQ>=128 && digs>=28 && worldAge>1.0){
-    inventions.clay=true; pushImportant('invention','🏺 Invento: cerámica de arcilla','Tapial + arcilla apisonada'); notifyCanon('🏺 ARCILLA', '¡Dominan la arcilla!', 6000); pushToast(W/2,H/2-18,'🏺 ARCILLA','#c2a080',2.5);
+    inventions.clay=true; pushImportant('invention','🏺 Invention: clay ceramics','Rammed earth + packed clay'); notifyCanon('🏺 ARCILLA', 'They mastered clay!', 6000); pushToast(W/2,H/2-18,'🏺 ARCILLA','#c2a080',2.5);
   }
   // This key used to be advertised by the slab panel and persisted in saves, but no gameplay path ever
   // turned it on. Deep thresholds were therefore a permanent wall disguised as a GEN/IQ requirement.
@@ -1843,14 +1870,14 @@ function checkInventions(){
     pushToast(W/2,H/2-18,'▦ MASONRY','#b9afc6',2.5);
   }
   if(!inventions.fiber && gen>=4 && colonyIQ>=132 && plants.length>=8 && deliveries>=35){
-    inventions.fiber=true; pushImportant('invention','🧵 Invento: tejido de fibras','Trenzan briznas y hojas para techar'); notifyCanon('🧵 FIBRA', '¡Tejen fibra vegetal!', 6000); pushToast(W/2,H/2-18,'🧵 FIBRA','#7ad35f',2.5);
+    inventions.fiber=true; pushImportant('invention','🧵 Invention: fiber weaving','They weave blades and leaves into roofing'); notifyCanon('🧵 FIBRA', 'They can weave plant fiber!', 6000); pushToast(W/2,H/2-18,'🧵 FIBRA','#7ad35f',2.5);
   }
   if(!inventions.wood && gen>=5 && colonyIQ>=138 && worldAge>2.0 && plants.some(p=>p.type==='sapling' && p.growth>0.85)){
-    inventions.wood=true; pushImportant('invention','🪵 Invento: carpintería','Usan RAMAS del arbolito para apuntalar'); notifyCanon('🪵 MADERA', '¡Carpintería básica!', 6000); pushToast(W/2,H/2-18,'🪵 MADERA','#8b5a2b',2.5);
+    inventions.wood=true; pushImportant('invention','🪵 Invention: basic carpentry','They use BRANCHES to shore up tunnels'); notifyCanon('🪵 MADERA', 'Basic carpentry!', 6000); pushToast(W/2,H/2-18,'🪵 MADERA','#8b5a2b',2.5);
   }
   if(!inventions.fungus && gen>=5 && colonyIQ>=140 && worldAge>2.4 && plants.some(p=>p.type==='mushroom'||(p.type==='caveMush'&&isNestCellConnected(p.cr??p.c,p.rr??Math.floor(p.y/CELL))))){
 
-    inventions.fungus=true; pushImportant('invention','🍄 Invento: cultivo de hongos','Granja subterránea de hongos'); notifyCanon('🍄 CULTIVO', '¡Granja de hongos subterránea!', 6000); pushToast(W/2,H/2-18,'🍄 CULTIVO','#6a9a7a',2.5);
+    inventions.fungus=true; pushImportant('invention','🍄 Invention: fungus cultivation','Underground fungus farm'); notifyCanon('🍄 CULTIVO', 'Underground fungus farming!', 6000); pushToast(W/2,H/2-18,'🍄 CULTIVO','#6a9a7a',2.5);
   }
 }
 function _structureKeepsNestConnected(site,def){
@@ -2251,28 +2278,46 @@ function pushToast(x,y,txt,color='#ffcc00',dur=2.2){toasts.push({x,y,txt,color,l
 let _dialogStack=[];
 function gameDialog(opts){
   const o=opts||{};
-  if(!document || !document.body){ if(o.onYes) try{ o.onYes(); }catch(e){} return ()=>{}; }
+  if(!document || !document.body){ if(o.onYes) try{ o.onYes(o.input&&o.input.value||''); }catch(e){} return ()=>{}; }
   const host=document.createElement('div');
-  host.className='topo-dialog-host';
+  host.className='topo-dialog-host';if(o.preserveText)host.dataset.noTranslate='true';
   host.style.cssText='position:fixed;inset:0;z-index:10050;background:rgba(0,0,0,0.74);display:flex;align-items:center;justify-content:center;padding:18px;box-sizing:border-box';
   const box=document.createElement('div');
   box.style.cssText='width:430px;max-width:100%;background:#1a140f;border:4px solid #000;box-shadow:8px 8px 0 #000;padding:18px;display:flex;flex-direction:column;gap:12px;text-align:center';
   const ttl=document.createElement('div'); ttl.style.cssText="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffcc00;line-height:1.6"; ttl.textContent=o.title||'ARE YOU SURE?';
   const bod=document.createElement('div'); bod.style.cssText="font-family:'VT323',monospace;font-size:15px;color:#c9b896;line-height:1.35;white-space:pre-line;text-align:left"; bod.textContent=o.body||'';
   const row=document.createElement('div'); row.style.cssText='display:flex;gap:8px;justify-content:center;flex-wrap:wrap';
-  let closed=false;
+  let field=null,error=null,closed=false;
   function close(){ if(closed) return; closed=true; document.removeEventListener('keydown', onKey, true); if(host.parentNode) host.remove(); const i=_dialogStack.indexOf(host); if(i>=0) _dialogStack.splice(i,1); }
   function no(){ close(); if(o.onNo) try{ o.onNo(); }catch(e){ console.error(e); } }
-  function mk(txt, primary, fn){ const el=document.createElement('button'); el.className='pixel-btn'+(primary?' primary':''); el.textContent=txt; el.style.cssText='flex:1;min-width:118px;justify-content:center'; el.onclick=()=>{ close(); if(fn) try{ fn(); }catch(e){ console.error(e); } }; row.appendChild(el); return el; }
-  const yes=mk(o.yes||'YES', true, o.onYes);
-  if(o.no!==false) mk(o.no||'NO', false, o.onNo? no : null);
-  box.appendChild(ttl); if(o.body) box.appendChild(bod); box.appendChild(row); host.appendChild(box);
-  document.body.appendChild(host); _dialogStack.push(host);
-  function onKey(e){ if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); no(); } else if(e.key==='Enter'){ e.preventDefault(); e.stopPropagation(); close(); if(o.onYes) try{ o.onYes(); }catch(_){} } }
-  document.addEventListener('keydown', onKey, true);
-  host.addEventListener('click', (e)=>{ if(e.target===host) no(); });
-  try{ yes.focus(); }catch(e){}
-  return close;
+  function yes(){
+    const value=field?field.value:undefined;
+    if(typeof o.validate==='function'){
+      const message=o.validate(value);
+      if(message){ if(error) error.textContent=String(message); if(field) field.focus(); return; }
+    }
+    close(); if(o.onYes) try{ o.onYes(value); }catch(e){ console.error(e); }
+  }
+  function mk(txt, primary, fn){ const el=document.createElement('button'); el.type='button'; el.className='pixel-btn'+(primary?' primary':''); el.textContent=txt; el.style.cssText='flex:1;min-width:118px;justify-content:center'; el.onclick=fn; row.appendChild(el); return el; }
+  box.appendChild(ttl); if(o.body) box.appendChild(bod);
+  if(o.input){
+    const spec=o.input===true?{}:o.input;
+    const wrap=document.createElement('label');wrap.className='game-dialog-field';wrap.style.cssText='display:flex;flex-direction:column;gap:7px;text-align:left';
+    const label=document.createElement('span');label.style.cssText="font-family:'Press Start 2P',monospace;font-size:7px;color:#a68d63;line-height:1.5";label.textContent=spec.label||'NAME';
+    field=document.createElement('input');field.type='text';field.value=spec.value||'';field.placeholder=spec.placeholder||'';field.maxLength=Math.max(1,Number(spec.maxLength)||WORLD_NAME_MAX);field.autocomplete='off';field.spellcheck=false;field.setAttribute('aria-label',spec.ariaLabel||spec.label||'Name');
+    field.style.cssText="box-sizing:border-box;width:100%;min-height:44px;padding:8px 10px;background:#080604;border:3px solid #5b4024;color:#fff8dc;font-family:'VT323',monospace;font-size:22px;outline:none";
+    field.addEventListener('focus',()=>{field.style.borderColor='#ffcc00';});field.addEventListener('blur',()=>{field.style.borderColor='#5b4024';});
+    error=document.createElement('small');error.setAttribute('role','status');error.style.cssText="min-height:14px;color:#ff766d;font-family:'VT323',monospace;font-size:14px";
+    wrap.append(label,field,error);box.appendChild(wrap);
+  }
+  const yesButton=mk(o.yes||'YES',true,yes);
+  if(o.no!==false) mk(o.no||'NO',false,no);
+  box.appendChild(row);host.appendChild(box);document.body.appendChild(host);_dialogStack.push(host);
+  function onKey(e){ if(e.key==='Escape'){e.preventDefault();e.stopPropagation();no();}else if(e.key==='Enter'){e.preventDefault();e.stopPropagation();yes();} }
+  document.addEventListener('keydown',onKey,true);
+  host.addEventListener('click',(e)=>{if(e.target===host)no();});
+  setTimeout(()=>{try{if(field){field.focus();field.select();}else yesButton.focus();}catch(e){}},0);
+  const closer=()=>close();closer.input=field;return closer;
 }
 function gameAlert(title, body, onClose){ return gameDialog({title, body, no:false, yes:'GOT IT', onYes:onClose||null}); }
 function gameConfirm(title, body, onYes, onNo){ return gameDialog({title, body, onYes, onNo}); }
@@ -2290,7 +2335,7 @@ function wireChromeUI(){
     if(hf && !hf._wired){ hf._wired=1; hf.onchange=()=>{ try{ renderHistoryDrawer(); }catch(e){} }; }
     const ht=document.getElementById('hudToggle');
     if(ht && !ht._wired){
-      ht._wired=1; ht.textContent='←'; ht.title='Plegar a la izquierda (mini) / Expandir';
+      ht._wired=1; ht.textContent='←'; ht.title='Collapse left (mini) / Expand';
       ht.onclick=()=>{
         const hud=document.querySelector('.hud-strips'); if(!hud) return;
         const vel=document.getElementById('cornerControls'), day=document.getElementById('dayControls'), main=document.getElementById('mainHud');
@@ -2519,14 +2564,14 @@ function freshFounder(opts){
   let q=null;
   try{
     const _fid='Q'+Math.random().toString(36).slice(2,6).toUpperCase();
-    let _fn={name:_fid, stage:'codigo', meaning:'reina fundadora'};
+    let _fn={name:_fid, stage:'codigo', meaning:'founding queen'};
     try{
       const _t=genPersonalName({faction:0, role:'REINA', affinity:'NODRIZA', caste:'queen', parents:[], genome:opts.genome, isQueen:true, rank:'LÍDER', ageDays:0, idCode:_fid});
       if(_t && _t.name) _fn=_t;
-    }catch(e){ console.warn('nombre fundadora', e.message); }
-    q=Object.assign({}, opts, { id:_fid, name:_fn.name, personalName:_fn.name, nameMeaning:'reina fundadora - '+_fn.meaning, nameStage:_fn.stage });
-    try{ if(q.history && q.history[0]) q.history[0].msg=`👑 ${_fn.name} eclosiona - Día 0`; }catch(e){}
-    try{ society.factions[0].name='Colonia '+_fn.name; society.factions[0].leader=_fid; }catch(e){}
+    }catch(e){ console.warn('founder name', e.message); }
+    q=Object.assign({}, opts, { id:_fid, name:_fn.name, personalName:_fn.name, nameMeaning:'founding queen · '+_fn.meaning, nameStage:_fn.stage });
+    try{ if(q.history && q.history[0]) q.history[0].msg=`👑 ${_fn.name} hatches · Day 0`; }catch(e){}
+    try{ society.factions[0].name='Colony '+_fn.name; society.factions[0].leader=_fid; }catch(e){}
   }catch(e){ console.error('freshFounder', e); q=opts; }
   return ensureQueenMeta(q);
 }
@@ -2574,7 +2619,7 @@ function enforceQueenCap(motivo){
     const q = qm || queens[queens.length-1];
     queens.splice(queens.indexOf(q),1);
     salidas++;
-    const txt=`${q.name} vuela lejos: el nido de ${COLS}x${ROWS} solo sostiene ${Math.min(cap,reinasPermitidas())} reinas (${motivo})`;
+    const txt=`${q.name} flies away: the ${COLS}×${ROWS} nest supports only ${Math.min(cap,reinasPermitidas())} queens (${motivo})`;
     pushEvent('evo','🪽 SWARM '+txt.split(':')[0],txt);
     notifyCanon('🪽 SWARM',txt,5600);
     try{pushToast(q.x,q.y-18,'🪽 FLIES','#c08060',3);}catch(e){}
@@ -2815,7 +2860,7 @@ if(!_topoHasWorld){
   // Topo: nada existe hasta elegir tamaño
   try{ queens.length=0; queen=null; tlog('[TOPO] queens limpiadas'); }catch(e){}
 }
-let society={ factions: [{id:0,name:'Colonia fundadora',color:'#ffcc00',members:3,belief:'-',leader:null}], nextFaction:1, wars:0, cults:0, crimes:0, mood:{joy:0.55,anger:0.08,fear:0.05,sadness:0.06,loyalty:0.72,stress:0.12}, languages:{}, langEvo:0 };
+let society={ factions: [{id:0,name:'Founding colony',color:'#ffcc00',members:3,belief:'-',leader:null}], nextFaction:1, wars:0, cults:0, crimes:0, mood:{joy:0.55,anger:0.08,fear:0.05,sadness:0.06,loyalty:0.72,stress:0.12}, languages:{}, langEvo:0 };
  // === SISTEMA DE IDIOMA EMERGENTE ===
  const LANG_CONCEPTS = ['COMIDA','CASA','PELIGRO','REINA','CAVAR','AYUDA','SÍ','NO','AGUA','ENEMIGO','CONSTRUIR','SEGUIR'];
  const LANG_PHONEMES = {
@@ -2901,7 +2946,7 @@ function _pheromoneCall(){
            if(_burst) _bautizos++;
          }
        }
-       if(_bautizos>0) pushEvent('evo', `🗣 Bautizo en la colonia: ${_bautizos} nombres nuevos`, `La lengua pasó a "${_curStageName}" y todas adoptan el nuevo patrón`);
+       if(_bautizos>0) pushEvent('evo', `🗣 Colony naming: ${_bautizos} new names`, `The language reached "${_curStageName}" and everyone adopted its new pattern`);
        for(let q of queens){
          let curStage=getNameStageForLang(getLanguage(q.faction));
          let qStage=q.nameStage||'codigo';
@@ -2909,7 +2954,7 @@ function _pheromoneCall(){
            let old=q.personalName||q.name;
            let nn=genPersonalName({faction:q.faction, role:'REINA', affinity:'NODRIZA', caste:'media', parents:[], genome:q.genome, isQueen:true, rank:'LÍDER', ageDays:q.age/DAY_LENGTH, idCode:q.name||'Q'});
            q.personalName=nn.name; q.name=nn.name; q.nameMeaning=nn.meaning; q.nameStage=nn.stage;
-           if(Math.random()<0.2) pushEvent('evo', `👑 Reina ${old} ahora es ${nn.name} - ${nn.meaning}`, `Título evolutivo - ${nn.stage}`);
+           if(Math.random()<0.2) pushEvent('evo', `👑 Queen ${old} is now ${nn.name} · ${nn.meaning}`, `Evolving title · ${nn.stage}`);
          }
        }
      }
@@ -2968,10 +3013,10 @@ function _applyName(ant, opts, quiet){
   const old=ant.personalName||ant.id;
   let nn=genPersonalName(opts)||{name:old};
   for(let k=0;k<3;k++){ if(!nn.name || !_nameClashes(nn.name, ant)) break; const t=genPersonalName(opts); if(!t || !t.name || !_nameClashes(t.name, ant)) break; nn=t; }
-  if(nn.name && _nameClashes(nn.name, ant)){ nn.name=String(nn.name).slice(0,6)+'·'+String(ant.id||'').slice(-2); nn.meaning=(nn.meaning||'')+' · variante del linaje'; }
+  if(nn.name && _nameClashes(nn.name, ant)){ nn.name=String(nn.name).slice(0,6)+'·'+String(ant.id||'').slice(-2); nn.meaning=(nn.meaning||'')+' · lineage variant'; }
   ant.personalName=nn.name; ant.nameMeaning=nn.meaning; ant.nameStage=nn.stage;
   if(ant===queen || ant.isQueen) ant.name=nn.name;
-  if(!quiet && nn.name!==old && Math.random()<0.5) pushEvent('evo', `🗣 ${old} → ${nn.name} - ${nn.meaning}`, `Renombre lingüístico - ${nn.stage} - F${ant.faction}`);
+  if(!quiet && nn.name!==old && Math.random()<0.5) pushEvent('evo', `🗣 ${old} → ${nn.name} - ${nn.meaning}`, `Language rename · ${nn.stage} · F${ant.faction}`);
   return nn;
 }
 function _nameClashes(n, self){
@@ -3001,19 +3046,19 @@ function genPersonalName(opts){
     // Topo: antes de tener idioma no hay "Ada" para todas: cada una nace con su llamada de feromona
     // (aleatoria, pero construida con los sonidos de ESTA colonia). El id interno queda en el significado.
     const _call=_pheromoneCall();
-    return {name:_call, stage:'codigo', meaning:'llamada de feromona - sin idioma aún · '+idCode};
+    return {name:_call, stage:'codigo', meaning:'pheromone call · no language yet · '+idCode};
   }
   if(stage==='senales'){
     // señal corta 2-3 letras, como graznido
     let sig = genSyllable().replace(/[aeiou]/g,'').slice(0,2).toUpperCase() || 'Tk';
     if(Math.random()<0.5) sig = genSyllable().slice(0,2).toUpperCase();
-    return {name:sig, stage:'senales', meaning:`señal corta - sin palabra aún`};
+    return {name:sig, stage:'senales', meaning:`short signal · no word yet`};
   }
   if(stage==='balbuceo'){
     // gibberish 2 sílabas, simlish pero con fonética consistente de su facción
     let w = genWord(); // 4-7 letras
     w = w[0].toUpperCase()+w.slice(1);
-    return {name:w, stage:'balbuceo', meaning:`balbuceo - aún sin raíz fija`};
+    return {name:w, stage:'balbuceo', meaning:`babble · no stable root yet`};
   }
   // proto y idioma: raíz + sufijo con sentido según rol/afinidad
   let concept = roleToConcept(opts.role, opts.affinity);
@@ -3121,7 +3166,7 @@ function makeAnt(genome, pos=null, opts={}){
   const rank = opts.rank || 'OBRERA';
   const hierarchy = { level: 0, boss: null, subordinates: [] }; // 0 obrera, 1 capataz, 2 jefe, 3 líder
   const _idCode=(isQueenLarva?'Q':'A')+Math.random().toString(36).slice(2,5).toUpperCase();
-  let _naming={name:_idCode, stage:'codigo', meaning:'código'};
+  let _naming={name:_idCode, stage:'codigo', meaning:'code'};
   try{ const _factionForName = opts.faction!==undefined? opts.faction : (queens[0]? queens[0].faction : 0); _naming = genPersonalName({faction:_factionForName, role:role, affinity:affinity, caste:_caste, parents:opts.parents||[], genome:g, isQueen:isQueenLarva, rank:rank, ageDays:0, idCode:_idCode}); if(_naming && _naming.name && _nameClashes(_naming.name)){ _naming={name:String(_naming.name).slice(0,6)+'·'+_idCode.slice(-2), stage:_naming.stage, meaning:_naming.meaning}; } }catch(e){}
   return {id:_idCode, personalName:_naming.name, nameMeaning:_naming.meaning, nameStage:_naming.stage, x:startPos.x, y:startPos.y, _renderX:startPos.x, _renderY:startPos.y, _walkPhase:Math.random()*6.28, _bobPhase:Math.random()*6.28, angle:Math.random()*Math.PI*2, speed:1.7+Math.random()*0.5, state:'EXPLORAR', food:null, targetFood:null, fatigue:Math.random()*12, fitness:0,
     caste:_caste, crop:0, cropMax:_cropMax, tandemPartner:null, tandemCooldown:0,
@@ -3148,6 +3193,12 @@ if(_topoHasWorld){
 // lineage; Nuptial Flight is the only caller allowed to carry amber, finite upgrades, and relics on.
 function topoCreateFreshWorld(cols, rows, options){
   const createOpts=options&&typeof options==='object'?options:{};
+  let storedSize='',storedName='';
+  try{storedSize=localStorage.getItem('antfarm_worldSize')||'';storedName=localStorage.getItem('antfarm_worldName')||'';}catch(e){}
+  const fallbackName=defaultWorldName(createOpts.sizeKey||storedSize,cols);
+  const requestedName=Object.prototype.hasOwnProperty.call(createOpts,'worldName')?createOpts.worldName:(createOpts.nuptial?worldName:fallbackName);
+  worldName=sanitizeWorldName(requestedName,fallbackName);
+  try{localStorage.setItem('antfarm_worldName',worldName);}catch(e){}
   const carriedLineage=Object.prototype.hasOwnProperty.call(createOpts,'lineage')?createOpts.lineage:null;
   _setLineageState(carriedLineage?carriedLineage:freshLineageState());
   lineageRun={relicsFound:0};
@@ -3203,7 +3254,7 @@ function topoCreateFreshWorld(cols, rows, options){
   try{
     resetNameRegistry();
     initLanguage(0); // Topo: la colonia elige sus sonidos al fundarse -> de ahí salen TODOS los nombres
-    queen=freshFounder({x:CENTER_COL*CELL+8, y:(SURFACE_ROW+8)*CELL+8, genome:makeGenome(), progress:0, state:'GRÁVIDA', age:0, maxAge: DAY_LENGTH*(14+Math.random()*5), generation:0, faction:0, health:100, eggsLaid:0, broodTended:0, children:[], history:[{day:0,time:0,msg:'👑 fundadora eclosiona - Día 0'}], parents:[]});
+    queen=freshFounder({x:CENTER_COL*CELL+8, y:(SURFACE_ROW+8)*CELL+8, genome:makeGenome(), progress:0, state:'GRÁVIDA', age:0, maxAge: DAY_LENGTH*(14+Math.random()*5), generation:0, faction:0, health:100, eggsLaid:0, broodTended:0, children:[], history:[{day:0,time:0,msg:'👑 foundress hatches · Day 0'}], parents:[]});
     queens=[queen]; queens.forEach(ensureQueenMeta);
     try{ if(society.factions[0]) society.factions[0].members=workers.length+1; }catch(e){}
     const _fp=sizeProfile();
@@ -3379,7 +3430,7 @@ function updateHierarchy(dt){
     // notificar si hay nuevo líder
     if(!window._lastLeader || window._lastLeader!==sorted[0].id){
       window._lastLeader=sorted[0].id;
-      pushEvent('evo', `👑 Jerarquía: ${sorted[0].id} asciende a LÍDER`, `Capatazes: ${sorted.slice(3,6).map(x=>x.id).join(', ')}`);
+      pushEvent('evo', `👑 Hierarchy: ${sorted[0].id} rises to LEADER`, `Foreworkers: ${sorted.slice(3,6).map(x=>x.id).join(', ')}`);
     }
   } else {
     // sin líder claro, todos obreros o capataces temporales
@@ -3390,14 +3441,14 @@ function updateHierarchy(dt){
   }
 }
 let fitnessHistory=[0];
-let lastMutInfo="- fundación pixel 11→8→5 -";
+let lastMutInfo="- pixel foundation 11→8→5 -";
 
 
 // === HISTORIA IMPORTANTE - drawer tuyo desplegable ===
 let importantHistory=[];
 let _hasNewHistory=false;
 function pushImportant(type, title, detail){
-  const t=new Date().toLocaleTimeString('es-PE',{hour:'2-digit',minute:'2-digit'});
+  const t=new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
   const item={type, title, detail, time:t, day};
   importantHistory.unshift(item);
   if(importantHistory.length>90) importantHistory.pop();
@@ -3420,7 +3471,7 @@ function renderHistoryDrawer(){
     body.appendChild(div);
   });
   const count=document.getElementById('historyCount');
-  if(count) count.textContent=importantHistory.length+' eventos';
+  if(count) count.textContent=importantHistory.length+' events';
 }
 function toggleHistory(open){
   const d=document.getElementById('historyDrawer');
@@ -3432,7 +3483,7 @@ function toggleHistory(open){
 }
 
 function pushEvent(type, msg, detail=""){
-  const t=new Date().toLocaleTimeString('es-PE',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const t=new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   events.unshift({type, msg, detail, time:t, gen});
   if(events.length>80) events.pop();
   renderEvents();
@@ -3490,7 +3541,7 @@ function checkRewardDiscovery(c,r){
         for(let i=0;i<16;i++)particles.push({x:rew.x,y:rew.y,vx:(Math.random()-.5)*3,vy:-Math.random()*2.5,life:1,decay:.02,color:'#ffcc00'});
         pushToast(rew.x,rew.y-20,released?'🌾 SEEDS ×10':'🌾 BLOCKED','#ffcc00');
       }
-      else if(rew.type==='agua'){ workers.forEach(w=> w.fatigue=Math.max(0,w.fatigue-30)); pushEvent('discover','¡AGUA!','Energía para todas'); notifyCanon('💧 AGUA', 'Fuente de agua - fatiga restaurada', 5000); for(let i=0;i<14;i++) particles.push({x:rew.x,y:rew.y,vx:(Math.random()-0.5)*2,vy:(Math.random()-0.5)*2,life:1,decay:0.025,color:'#00e5ff'}); pushToast(rew.x,rew.y-20,'💧 AGUA','#00e5ff'); }
+      else if(rew.type==='agua'){ workers.forEach(w=> w.fatigue=Math.max(0,w.fatigue-30)); pushEvent('discover','WATER!','Energy for everyone'); notifyCanon('💧 WATER', 'Water source · fatigue restored', 5000); for(let i=0;i<14;i++) particles.push({x:rew.x,y:rew.y,vx:(Math.random()-0.5)*2,vy:(Math.random()-0.5)*2,life:1,decay:0.025,color:'#00e5ff'}); pushToast(rew.x,rew.y-20,'💧 WATER','#00e5ff'); }
       else if(rew.type==='hongo'){
         const released=releaseTreasureFood(rew,6,'mushroom');
         pushEvent('discover','🍄 Fungus cache uncovered',released?'6 physical fungus rations await collection':'No connected dry floor for the cache');
@@ -3506,8 +3557,8 @@ function checkRewardDiscovery(c,r){
         const _grito = def.msg || ('¡'+String(def.reliquia||rew.type||'TESORO').toUpperCase()+'!');
         if(def.reliquia && anotarReliquia(def, rew.c, rew.r)){
           const _pis=(rew.r-SURFACE_ROW);
-          pushEvent('evo', `🏺 RELIQUIA A LA VITRINA · ${def.reliquia}`, `piso ${_pis} · +${Math.round((def.bonus||0.02)*100)}% de excavacion para siempre (ahora ${Math.round(bonusCava*100)}%)`);
-          notifyCanon('🏺 '+def.reliquia.toUpperCase(), def.lore||'la colonia la sube a la vitrina', 6400);
+          pushEvent('evo', `🏺 RELIQUIA A LA VITRINA · ${def.reliquia}`, `floor ${_pis} · permanent excavation +${Math.round((def.bonus||0.02)*100)}% (now ${Math.round(bonusCava*100)}%)`);
+          notifyCanon('🏺 '+def.reliquia.toUpperCase(), def.lore||'the colony raises it into the relic case', 6400);
           for(let i=0;i<10;i++) particles.push({x:rew.x,y:rew.y,vx:(Math.random()-0.5)*1.6,vy:-Math.random()*2.2,life:1,decay:0.02,color:def.color, bloque:true});
         }
         pushEvent('discover', _grito, '['+rew.c+','+rew.r+'] '+NOMBRE_BANDA(def.tier-1));
@@ -4329,8 +4380,8 @@ function _prepareSuccessor(q){
   else { q._royalNext=true; q.progress=Math.max(q.progress||0,84); }
   if(!q._successionAnnounced){
     q._successionAnnounced=true;
-    pushEvent('evo','👑 La colonia prepara heredera antes de la vejez',`Quedan ${(Math.max(0,remaining)/DAY_LENGTH).toFixed(1)} días; desarrollo real ≈${QUEEN_SUCCESSOR_LEAD_DAYS} días`);
-    notifyCanon('👑 SUCESIÓN', 'La colonia alimenta una heredera antes de que muera la reina', 5200);
+    pushEvent('evo','👑 The colony prepares an heir before old age',`${(Math.max(0,remaining)/DAY_LENGTH).toFixed(1)} days remain · development takes about ${QUEEN_SUCCESSOR_LEAD_DAYS} days`);
+    notifyCanon('👑 SUCCESSION', 'The colony feeds an heir before the queen dies', 5200);
   }
   q._successionPlanned=true;
   return candidate||null;
@@ -4447,14 +4498,14 @@ function updateQueen(dt){
     const _maxAguante = _realEnCamino ? DAY_LENGTH*2.2 : DAY_LENGTH*7;
     if(_muriendo && !_sucesoraViva && (q.edadPospuesta||0)<_maxAguante){
       q.edadPospuesta=(q.edadPospuesta||0)+dt;
-      if(!q._avisoAguante){ q._avisoAguante=true; pushEvent('evo', _realEnCamino?'♛ la reina espera a la heredera que ya crece':'♛ la reina se aguanta: aún no hay heredera'); }
+      if(!q._avisoAguante){ q._avisoAguante=true; pushEvent('evo', _realEnCamino?'♛ the queen waits for the growing heir':'♛ the queen holds on: there is no heir yet'); }
     } else if(_muriendo){
       // muerte por vejez, o porque llevaba demasiado tiempo a cero de salud
       const _agonia = (q._agonia||0) > DAY_LENGTH*0.7 && q.age <= q.maxAge;
-      if(_agonia) pushEvent('evo', `♛ ${q.name||q.id||'Reina'} se apaga`, 'Llevaba un día entero sin fuerzas - la colonia da paso a la heredera');
-      pushEvent('death',`♛ ${q.name||q.id||'Reina'} ${_agonia?'muere agotada':'muere de vieja'} a los ${(q.age/DAY_LENGTH).toFixed(1)}d`, `Vivió ${(q.maxAge/DAY_LENGTH).toFixed(1)}d - GEN${q.genome.gen}`);
-      notifyCanon('♛ REINA MUERE', `${q.name} muere a los ${(q.age/DAY_LENGTH).toFixed(1)} días - la colonia busca heredera`, 6200);
-      pushToast(q.x,q.y-20,'💀 REINA','#ff3b30',3);
+      if(_agonia) pushEvent('evo', `♛ ${q.name||q.id||'Queen'} is fading`, 'She spent a full day without strength; the colony makes way for the heir');
+      pushEvent('death',`♛ ${q.name||q.id||'Queen'} ${_agonia?'dies exhausted':'dies of old age'} at ${(q.age/DAY_LENGTH).toFixed(1)}d`, `Lived ${(q.maxAge/DAY_LENGTH).toFixed(1)}d · GEN${q.genome.gen}`);
+      notifyCanon('♛ REINA MUERE', `${q.name} dies at ${(q.age/DAY_LENGTH).toFixed(1)} days · the colony seeks an heir`, 6200);
+      pushToast(q.x,q.y-20,'💀 QUEEN','#ff3b30',3);
       // partículas de luto
       for(let i=0;i<14;i++) particles.push({x:q.x,y:q.y,vx:(Math.random()-0.5)*2,vy:-Math.random()*1.5,life:1,decay:0.015,color:'#b47aff'});
       // si era la principal, la colonia la llora
@@ -4466,8 +4517,8 @@ function updateQueen(dt){
         const larva=brood.find(b=>b.type==='larva'&&_entityInKnownWalkspace(b));
         if(larva){
           larva.isQueen=true;
-          pushEvent('evo','¡Emergencia! Larva real alimentada para nueva reina','La colonia no se rinde');
-      notifyCanon('🆘 LARVA REAL', 'La colonia alimenta una larva para salvar la corona', 5200);
+          pushEvent('evo','Emergency! Royal larva fed to become the new queen','The colony will not give up');
+      notifyCanon('🆘 ROYAL LARVA', 'The colony feeds a larva to save the crown', 5200);
         } else if(workers.some(w=>_entityInKnownWalkspace(w))){
           // si no hay larva, una nodriza SE transforma sí o sí si era la última reina (anti-extinción Minecraft)
           if(true){
@@ -4479,10 +4530,10 @@ function updateQueen(dt){
             if(cand){
               let _qn1=genPersonalName({faction:cand.faction, role:'REINA', affinity:'NODRIZA', caste:'media', parents:[], genome:cand.genome, isQueen:true, rank:'LÍDER', ageDays:0, idCode:'Q'+(queens.length+1)+'-'+Math.random().toString(36).slice(2,4).toUpperCase()});
               queens.push(ensureQueenMeta({x:cand.x,y:cand.y, genome:cand.genome, progress:0, state:'GRÁVIDA', age:0, maxAge: getQueenMaxAge(), generation:gen+1, faction:cand.faction, health:100, name:_qn1.name, personalName:_qn1.name, nameMeaning:_qn1.meaning, nameStage:_qn1.stage, id:'Q'+Math.random().toString(36).slice(2,5).toUpperCase(), eggsLaid:0, children:[], history:[]}));
-              enforceQueenCap("se corona del bando de las nodrizas");
+              enforceQueenCap("crowned by the nurses");
               workers.splice(workers.indexOf(cand),1);
-              pushEvent('birth','¡Nodriza se transforma en reina!','Metamorfosis extrema por supervivencia');
-      notifyCanon('👑 NODRIZA REINA', 'Una nodriza se transforma en reina por supervivencia', 5200);
+              pushEvent('birth','A nurse transforms into a queen!','Extreme metamorphosis for survival');
+      notifyCanon('👑 NURSE QUEEN', 'A nurse transforms into a queen for survival', 5200);
             }
           }
         }
@@ -4555,10 +4606,10 @@ function updateQueen(dt){
           if(best.history.length>12) best.history.pop();
         }
         const eggIcon=eggIcon2;
-        pushEvent('birth',`${eggIcon} ${q.name||'Reina'} pone huevo ${mutated.genome.id}${isQueenLarva?' [REINA]':''} (♛x${best?best.id:'-'})`, `Mut: ${mutated.changes.slice(0,2).join(', ')}`);
-        pushToast(q.x,q.y-28,eggIcon+' HUEVO',isQueenLarva?'#ffcc00':'#b47aff');
-        if(isQueenLarva) setNarration(`<b>¡Huevo real!</b> ${q.name} gesta una futura reina 👑 - la colonia crece.`);
-        if(isQueenLarva) notifyCanon('👑 HUEVO REAL', `${q.name} gesta una futura reina`, 5000);
+        pushEvent('birth',`${eggIcon} ${q.name||'Queen'} lays egg ${mutated.genome.id}${isQueenLarva?' [QUEEN]':''} (♛x${best?best.id:'-'})`,`Mut: ${mutated.changes.slice(0,2).join(', ')}`);
+        pushToast(q.x,q.y-28,eggIcon+' EGG',isQueenLarva?'#ffcc00':'#b47aff');
+        if(isQueenLarva) setNarration(`<b>Royal egg!</b> ${q.name} carries a future queen 👑 · the colony grows.`);
+        if(isQueenLarva) notifyCanon('👑 ROYAL EGG', `${q.name} carries a future queen`, 5000);
       }
     } else q.progress=Math.max(0, q.progress - dt*0.04);
     q.state= economyLedger.food>=3? 'GRÁVIDA' : 'HAMBRIENTA';
@@ -4674,17 +4725,17 @@ if(b.isQueen || workers.length < getMaxPopulation()){
               // algunas obreras la siguen (baja lealtad)
               let followers=0;
               workers.forEach(w=>{ if(w.mood.loyalty<0.45 && Math.random()<0.3){ w.faction=newFac; followers++; }});
-              pushEvent('evo',`¡CISMA! Nueva reina ${newQueen.name} funda facción ${newFac} con ${followers} seguidoras`,`Guerra civil posible - Facciones: ${society.factions.length}`);
-              notifyCanon('⚔ CISMA', `${newQueen.name} funda facción ${newFac} con ${followers} seguidoras - riesgo de guerra civil`, 6200);
+              pushEvent('evo',`SCHISM! New queen ${newQueen.name} founds faction ${newFac} with ${followers} followers`,`Possible civil war · factions: ${society.factions.length}`);
+              notifyCanon('⚔ SCHISM', `${newQueen.name} founds faction ${newFac} with ${followers} followers · civil-war risk`, 6200);
               society.wars++;
             } else {
-              pushEvent('birth',`👑 ¡Nace reina ${newQueen.name}!`, `GEN${b.genome.gen} - Facción ${newQueen.faction}`);
-              notifyCanon('👑 NACE REINA', `${newQueen.name} eclosiona - GEN${b.genome.gen}`, 5200);
+              pushEvent('birth',`👑 Queen ${newQueen.name} is born!`, `GEN${b.genome.gen} · Faction ${newQueen.faction}`);
+              notifyCanon('👑 QUEEN BORN', `${newQueen.name} hatches · GEN${b.genome.gen}`, 5200);
             }
             queens.push(ensureQueenMeta(newQueen));
             { const _fc=society.factions.find(f=>f.id===newQueen.faction); if(_fc) _fc.members++; }
             pushToast(newQueen.x,newQueen.y-18,`👑 ${newQueen.name}`,'#ffcc00',3);
-            if(!silentQueenless) pushEvent('birth','👑 La cria refunda la dinastia',`Sin reina viva: ${newQueen.name} nace y gobierna`);
+            if(!silentQueenless) pushEvent('birth','👑 The brood restores the dynasty',`With no living queen: ${newQueen.name} is born and takes the colony`);
             enforceQueenCap('nace de cría real');
           } else {
             const ant=makeAnt(b.genome, {x:an.x+(Math.random()-0.5)*18, y:an.y+(Math.random()-0.5)*10}, {faction: b.faction!==undefined? b.faction : an.faction});
@@ -4705,10 +4756,10 @@ if(b.isQueen || workers.length < getMaxPopulation()){
             if(gen===0&&(ant.genome&&ant.genome.gen||0)>=1){gen=1;lastGenTime=time;colonyIQ=Math.max(colonyIQ,103);}
             stats.xp+=20;checkLevelUp();
             // hereda facción y un poco del ánimo de la madre
-            pushEvent('birth',`Eclosiona ${ant.id} [${ant.role}] GEN${ant.genome.gen}`, `EXP${ant.traits.exploracion} CAV${ant.traits.construccion} COM${ant.traits.comunica}`);
-            if(workers.length<=5) notifyCanon('🐣 ECLOSION', `${ant.id} nace - la colonia crece`, 4800);
+            pushEvent('birth',`${ant.id} hatches [${ant.role}] GEN${ant.genome.gen}`, `EXP${ant.traits.exploracion} CAV${ant.traits.construccion} COM${ant.traits.comunica}`);
+            if(workers.length<=5) notifyCanon('🐣 HATCHING', `${ant.id} is born · the colony grows`, 4800);
             pushToast(an.x,an.y-18,`🐣 ${ant.id}`,'#b47aff',2.6);
-            if(silentQueenless) notifyCanon('🐣 REVIENTA EL HUEVO', `${ant.id} nace sin reina - las nodrizas la coronaran enseguida`, 5200);
+            if(silentQueenless) notifyCanon('🐣 THE EGG BREAKS', `${ant.id} is born without a queen · the nurses will crown her immediately`, 5200);
           }
         } else {
           // A promised birth must not disappear at the cap. The mature pupa waits at 100% and hatches
@@ -4717,7 +4768,7 @@ if(b.isQueen || workers.length < getMaxPopulation()){
           b.progress=100; b._capWaiting=true;
           if(!b._capWarnedAt||time-b._capWarnedAt>DAY_LENGTH*0.5){
             b._capWarnedAt=time||1;
-            pushEvent('evo',`Pupa espera: colonia en tope ${getMaxPopulation()} - cava más salas o evoluciona`,'No se pierde: eclosiona en cuanto quede una plaza');
+            pushEvent('evo',`Pupa waiting: colony at cap ${getMaxPopulation()} · excavate more chambers or evolve`,'It is not lost: it hatches as soon as a slot opens');
           }
           continue;
         }
@@ -4798,7 +4849,7 @@ function updateFungus(dt){
     }
     // y si le quitan el lecho (alguien cava el suelo de la camara) el sustrato se va: se apaga rapido
     if(!soil[f.r+1] || soil[f.r+1][f.c]===0) f.health -= dt*0.0016;
-    if(f.health<=0){ fungusGardens.splice(i,1); pushEvent('death', (!soil[f.r+1] || soil[f.r+1][f.c]===0) ? '🍄 Jardín fúngico perdido - le cavaron el suelo de debajo' : '🍄 Jardín fúngico muere - falta cuidado/humedad'); }
+    if(f.health<=0){ fungusGardens.splice(i,1); pushEvent('death', (!soil[f.r+1] || soil[f.r+1][f.c]===0) ? '🍄 Fungus garden lost · its supporting floor was excavated' : '🍄 Fungus garden dies · it lacks care or moisture'); }
   }
   // crear nuevo jardín cuando la colonia crece y aprende hongo. El sitio y el momento salen del USO (los
   // votos de las obreras que guardan setas y semillas alli), no del dado: asi el huerto aparece donde la
@@ -4824,8 +4875,8 @@ function updateFungus(dt){
           // y el invento sale de esto: si le llevan sustrato y lo mantienen, YA saben cultivar - nadie se lo
           // conto, lo cuentan los votos.
           inventions.fungus=true;
-          pushEvent('invention',`🍄 Cultivo descubierto: ${_votos} cargas de sustrato manten el jardin de la camara`, `Aprendizaje por uso - GEN${gen}, IQ ${Math.round(colonyIQ)}`);
-          notifyCanon('🍄 CULTIVO', 'Las obreras aprenden a mantener el hongo donde tiran el sustrato', 5200);
+          pushEvent('invention',`🍄 Cultivation discovered: ${_votos} substrate loads sustain the chamber garden`, `Learned through use · GEN${gen}, IQ ${Math.round(colonyIQ)}`);
+          notifyCanon('🍄 CULTIVO', 'Workers learn to tend fungus where they leave substrate', 5200);
         }
       } else if(!soil[_mejor.r] || soil[_mejor.r][_mejor.c]!==0 || !soil[_mejor.r+1] || soil[_mejor.r+1][_mejor.c]===0 || !isNestCellConnected(_mejor.c,_mejor.r)){
         delete _huertoVotos[_clave];                          // alguien tumbo el suelo: se busca otro rincon
@@ -4834,8 +4885,8 @@ function updateFungus(dt){
         fungusGardens.push({x:gx, y:gy, c:_mejor.c, r:_mejor.r, health:0.78, size:0.9, age:0, fed:0});
         delete _huertoVotos[_clave];
         inventions.fungus=true;
-        pushEvent('evo','🍄 Nuevo jardín fúngico, en el rincón que ellas usan',`Jardines: ${fungusGardens.length} · ${_votos} cargas votan ese suelo`);
-        notifyCanon('🍄 HUERTO NUEVO', `El trafico de la colonia abre un jardin en [${_mejor.c},${_mejor.r}]`, 4800);
+        pushEvent('evo','🍄 New fungus garden in the corner the ants chose',`Gardens: ${fungusGardens.length} · ${_votos} loads favor that floor`);
+        notifyCanon('🍄 NEW GARDEN', `Colony traffic opens a garden at [${_mejor.c},${_mejor.r}]`, 4800);
         if(Math.random()<0.6) pushToast(gx, gy-14, '🍄', '#2de67a', 1.4);
       }
     }
@@ -4953,27 +5004,27 @@ function renderSociety(){
     const q=queens[0];
     const d=(q.age/DAY_LENGTH).toFixed(1);
     const life=Math.floor((1-q.age/q.maxAge)*100);
-    elAge.textContent=`${q.name} ${d}d - ${life}% vida - ${q.state}`;
+    elAge.textContent=`${q.name} ${d}d · ${life}% health · ${q.state}`;
   }
   const elFac=document.getElementById('factionCount');
   if(elFac) elFac.textContent=society.factions.filter(f=>f.members>0).length;
   const elList=document.getElementById('factionList');
   if(elList){
     const active=society.factions.filter(f=>f.members>0);
-    elList.textContent= active.length===1? '- colonia única' : active.map(f=>`F${f.id}(${f.members})`).join(' - ');
+    elList.textContent= active.length===1? '· single colony' : active.map(f=>`F${f.id}(${f.members})`).join(' - ');
   }
   const elWar=document.getElementById('warStatus');
   if(elWar){
-    if(society.wars){ elWar.textContent='⚔ GUERRA'; elWar.style.background='#2a0000'; elWar.style.borderColor='#ff3b30'; elWar.style.color='#ff3b30'; }
-    else { elWar.textContent='☮ PAZ'; elWar.style.background='#0a1a0a'; elWar.style.borderColor='#1a3d1a'; elWar.style.color='#2de67a'; }
+    if(society.wars){ elWar.textContent='⚔ WAR'; elWar.style.background='#2a0000'; elWar.style.borderColor='#ff3b30'; elWar.style.color='#ff3b30'; }
+    else { elWar.textContent='☮ PEACE'; elWar.style.background='#0a1a0a'; elWar.style.borderColor='#1a3d1a'; elWar.style.color='#2de67a'; }
   }
   const elCult=document.getElementById('cultStatus');
   if(elCult){
     if(society.cults){ 
       const fac=society.factions.find(f=>f.belief && f.belief!=='-');
-      elCult.textContent= fac? `✡ ${fac.belief}` : '✡ culto activo';
+      elCult.textContent= fac? `✡ ${fac.belief}` : '✡ active cult';
       elCult.style.background='#1a0033'; elCult.style.borderColor='#b47aff'; elCult.style.color='#b47aff';
-    } else { elCult.textContent='- sin culto'; elCult.style.background='#0a0a1a'; elCult.style.borderColor='#2a1a3d'; elCult.style.color='#8a7a5a'; }
+    } else { elCult.textContent='· no cult'; elCult.style.background='#0a0a1a'; elCult.style.borderColor='#2a1a3d'; elCult.style.color='#8a7a5a'; }
   }
   const elMood=document.getElementById('moodBars');
   if(elMood){
@@ -4992,11 +5043,11 @@ function renderSociety(){
   }
   const elSoc=document.getElementById('societyStatus');
   if(elSoc){
-    if(society.wars) elSoc.textContent='¡guerra!';
-    else if(society.cults) elSoc.textContent='culto';
-    else if(society.mood.stress>0.6) elSoc.textContent='tensa';
-    else if(society.mood.joy>0.6) elSoc.textContent='feliz';
-    else elSoc.textContent='estable';
+    if(society.wars) elSoc.textContent='war!';
+    else if(society.cults) elSoc.textContent='cult';
+    else if(society.mood.stress>0.6) elSoc.textContent='tense';
+    else if(society.mood.joy>0.6) elSoc.textContent='happy';
+    else elSoc.textContent='stable';
   }
   // idioma
   try{
@@ -5006,18 +5057,18 @@ function renderSociety(){
     const elDic=document.getElementById('langDict');
     if(lang && elFlu){
       elFlu.textContent=Math.floor(lang.fluency*100)+'%';
-      if(lang.stage==='feromonas' || lang.fluency<0.12) elSta.textContent='feromonas - hormigas reales';
-      else if(lang.fluency<0.28) elSta.textContent=`señales simples - ${lang.grammar.order}`;
-      else if(lang.fluency<0.5) elSta.textContent=`balbuceo → proto ${lang.grammar.order}`;
-      else if(lang.fluency<0.78) elSta.textContent=`proto-idioma ${lang.grammar.order} ${lang.grammar.plural} - ya entendible`;
-      else elSta.textContent=`idioma completo ${lang.grammar.order} - traducible`;
+      if(lang.stage==='feromonas' || lang.fluency<0.12) elSta.textContent='pheromones · real ants';
+      else if(lang.fluency<0.28) elSta.textContent=`simple signals · ${lang.grammar.order}`;
+      else if(lang.fluency<0.5) elSta.textContent=`babble → proto-language ${lang.grammar.order}`;
+      else if(lang.fluency<0.78) elSta.textContent=`proto-language ${lang.grammar.order} ${lang.grammar.plural} · now understandable`;
+      else elSta.textContent=`complete language ${lang.grammar.order} · translatable`;
       if(elDic){
         const entries=Object.entries(lang.lex).slice(0,6).map(([k,v])=> `${k.toLowerCase()}→<b style="color:#d8b4ff">${v}</b>`).join(' - ');
-        let html = entries + `<br><span style="color:#8a7a5a">orden ${lang.grammar.order} - ${Object.keys(lang.lex).length} palabras - ${lang.utterances} frases</span>`;
+        let html=entries+`<br><span style="color:#8a7a5a">order ${lang.grammar.order} · ${Object.keys(lang.lex).length} words · ${lang.utterances} phrases</span>`;
         try{
           const ex=genPersonalName({faction:lang.faction, role:'EXCAVADORA', affinity:'EXCAVADORA', caste:'media', parents:[], genome:{hiddenSize:8}, isQueen:false, rank:'OBRERA', ageDays:1.2, idCode:'A9X2'});
           const ex2=genPersonalName({faction:lang.faction, role:'NODRIZA', affinity:'NODRIZA', caste:'media', parents:['Kira'], genome:{hiddenSize:8}, isQueen:false, rank:'OBRERA', ageDays:1.2, idCode:'A1B2'});
-          html += `<br><span style="color:#fff">ej. ${ex.name} <span style="color:#b47aff">(${ex.meaning})</span> - ${ex2.name} <span style="color:#b47aff">(${ex2.meaning})</span></span>`;
+          html+=`<br><span style="color:#fff">e.g. ${ex.name} <span style="color:#b47aff">(${ex.meaning})</span> · ${ex2.name} <span style="color:#b47aff">(${ex2.meaning})</span></span>`;
         }catch(e){}
         elDic.innerHTML=html;
       }
@@ -5193,13 +5244,13 @@ function handleDeath(ant, reason){
   if(idx>=0) workers.splice(idx,1);
   // partículas y evento
   for(let i=0;i<10;i++) particles.push({x:ant.x,y:ant.y,vx:(Math.random()-0.5)*2,vy:(Math.random()-0.5)*2,life:1,decay:0.025,color: reason==='vejez'?'#8a7a5a' : reason==='asesinato'?'#ff3b30' : '#555'});
-  let msg=`💀 ${ant.id} muere`;
-  if(reason==='vejez') msg+=` de vieja (${(ant.age/DAY_LENGTH).toFixed(1)}d)`;
-  else if(reason==='hambre') msg+=' de hambre';
-  else if(reason==='asesinato') msg+=` asesinada por ${ant.killer||'otra'}`;
-  else if(reason==='guerra') msg+=` en guerra facción ${ant.faction}`;
+  let msg=`💀 ${ant.id} dies`;
+  if(reason==='vejez') msg+=` of old age (${(ant.age/DAY_LENGTH).toFixed(1)}d)`;
+  else if(reason==='hambre') msg+=' of hunger';
+  else if(reason==='asesinato') msg+=` · killed by ${ant.killer||'another ant'}`;
+  else if(reason==='guerra') msg+=` in faction ${ant.faction} warfare`;
   else msg+=` (${reason})`;
-  pushEvent('death',msg, `Facción ${ant.faction} - Rol ${ant.role} - Ánimo J${(ant.mood.joy*100)|0} I${(ant.mood.anger*100)|0}`);
+  pushEvent('death',msg, `Faction ${ant.faction} · Role ${ant.role} · Mood J${(ant.mood.joy*100)|0} A${(ant.mood.anger*100)|0}`);
   // tristeza colectiva
   const deathKnown=_entityInKnownWalkspace(ant);
   workers.forEach(w=>{if(deathKnown&&w.faction===ant.faction&&_entityInKnownWalkspace(w)) w.mood.sadness=Math.min(1,w.mood.sadness+.08);});
@@ -5211,7 +5262,7 @@ function checkLevelUp(){
     if(stats.xp >= stats.xpToNext && time - _lastGenHint > DAY_LENGTH*0.12){
       _lastGenHint=time;
       const falta=((DAY_LENGTH*0.34 - (time-lastGenTime))/DAY_LENGTH).toFixed(2);
-      pushToast(W/2,H/2-10,'⏳ GEN madurando '+falta+'d','#8a7a5a',1.2);
+      pushToast(W/2,H/2-10,'⏳ GEN maturing '+falta+'d','#8a7a5a',1.2);
     }
     return;
   }
@@ -5220,7 +5271,7 @@ function checkLevelUp(){
     stats.xp-=stats.xpToNext; stats.nivel++; stats.xpToNext=Math.floor(stats.xpToNext*1.55); gen++; lastGenTime=time;
     const res=mutateGenome(queen.genome,0.10,0.45);
     queen.genome=res.genome; lastMutInfo=res.changes.slice(0,2).join(' | ');
-    pushEvent('evo',`Evolución GEN-${gen}: ${lastMutInfo}`,`Nodos ${queen.genome.hiddenSize} - FIT ${(colonyFitness||0).toFixed(2)} - IQ ${colonyIQ}`);
+    pushEvent('evo',`Evolution GEN-${gen}: ${lastMutInfo}`,`Nodes ${queen.genome.hiddenSize} · FIT ${(colonyFitness||0).toFixed(2)} · IQ ${colonyIQ}`);
     fitnessHistory.push(colonyFitness); if(fitnessHistory.length>36) fitnessHistory.shift();
     colonyIQ=100 + Math.floor(gen*3.8) + Math.floor((queen.genome.hiddenSize-8)*3.5) + Math.floor(Math.min(colonyFitness,8.5)*2.1); // realista: +3.8 por gen no +7, fitness no explota
     if(colonyIQ>280) colonyIQ=280 + Math.floor((colonyIQ-280)*0.18); // tope realista, genias >280 cuesta muchísimo
@@ -5438,8 +5489,8 @@ function updateAnt(ant, dt){
       pushToast((ant.x+near.x)/2,(ant.y+near.y)/2,'⚔️','#ff3b30',1.2);
       if(near.health<=0){
         near.killer=ant.id; handleDeath(near, 'guerra'); ant.mood.joy=Math.min(1, ant.mood.joy+0.14); ant.crimes++; society.crimes++;
-        pushImportant('crime',`⚔ ${ant.id} (F${ant.faction}) mata a ${near.id} (F${near.faction}) en guerra`, `Ira ${(ant.mood.anger*100)|0}% - Facciones ${society.factions.length}`);
-        notifyCanon('⚔ ASESINATO', `${ant.id} mata a ${near.id} en guerra de facciones`, 5000);
+        pushImportant('crime',`⚔ ${ant.id} (F${ant.faction}) kills ${near.id} (F${near.faction}) in warfare`, `Anger ${(ant.mood.anger*100)|0}% · factions ${society.factions.length}`);
+        notifyCanon('⚔ KILLING', `${ant.id} kills ${near.id} in faction warfare`, 5000);
       }
       if(ant.health<=0){ ant.killer=near.id; handleDeath(ant,'guerra'); }
       if(Math.random()<0.4) society.wars=1;
@@ -5453,14 +5504,14 @@ function updateAnt(ant, dt){
       if(ant.food && !ant.food.isSoil && ant.state!=='VOLVER_COMIDA'&&!ant._excursion&&near.mood.anger>0.65 && near.mood.loyalty<0.35 && Math.random()<0.006){
         near.food=ant.food; ant.food=null;
         near.mood.joy=Math.min(1, near.mood.joy+0.18); ant.mood.anger=Math.min(1, ant.mood.anger+0.25); ant.mood.sadness=Math.min(1, ant.mood.sadness+0.18);
-        pushImportant('crime',`🦹 ${near.id} roba miel a ${ant.id} (F${ant.faction})`,`Crimen - Lealtad ${(near.mood.loyalty*100)|0}%`);
+        pushImportant('crime',`🦹 ${near.id} steals honey from ${ant.id} (F${ant.faction})`,`Crime · loyalty ${(near.mood.loyalty*100)|0}%`);
         near.crimes++; society.crimes++;
         for(let i=0;i<5;i++) particles.push({x:ant.x,y:ant.y,vx:(Math.random()-0.5)*2,vy:-1,life:0.8,decay:0.03,color:'#ffcc00'});
       }
       if(near.followers>=3 && near.mood.anger>0.6 && queens[0] && queens[0].age>5000 && time-lastCoup>DAY_LENGTH*1.8 && Math.random()<0.0015){ lastCoup=time; 
         if(Math.random()<0.5){
-          pushEvent('evo',`👑 ¡Golpe! ${near.id} y ${near.followers} seguidoras derrocan a ${queens[0].name}`,`Culto ${near.id}-ismo toma el poder`);
-          notifyCanon('👑 GOLPE DE ESTADO', `${near.id} derroca a ${queens[0].name} con ${near.followers} seguidoras`, 6200);
+          pushEvent('evo',`👑 Coup! ${near.id} and ${near.followers} followers overthrow ${queens[0].name}`,`The ${near.id} cult takes power`);
+          notifyCanon('👑 COUP', `${near.id} overthrows ${queens[0].name} with ${near.followers} followers`, 6200);
           queens[0].health-=40;
         }
       }
@@ -5494,7 +5545,7 @@ function updateAnt(ant, dt){
       ant.targetFood=_tandemFood; follower.targetFood=_tandemFood;
       ant.state='TANDEM_LEADER'; follower.state='TANDEM_FOLLOWER';
       ant.tandemCooldown=320; follower.tandemCooldown=320;
-      pushEvent('evo',`🤝 Tandem ${ant.id} → ${follower.id}`,`Guía 1-a-1 a comida - colonia pequeña`);
+      pushEvent('evo',`🤝 Tandem ${ant.id} → ${follower.id}`,`One-to-one guide to food · small colony`);
     }
   }
   if(ant.mood.sadness>0.82) ant.mood.joy=Math.max(0, ant.mood.joy-0.01);
@@ -5653,7 +5704,7 @@ function updateAnt(ant, dt){
         const sym = symbolForComms(comm1,comm2);
         const neigh=nearestWorker(ant,ant.id);
         pushEvent('comms',`${ant.id} pinta ${sym} [${(comm1 ?? 0).toFixed(2)},${(comm2 ?? 0).toFixed(2)}] → ${neigh?neigh.id:'suelo'}`, `GEN${ant.genome.gen} - rol ${ant.role}`);
-        if(Math.random()<0.45) setNarration(`<b>${ant.id} grita ${sym}</b> - tinta <span style="color:${inkColorForSymbol(sym)}">● ${sym==='⬢'?'¡COMIDA!':sym==='⬣'?'¡AYUDA!':sym==='◆'?'¡TESORO!':'..'}</span>`);
+        if(Math.random()<0.45) setNarration(`<b>${ant.id} grita ${sym}</b> - tinta <span style="color:${inkColorForSymbol(sym)}">● ${sym==='⬢'?'FOOD!':sym==='⬣'?'HELP!':sym==='◆'?'TREASURE!':'..'}</span>`);
       }
     }
   }
@@ -5779,7 +5830,7 @@ function updateAnt(ant, dt){
       if(ant.fatigue>84){
         ant.digTarget=null; ant.digProgress=0; ant.buildTarget=null; ant._magmaRetreat=true; ant.state='VOLVER_TIERRA';
         if(Math.random()<0.06) pushToast(ant.x,ant.y-12,'🔥','#ff6a1e');
-        if(!ant._fuegoAviso || time-ant._fuegoAviso>600){ ant._fuegoAviso=time; pushEvent('accident', `🔥 ${ant.id} sale escaldada del basalto`, `piso ${_ar-SURFACE_ROW} - fatiga ${Math.round(ant.fatigue)}`); }
+        if(!ant._fuegoAviso || time-ant._fuegoAviso>600){ ant._fuegoAviso=time; pushEvent('accident', `🔥 ${ant.id} retreats scorched from basalt`, `floor ${_ar-SURFACE_ROW} · fatigue ${Math.round(ant.fatigue)}`); }
       }
     }
   }
@@ -5936,8 +5987,8 @@ function updateAnt(ant, dt){
           if(!materialUso[_mat]) materialUso[_mat]={mina:0, carga:0, tocado:0};
           materialUso[_mat].mina += _amt;
           pushToast(ant.digTarget.c*CELL+8, ant.digTarget.r*CELL+8, _mat==='cobre'?'\u{1F7E0}':(_mat==='hierro'?'\u2699\u{FE0E}':'\u{1F7E1}'), '#ffd76a', 1.4);
-          pushEvent('discover', `\u26CF ${ant.id} saca ${_mat} x${_amt} de la roca`, `veta en [${ant.digTarget.c},${ant.digTarget.r}] - la colonia atesora ${economyLedger.materials[_mat]}`);
-          logAntHistory(ant, `extrajo ${_mat} x${_amt}`);
+          pushEvent('discover', `\u26CF ${ant.id} extracts ${_mat} x${_amt} from the rock`, `vein at [${ant.digTarget.c},${ant.digTarget.r}] · colony stock ${economyLedger.materials[_mat]}`);
+          logAntHistory(ant, `extracted ${_mat} x${_amt}`);
           colonyFitness += _mat==='oro'?0.9:0.55;
         } if(_mt===17){                                  // la losa: el bloque NO se quita, se agrieta
           const _objetivoLosa={r:ant.digTarget.r,c:ant.digTarget.c};
@@ -5949,7 +6000,7 @@ function updateAnt(ant, dt){
           return;
         } if(_mt===15){                                   // el magma no se cava: achicharra y ya esta
           ant.digTarget=null; ant.digProgress=0; ant.state='VOLVER_TIERRA'; ant.fatigue=Math.min(100,ant.fatigue+9);
-          pushToast(ant.x,ant.y-10,'🔥 QUEMA','#ff6a1e'); return;
+          pushToast(ant.x,ant.y-10,'🔥 BURNS','#ff6a1e'); return;
         } if(!_canExcavateMaterial(_mt,ant)){
           const req=_materialDigTier(_mt),roman=['0','I','II','III','IV'];ant.digTarget=null;ant.digProgress=0;ant.state='EXPLORAR';
           pushToast(ant.x,ant.y-10,_mt===15?'🔥 MAGMA':_mt===19?'WORLD CORE':'JAW TIER '+(roman[req]||req),_mt===15?'#ff6a1e':_mt===19?'#d32912':'#d6a34d');return;
@@ -5969,9 +6020,9 @@ function updateAnt(ant, dt){
         else if(_mt===4 && Math.random()<0.55){ economyLedger.creditMaterial('stone',1,'soil excavation'); if(inventions.stone) colonyFitness+=0.05; }
         else if(_mt===1 && Math.random()<0.22){ economyLedger.creditMaterial('fiber',1,'root excavation'); } // raíces
         if(_mt===4) pushToast(tx,ty-16,'>< STONE','#8a8a8a',1.3);
-        else if(_mt===2) pushToast(tx,ty-16,'✓ TÚNEL','#d4a574',1.3);
-        else pushToast(tx,ty-16,'✓ TÚNEL','#2de67a',1.3);
-        logAntHistory(ant, `abrió túnel [${ant.digTarget.c},${ant.digTarget.r}]`);
+        else if(_mt===2) pushToast(tx,ty-16,'✓ TUNNEL','#d4a574',1.3);
+        else pushToast(tx,ty-16,'✓ TUNNEL','#2de67a',1.3);
+        logAntHistory(ant, `opened tunnel [${ant.digTarget.c},${ant.digTarget.r}]`);
         checkRewardDiscovery(ant.digTarget.c, ant.digTarget.r);
         if(Math.random()<0.28){
           const neigh=[[ -1,0],[1,0],[0,-1],[0,1]];
@@ -5998,7 +6049,7 @@ function updateAnt(ant, dt){
           const h= 2 + Math.floor(Math.random()*2);
           const carved= excavateChamber(ant.digTarget.c, ant.digTarget.r, w, h, ant);
           if(carved>4){
-            pushEvent('build',`🏛 ${ant.id} esculpe cámara ${w}x${h} [${ant.digTarget.c},${ant.digTarget.r}]`, `Arquitectura real - ${carved} celdas - GEN${gen}`);
+            pushEvent('build',`🏛 ${ant.id} carves chamber ${w}×${h} [${ant.digTarget.c},${ant.digTarget.r}]`, `Physical architecture · ${carved} cells · GEN${gen}`);
             // no volver con tierra si hizo cámara grande, sigue excavando
             if(Math.random()<0.35) ant.state='EXPLORAR';
           }
@@ -6100,8 +6151,8 @@ function updateAnt(ant, dt){
           const after=countChambers();
           if(after>=chambersBefore) { colonyFitness+=0.28; ant.fitness+=0.45; }
           recordJobExperience(ant,'build',1);
-          pushEvent('build',`${ant.id} construye pared [${c},${r}]`, `Cámaras ${after} - IQ ${colonyIQ}`);
-          if(Math.random()<0.35) setNarration(`<b>${ant.id} levanta un muro</b> en [${c},${r}] - la colonia diseña sus cuartos.`);
+          pushEvent('build',`${ant.id} builds wall [${c},${r}]`, `Chambers ${after} · IQ ${colonyIQ}`);
+          if(Math.random()<0.35) setNarration(`<b>${ant.id} raises a wall</b> at [${c},${r}] · the colony designs its rooms.`);
         }
         ant.buildTarget=null;
       } else {
@@ -6130,7 +6181,7 @@ function updateAnt(ant, dt){
             if(ant._magmaRetreat){ ant._magmaRetreat=false; ant.state='DESCANSAR'; } else ant.state='EXPLORAR';
             ant.blocked=0;
             for(let i=0;i<5;i++) particles.push({x:best.c*CELL+8,y:best.r*CELL+8,vx:(Math.random()-0.5)*1,vy:-0.4,life:0.6,decay:0.04,color:'#6b3a1f'});
-            pushEvent('build',`${ant.id} rellena [${best.c},${best.r}] con tierra (Terraria)`, `Reconstrucción - GEN${gen}`);
+            pushEvent('build',`${ant.id} packs earth into [${best.c},${best.r}] (Terraria-style)`, `Reconstruction · GEN${gen}`);
             return;
           }
         }
@@ -6454,8 +6505,8 @@ function updateAnt(ant, dt){
           // Topo - en vez de spam, si ya hay varios cavando, resume en el strip inferior
           const _digsNow = workers.filter(w=>w.state==='CAVANDO').length;
           if(_digsNow>2){
-            setNarration(`<b>${_digsNow+1} excavadoras cavando</b> - ver reportes abajo para detalles <small>[${pick.c},${pick.r}]</small>`);
-          } else if(Math.random()<0.28) setNarration(`<b>${ant.id} [${ant.role}] va a cavar</b> en [${pick.c},${pick.r}] - mira el polvo.`);
+            setNarration(`<b>${_digsNow+1} diggers working</b> · see reports below <small>[${pick.c},${pick.r}]</small>`);
+          } else if(Math.random()<0.28) setNarration(`<b>${ant.id} [${ant.role}] goes to dig</b> at [${pick.c},${pick.r}] · watch the dust.`);
           return;
           }
         }
@@ -7730,7 +7781,6 @@ function drawFarm(ctx,W,H,isMini=false){
     ctx.fillStyle=g3; ctx.fillRect(x,SURFACE_Y-14,CELL,3);
     ctx.globalAlpha=1;
     ctx.fillStyle='#1e4a0f'; ctx.fillRect(x,SURFACE_Y-2,CELL,2);
-    if(_nievando){ ctx.fillStyle='rgba(238,246,255,0.80)'; ctx.fillRect(x,SURFACE_Y-18,CELL,6); ctx.fillStyle='rgba(255,255,255,0.62)'; ctx.fillRect(x,SURFACE_Y-19,CELL,1); }
     if(f>0.78 && (c*7)%5===0){
       ctx.fillStyle='rgba(46,154,32,0.22)'; ctx.fillRect(x+2,SURFACE_Y-10,12,6);
     }
@@ -7852,6 +7902,15 @@ function drawFarm(ctx,W,H,isMini=false){
       const c=Math.floor(x/CELL);
       if(c>=0&&c<COLS && (soil[SURFACE_ROW][c]===0 || (SURFACE_ROW+1<ROWS && soil[SURFACE_ROW+1][c]===0))) continue;
       ctx.fillStyle=fertility[c]>0.72?'#6b4a2a':'#5a3a1a'; ctx.fillRect(x, SURFACE_Y-4,4,2); ctx.fillStyle='#8b5a2b'; ctx.fillRect(x+1,SURFACE_Y-5,2,1);
+    }
+    // Snow settles after plants are painted, so flowers and tufts cannot randomly hide the physical
+    // meadow blanket. Open entrance columns remain clear instead of receiving a floating white strip.
+    if(_nievando){
+      for(let c=0;c<COLS;c++){
+        if(soil[SURFACE_ROW][c]===0||(SURFACE_ROW+1<ROWS&&soil[SURFACE_ROW+1][c]===0))continue;
+        const x=c*CELL;ctx.fillStyle='rgba(238,246,255,0.80)';ctx.fillRect(x,SURFACE_Y-18,CELL,6);
+        ctx.fillStyle='rgba(255,255,255,0.62)';ctx.fillRect(x,SURFACE_Y-19,CELL,1);
+      }
     }
   }
   // soil & tunnels - PIXEL ART DETALLADO REALISTA - con LOD para x16 smooth
@@ -8871,10 +8930,10 @@ function tickStep(dt){
             const g=mutateGenome(q.genome,0.12,0.5).genome;
             brood.push({type:'egg', progress:0, genome:g, time:0, isQueen:false, faction:q.faction, mother:q.id, x:q.x+(Math.random()-0.5)*20, y:q.y+(Math.random()-0.5)*12, hunger:0, parents:[q.name||q.id,'emergencia'], parentGenomes:[q.genome.id,'-']});
           }
-          pushEvent('birth',_rescueMode? '🆘 ¡CLUTCH de emergencia! Reina pone 2 huevos (rescate)':'🆘 Huevo de emergencia - la reina sacrifica vida',_rescueMode? 'Rescate activo: 1-2 hormigas → turbo + doble puesta':'Colonia al límite - Minecraft: nunca 0');
-          notifyCanon(_rescueMode?'🆘 CLUTCH RESCATE':'🆘 HUEVO EMERGENCIA', _rescueMode?'¡Doble puesta! La colonia no muere':'La reina sacrifica vida para no extinguirse', 5200);
-          pushToast(q.x,q.y-24,_rescueMode?'🆘x2 RESCATE':'🆘 EMERGENCIA','#ff3b30');
-          setNarration(_rescueMode? `<b>¡Rescate!</b> ${q.name} pone 2 huevos - turbo activado`:`<b>¡Emergencia!</b> ${q.name} pone sin miel - la colonia no muere.`);
+          pushEvent('birth',_rescueMode? '🆘 Emergency clutch! Queen lays 2 eggs':'🆘 Emergency egg · the queen sacrifices health',_rescueMode? 'Rescue active: 1–2 ants → accelerated double clutch':'Colony at the limit · never zero');
+          notifyCanon(_rescueMode?'🆘 RESCUE CLUTCH':'🆘 EMERGENCY EGG', _rescueMode?'Double clutch! The colony survives':'The queen sacrifices health to prevent extinction', 5200);
+          pushToast(q.x,q.y-24,_rescueMode?'🆘x2 RESCUE':'🆘 EMERGENCY','#ff3b30');
+          setNarration(_rescueMode? `<b>Rescue!</b> ${q.name} lays 2 eggs · accelerated clutch active`:`<b>Emergency!</b> ${q.name} lays without honey · the colony survives.`);
         }
       });
     } else {
@@ -8884,8 +8943,8 @@ function tickStep(dt){
     const _knownWorkersNow=workers.filter(w=>_entityInKnownWalkspace(w));
     if(queens.length===0&&_knownWorkersNow.length>0){
       let larva=brood.find(b=>b.type==='larva'&&_entityInKnownWalkspace(b));
-      if(larva && !larva.isQueen){ larva.isQueen=true; pushEvent('evo','👑 Larva coronada (rescate)','Anti-extinción: nueva reina asegurada');
-          notifyCanon('👑 LARVA CORONADA', 'Una larva es coronada reina de emergencia', 5200); }
+      if(larva && !larva.isQueen){ larva.isQueen=true; pushEvent('evo','👑 Larva crowned in rescue','Extinction safeguard: new queen secured');
+          notifyCanon('👑 CROWNED LARVA', 'A larva is crowned emergency queen', 5200); }
       else if(!larva){
         window._queenlessTime=(window._queenlessTime||0)+dt;
         if(window._queenlessTime > DAY_LENGTH*0.22){
@@ -8894,13 +8953,13 @@ function tickStep(dt){
           if(cand){
             let _qn3=genPersonalName({faction:cand.faction, role:'REINA', affinity:'NODRIZA', caste:'media', parents:[], genome:cand.genome, isQueen:true, rank:'LÍDER', ageDays:0, idCode:'Q'+(queens.length+1)+'-'+Math.random().toString(36).slice(2,4).toUpperCase()});
               queens.push(ensureQueenMeta({x:cand.x,y:cand.y, genome:cand.genome, progress:0, state:'GRÁVIDA', age:0, maxAge: getQueenMaxAge(), generation:gen+1, faction:cand.faction, health:85, name:_qn3.name, personalName:_qn3.name, nameMeaning:_qn3.meaning, nameStage:_qn3.stage, id:'Q'+Math.random().toString(36).slice(2,5).toUpperCase(), eggsLaid:0, children:[], history:[]}));
-              enforceQueenCap("se corona del bando de las nodrizas");
+              enforceQueenCap("crowned by the nurses");
             workers.splice(workers.indexOf(cand),1);
             if(queens.length>0) queen=queens[0];
-            pushEvent('birth','👑 '+cand.id+' se convierte en reina (rescate)','Última reina muerta → nodriza asciende');
-            notifyCanon('👑 ASCENSO', `${cand.id} asciende a reina - la colonia sobrevive`, 5600);
-            pushToast(cand.x,cand.y-18,'👑 NUEVA REINA','#b47aff',3);
-            setNarration(`<b>${cand.id}</b> asciende a reina - la colonia sigue viva.`);
+            pushEvent('birth','👑 '+cand.id+' becomes queen in a rescue','Last queen dead → nurse ascends');
+            notifyCanon('👑 ASCENSION',`${cand.id} rises to queen · the colony survives`,5600);
+            pushToast(cand.x,cand.y-18,'👑 NEW QUEEN','#b47aff',3);
+            setNarration(`<b>${cand.id}</b> rises to queen · the colony remains alive.`);
           }
         }
       }
@@ -8921,9 +8980,9 @@ function tickStep(dt){
           const ant=makeAnt(g,{x:Math.random()<.5?24:W-24,y:SURFACE_Y-6},{faction:_immigrationQueen.faction});
           ant.age= DAY_LENGTH*0.35;
           workers.push(ant);
-          pushEvent('evo','🚶 Inmigrante '+ant.id+' se une','Rescate poblacional - Minecraft respawn');
-          notifyCanon('🚶 INMIGRANTE', `${ant.id} llega de fuera - la colonia no se extingue`, 5200);
-          pushToast(ant.x,ant.y-16,'🚶 INMIGRANTE','#00e5ff');
+          pushEvent('evo','🚶 Immigrant '+ant.id+' joins','Population rescue · wild arrival');
+          notifyCanon('🚶 IMMIGRANT',`${ant.id} arrives from outside · the colony survives`,5200);
+          pushToast(ant.x,ant.y-16,'🚶 IMMIGRANT','#00e5ff');
         }
       }
     } else if(_knownWorkersNow.length>=3) window._immigTimer=0;
@@ -9046,7 +9105,7 @@ function tickStep(dt){
         addWaste(f.x, f.y);
         // estrés a hormigas cercanas (miasma DF)
         for(const w of workers){if(Math.hypot(w.x-f.x,w.y-f.y)<36&&_openResourceSegment(w.x,w.y,f.x,f.y,{allowMeadow:true,maxDistance:36})) w.mood.stress=Math.min(1,w.mood.stress+.07);}
-        if(Math.random()<0.28) pushEvent('death','☠️ '+def.name+' podrida en ['+Math.floor(f.x/CELL)+','+Math.floor(f.y/CELL)+']','No estaba en granero/despensa - Dwarf Fortress stockpile');
+        if(Math.random()<0.28) pushEvent('death','☠️ '+def.name+' spoiled at ['+Math.floor(f.x/CELL)+','+Math.floor(f.y/CELL)+']','No estaba en granero/despensa - Dwarf Fortress stockpile');
         foods.splice(i,1);
       }
     }
@@ -9223,29 +9282,29 @@ function updateColonyUIInner(){
   hudText('hudDig', digs);
   hudText('hudBrood', brood.length);
   hudText('hudComms', commInks.length);
-  hudText('camLabel', countChambers()+' CÁMARAS');
+  hudText('camLabel', countChambers()+' CHAMBERS');
   // (el #timeLabel lo escribe updateCalendarWidget: un solo dueno, y ahi lleva tambien el glifo del clima)
   try{ hudText('cPop', workers.length+'/'+getMaxPopulation()+' +'+queens.length+'♛'); }catch(e){ document.getElementById('cPop').textContent=workers.length + ' +1♛'; }
-  try{ hudText('cPopDetail', workers.length+'/'+getMaxPopulation()+' obreras + '+queens.length+' reina(s) - ' + brood.length + ' crías - tope '+getMaxPopulation()); }catch(e){ document.getElementById('cPopDetail').textContent=workers.length+' obreras + 1 reina - ' + brood.length + ' crías'; }
+  try{hudText('cPopDetail',workers.length+'/'+getMaxPopulation()+' workers + '+queens.length+' queen(s) · '+brood.length+' brood · cap '+getMaxPopulation());}catch(e){document.getElementById('cPopDetail').textContent=workers.length+' workers + 1 queen · '+brood.length+' brood';}
   hudText('cFood', economyLedger.food);
   hudText('cFit', (colonyFitness||0).toFixed(2));
   hudText('cIQ', colonyIQ);
   renderSociety();
-  let iqLabel='hormiga real';
-  if(colonyIQ>300) iqLabel='¡SOBREHUMANA!';
-  else if(colonyIQ>250) iqLabel='supera humano';
-  else if(colonyIQ>200) iqLabel='muy superior';
-  else if(colonyIQ>150) iqLabel='super-hormiga';
-  else if(colonyIQ>110) iqLabel='evolucionada';
-  hudText('cIQLabel', iqLabel+' (100=real)');
+  let iqLabel='real-ant baseline';
+  if(colonyIQ>300) iqLabel='SUPERHUMAN!';
+  else if(colonyIQ>250) iqLabel='beyond human';
+  else if(colonyIQ>200) iqLabel='far above baseline';
+  else if(colonyIQ>150) iqLabel='super-ant';
+  else if(colonyIQ>110) iqLabel='evolved';
+  hudText('cIQLabel', iqLabel+' (100=baseline)');
   hudText('cCham', countChambers());
   hudText('cRew', rewardsFound+'/3');
   hudText('cComms', commInks.length);
   hudText('qGen', queen.genome.gen);
   hudText('qEggs', brood.filter(b=>b.type==='egg').length);
-  hudText('qFert', economyLedger.food>=3? 'ALTA':'BAJA');
+  hudText('qFert', economyLedger.food>=3? 'HIGH':'LOW');
   hudStyle('qProgress', 'width', queen.progress+'%');
-  hudText('qProgressLabel', queen.progress>=100? '¡listo!': `próximo ${Math.floor(queen.progress)}%`);
+  hudText('qProgressLabel', queen.progress>=100? 'READY!': `next egg ${Math.floor(queen.progress)}%`);
   hudText('queenStatus', queen.state);
   const counts={RECOLECTORA:0,EXCAVADORA:0,NODRIZA:0,EXPLORADORA:0};
   workers.forEach(w=> counts[w.role]=(counts[w.role]||0)+1);
@@ -9258,8 +9317,8 @@ function updateColonyUIInner(){
   hudText('rCavD', Math.floor(counts.EXCAVADORA/total*100)+'%');
   hudText('rNodD', Math.floor(counts.NODRIZA/total*100)+'%');
   hudText('rExpD', Math.floor(counts.EXPLORADORA/total*100)+'%');
-  hudText('antCountLabel', workers.length+' obreras');
-  hudText('colonyAge', Math.floor(time/3600)+' min reales ('+(time/DAY_LENGTH).toFixed(2)+'d)');
+  hudText('antCountLabel', workers.length+' workers');
+  hudText('colonyAge', Math.floor(time/3600)+' real min ('+(time/DAY_LENGTH).toFixed(2)+'d)');
   const broodRow=document.getElementById('broodRow');
   broodRow.innerHTML='';
   brood.forEach(b=>{
@@ -9290,7 +9349,7 @@ function updateColonyUIInner(){
     else if(w.mood.fear>0.55) moodIcon='😨';
     else if(w.mood.stress>0.65) moodIcon='😓';
     const ageD=(w.age/DAY_LENGTH).toFixed(1);
-    chip.innerHTML=`<div class="ant-mini" style="color:${col};border-color:${facCol};border-width:3px">${w.role[0]}</div><div style="flex:1;min-width:0"><b title="${w.nameMeaning||''}">${antDisplayName(w)}</b><span style="font-size:7px;color:#8a7a5a"> ${w.personalName!==w.id?'('+w.id+')':''}</span> <span style="font-size:10px;background:${facCol};color:#000;padding:1px 3px;border-radius:3px">F${w.faction}</span> <span style="font-size:14px">${stateIcon}</span> <span style="font-size:12px">${moodIcon}</span><br><small>${w.role} - ${ageD}d - ❤${Math.floor(w.health)}${w.isQueen?' 👑':''}</small>all><br><small style="color:${col}">${w.commOut[0]>0.4?symbolForComms(w.commOut[0],w.commOut[1]):'·'} FIT ${(w.fitness ?? 0).toFixed(1)}</small></div><div style="font-family:Press Start 2P;font-size:7px;color:#8a7a5a;text-align:right">${w.genome.id}<br><span style="background:${w.food?'#2de67a':'#000'};color:${w.food?'#000':'#666'};padding:2px 4px">${w.food? 'x'+w.food.amount:'-'}</span></div>`;
+    chip.innerHTML=`<div class="ant-mini" style="color:${col};border-color:${facCol};border-width:3px">${w.role[0]}</div><div style="flex:1;min-width:0"><b title="${w.nameMeaning||''}">${antDisplayName(w)}</b><span style="font-size:7px;color:#8a7a5a"> ${w.personalName!==w.id?'('+w.id+')':''}</span> <span style="font-size:10px;background:${facCol};color:#000;padding:1px 3px;border-radius:3px">F${w.faction}</span> <span style="font-size:14px">${stateIcon}</span> <span style="font-size:12px">${moodIcon}</span><br><small>${w.role} - ${ageD}d - ❤${Math.floor(w.health)}${w.isQueen?' 👑':''}</small><br><small style="color:${col}">${w.commOut[0]>0.4?symbolForComms(w.commOut[0],w.commOut[1]):'·'} FIT ${(w.fitness ?? 0).toFixed(1)}</small></div><div style="font-family:Press Start 2P;font-size:7px;color:#8a7a5a;text-align:right">${w.genome.id}<br><span style="background:${w.food?'#2de67a':'#000'};color:${w.food?'#000':'#666'};padding:2px 4px">${w.food? 'x'+w.food.amount:'-'}</span></div>`;
     chip.onclick=()=>{if(!isExploredPixel(w.x,w.y))return;workers.forEach(a=>a.selected=false);w.selected=true;selectedAntIndex=i;};
     chip.ondblclick=()=> showAntProfile(w);
     list.appendChild(chip);
@@ -9332,18 +9391,18 @@ function updateColonyUIInner(){
   // habia debajo del reloj estaba repitiendo lo mismo, asi que se quita de en medio: una cifra, un sitio.
   try{ const _v=document.getElementById('velAntCount'); if(_v) _v.textContent=workers.length; }catch(e){}
   hudText('tbIQ', colonyIQ);
-  hudText('tbName', 'Colonia GEN'+gen);
+  hudText('tbName', 'Colony GEN'+gen);
   hudStyle('tbXp', 'width', (stats.xp/stats.xpToNext*100)+'%');
   // === MUNDO VIVO UI ===
   try{
     const avgF = fertility.length? (fertility.reduce((a,b)=>a+b,0)/fertility.length*100)|0 : 58;
     const ecoF=document.getElementById('ecoFert'); if(ecoF) ecoF.textContent= avgF+'%';
-    const seas=['primavera','verano','otoño','invierno'][Math.floor((day/12)%4)]||'primavera';
-    const sEl=document.getElementById('ecoSeason'); if(sEl) sEl.textContent=seas+' - día '+(worldAge.toFixed(1));
-    const ageEl=document.getElementById('ecoAge'); if(ageEl) ageEl.textContent='día '+day+' - '+seas;
+    const seas=['spring','summer','autumn','winter'][Math.floor((day/12)%4)]||'spring';
+    const sEl=document.getElementById('ecoSeason'); if(sEl) sEl.textContent=seas+' · day '+(worldAge.toFixed(1));
+    const ageEl=document.getElementById('ecoAge'); if(ageEl) ageEl.textContent='Day '+day+' · '+seas;
     const wNom={clear:'clear', cloudy:'cloudy', rain:'rain', storm:'storm', snow:'snow'};
     const wEl=document.getElementById('ecoWeather'); if(wEl) wEl.textContent=glifoClima(weather.type)+' '+(wNom[weather.type]||weather.type);
-    const rEl=document.getElementById('ecoRain'); if(rEl) rEl.textContent=(weather.type==='rain'||weather.type==='storm')? 'húmedo +fert':'seco';
+    const rEl=document.getElementById('ecoRain'); if(rEl) rEl.textContent=(weather.type==='rain'||weather.type==='storm')? 'damp +fertility':'dry';
     const plEl=document.getElementById('ecoPlants'); if(plEl) plEl.textContent=plants.length+' 🌿';
     const types={}; plants.forEach(p=> types[p.type]=(types[p.type]||0)+1);
     const typEl=document.getElementById('ecoPlantTypes'); if(typEl){
@@ -9365,11 +9424,11 @@ function updateColonyUIInner(){
       }
       const _vEl=document.getElementById('ecoRelics'), _vh=document.getElementById('ecoRelicHint');
       const _sig=reliquias.length+'|'+worldCoreFound+'|'+ROWS;
-      if(_vh) _vh.textContent=reliquias.length? reliquias.length+' en la vitrina' : 'vacia';
+      if(_vh) _vh.textContent=reliquias.length? reliquias.length+' in the case' : 'empty';
       if(_vEl && _vEl.dataset.sig!==_sig){
         _vEl.dataset.sig=_sig;
         if(!reliquias.length){
-          _vEl.innerHTML='<span style="color:#5a4a6a">Nada asombroso todavia. Hay que bajar a la PIZARRA o mas hondo para encontrar reliquias.</span>';
+          _vEl.innerHTML='<span style="color:#5a4a6a">Nothing remarkable yet. Reach SLATE or deeper to find relics.</span>';
         } else {
           _vEl.innerHTML=reliquias.map(x=>{
             const _d=TREASURE_DEFS[Object.keys(TREASURE_DEFS).find(k=>TREASURE_DEFS[k].reliquia===x.tipo)||'']||{};
@@ -9377,8 +9436,8 @@ function updateColonyUIInner(){
             return '<div style="display:flex;gap:6px;align-items:center;line-height:1.15;margin-bottom:3px" title="'+(x.lore||'')+'">'+
                    '<span style="width:9px;height:9px;flex:0 0 9px;background:'+_col+';box-shadow:1px 1px 0 #000,inset 0 1px 0 rgba(255,255,255,.4)"></span>'+
                    '<span style="color:#e9dcc0;flex:1 1 auto">'+x.tipo+'</span>'+
-                   '<span style="color:#8a7a5a">piso '+x.piso+' · D'+x.dia+'</span></div>';
-          }).join('')+'<div style="color:#2de67a;margin-top:2px">+'+Math.round(bonusCava*100)+'% excavación por reliquias</div>';
+                   '<span style="color:#8a7a5a">floor '+x.piso+' · D'+x.dia+'</span></div>';
+          }).join('')+'<div style="color:#2de67a;margin-top:2px">+'+Math.round(bonusCava*100)+'% excavation from relics</div>';
         }
       }
     }catch(e){}
@@ -9394,14 +9453,14 @@ function updateColonyUIInner(){
     }
     const invEl=document.getElementById('ecoInv'); if(invEl){
       const unlocked=[];
-      if(inventions.stone) unlocked.push('🪨 piedra');
-      if(inventions.clay) unlocked.push('🏺 arcilla');
-      if(inventions.fiber) unlocked.push('🧵 fibra');
-      if(inventions.wood) unlocked.push('🪵 madera');
-      if(inventions.fungus) unlocked.push('🍄 hongo');
+      if(inventions.stone) unlocked.push('🪨 stone');
+      if(inventions.clay) unlocked.push('🏺 clay');
+      if(inventions.fiber) unlocked.push('🧵 fiber');
+      if(inventions.wood) unlocked.push('🪵 wood');
+      if(inventions.fungus) unlocked.push('🍄 fungus');
       const adaptationCount=workers.reduce((n,w)=>n+Object.keys(_adaptationBook(w)).filter(k=>_adaptationBook(w)[k]).length,0);
       const structCount=structures.length;
-      let txt = unlocked.length? '✓ '+unlocked.join(' - '): '- aún cavan tierra común -';
+      let txt = unlocked.length? '✓ '+unlocked.join(' - '): '· still digging ordinary soil ·';
       if(structCount) txt += ` | 🏗 ${structCount} ${structures.map(s=>STRUCTURE_DEFS[s.type].name).join(', ')}`;
       if(adaptationCount) txt += ` · ${adaptationCount} approved adaptations`;
       invEl.textContent=txt;
@@ -9410,16 +9469,16 @@ function updateColonyUIInner(){
     const log=document.getElementById('ecoLog'); if(log){
       if(structures.length){
         const names=structures.map(s=>STRUCTURE_DEFS[s.type].name).join(', ');
-        if(worldAge>2.5 && structures.some(s=>s.type==='tower')) log.textContent=`🏰 Torre vigía erguida - ${names} - el mundo ya tiene arquitectura`;
+        if(worldAge>2.5 && structures.some(s=>s.type==='tower')) log.textContent=`🏰 Watchtower raised · ${names} · the world now has architecture`;
         else if(worldAge>1.8 && structures.some(s=>s.type==='workshop')) log.textContent=`Legacy workshop preserved as scenery · ${names}`;
-        else log.textContent=`🏗 ${structures.length} estructuras: ${names} - el mundo se vuelve civilizado`;
+        else log.textContent=`🏗 ${structures.length} structures: ${names} · the world grows more complex`;
       } else if(plants.some(p=>p.type==='fruitTree' && p.growth>0.58)){
-        log.textContent='🍎 Manzanos frutales maduran - caen 3 manzanas cada cosecha';
-      } else if(worldAge<0.5) log.textContent='La pradera respira. El pasto crece poco a poco. Riega con lluvia natural.';
-      else if(worldAge<1.2) log.textContent='Florecen las primeras flores. Las hormigas ya cosechan néctar.';
-      else if(worldAge<2.2) log.textContent='Arbustos de bayas aparecen donde hay fertilidad. El mundo se diversifica.';
-      else if(inventions.stone||inventions.clay) log.textContent='¡Materiales! Cavan piedra, arcilla y arena según la capa. Ya inventan.';
-      else log.textContent='Bosquecillos jóvenes crecen. Hongos en cuevas húmedas. Sigue lloviendo.';
+        log.textContent='🍎 Fruit trees mature · 3 apples fall each harvest';
+      } else if(worldAge<0.5) log.textContent='The meadow breathes. Grass grows slowly, watered by natural rain.';
+      else if(worldAge<1.2) log.textContent='The first flowers bloom. Ants can now harvest nectar.';
+      else if(worldAge<2.2) log.textContent='Berry bushes appear on fertile ground. The world grows more diverse.';
+      else if(inventions.stone||inventions.clay) log.textContent='Materials discovered! They mine stone, clay and sand by layer and begin inventing.';
+      else log.textContent='Young groves grow. Fungi spread through damp caves. Rain continues.';
     }
   }catch(e){}
   // The compact cards stay honest while the simulation runs; no technical pane is rebuilt.
@@ -9493,7 +9552,7 @@ function pintarRed(cv, cx, sel, o){
     cx.strokeStyle='#000'; cx.lineWidth=2; cx.strokeRect(hidX-B,y-B,B*2,B*2);
     cx.fillStyle='#000'; cx.font='bold '+F+'px JetBrains Mono'; cx.textAlign='center'; cx.fillText('●',hidX,y+0.5);
   }
-  const outLabels=['GIRO','VEL','CAVA','T1','T2'];
+  const outLabels=['TURN','SPD','DIG','T1','T2'];
   for(let oo=0;oo<OUTPUT_SIZE;oo++){
     const y=10+oo*outStep; const v=(sel.nnOut&&sel.nnOut[oo])||0; const act=(v+1)/2;
     let col=oo===0?'#ffcc00':oo===1?'#2de67a':oo===2?'#ff3b30':oo===3?'#00e5ff':'#b47aff';
@@ -9502,7 +9561,7 @@ function pintarRed(cv, cx, sel, o){
     cx.fillStyle='#000'; cx.font='bold '+F+'px JetBrains Mono'; cx.textAlign='center'; cx.fillText(outLabels[oo][0],outX,y+0.5);
   }
   cx.fillStyle='rgba(255,255,255,0.32)'; cx.font=F+'px JetBrains Mono'; cx.textAlign='center';
-  cx.fillText('LO QUE NOTE',inX,h-3); cx.fillText('MEZCLA',hidX,h-3); cx.fillText('LO QUE HACE',outX,h-3);
+  cx.fillText('WHAT SHE SENSES',inX,h-3); cx.fillText('INTEGRATES',hidX,h-3); cx.fillText('WHAT SHE DOES',outX,h-3);
 }
 function drawNN(){
   const sel=workers[selectedAntIndex] || workers[0];
@@ -9519,17 +9578,17 @@ function drawSensors(){
   if(!sel) return;
   const cont=document.getElementById('sensors');
   const names=[
-    {k:'foodAngle',label:'ANG COMIDA',col:'#ffcc00'},
-    {k:'foodDist',label:'DIST COMIDA',col:'#2de67a'},
-    {k:'pheroStr',label:'FEROMONA',col:'#b47aff'},
-    {k:'pheroAng',label:'ANG FER',col:'#b47aff'},
-    {k:'wallLeft',label:'OJO IZQ -45°',col:'#ff3b30'},
-    {k:'wallCenter',label:'OJO CENT 0°',col:'#ffcc00'},
-    {k:'wallRight',label:'OJO DER +45°',col:'#00e5ff'},
-    {k:'fatigue',label:'FATIGA',col:'#00e5ff'},
-    {k:'carrying',label:'CARGA',col:'#ffcc00'},
-    {k:'commIn1',label:'TINTA 1',col:'#00e5ff'},
-    {k:'commIn2',label:'TINTA 2',col:'#b47aff'},
+    {k:'foodAngle',label:'FOOD ANGLE',col:'#ffcc00'},
+    {k:'foodDist',label:'FOOD DIST',col:'#2de67a'},
+    {k:'pheroStr',label:'PHEROMONE',col:'#b47aff'},
+    {k:'pheroAng',label:'PHERO ANGLE',col:'#b47aff'},
+    {k:'wallLeft',label:'EYE LEFT -45°',col:'#ff3b30'},
+    {k:'wallCenter',label:'EYE CENTER 0°',col:'#ffcc00'},
+    {k:'wallRight',label:'EYE RIGHT +45°',col:'#00e5ff'},
+    {k:'fatigue',label:'FATIGUE',col:'#00e5ff'},
+    {k:'carrying',label:'CARRYING',col:'#ffcc00'},
+    {k:'commIn1',label:'INK 1',col:'#00e5ff'},
+    {k:'commIn2',label:'INK 2',col:'#b47aff'},
   ];
   cont.innerHTML='';
   names.forEach(s=>{
@@ -9683,7 +9742,7 @@ function _syncProjectPlacementHud(invalidReason=''){
   if(commitment)commitment.textContent='AFTER A VALID SITE · COMMIT '+Object.entries(def.cost).map(([k,v])=>v+' '+k.toUpperCase()).join(' + ')+' · THEN WORKERS HAUL AND BUILD';
   if(instruction)instruction.textContent=invalidReason
     ?'NOT PLACED · '+invalidReason+' · TRY ANOTHER CELL OR PRESS ESC'
-    :'TAP OR CLICK A GREEN CELL · ARROWS PAN + ENTER PLACES AT CENTRE · ESC CANCELS';
+    :'TAP OR CLICK A GREEN CELL · ARROWS PAN + ENTER PLACES AT CENTER · ESC CANCELS';
 }
 function setMapTool(next='navigate'){
   const previous=mapTool;
@@ -9701,7 +9760,7 @@ function setMapTool(next='navigate'){
   _syncProjectPlacementHud();
   canvas.dataset.mapTool=mapTool;
   canvas.setAttribute('aria-label',mapTool==='project'
-    ?((projectDefinition(projectPlacementType)||{name:'Project'}).name+' placement map. Arrow keys pan. Enter tries the centre cell. Escape cancels.')
+    ?((projectDefinition(projectPlacementType)||{name:'Project'}).name+' placement map. Arrow keys pan. Enter tries the center cell. Escape cancels.')
     :'Ant farm world map. Arrow keys pan; use the visible map tools for honey and trails.');
   canvas.style.cursor=mapTool==='honey'?'copy':mapTool==='pheromone'||mapTool==='project'?'cell':'crosshair';
 }
@@ -9848,7 +9907,7 @@ canvas.addEventListener('click',e=>{
     ensureQueenMeta(clickedQueen);
     selectedQueenIndex=clickedQueenIdx;
     // feedback narración
-    pushEvent('evo',`👑 ${queenDisplayName(clickedQueen)} seleccionada - REINA F${clickedQueen.faction}`, `GEN${clickedQueen.genome.gen} - ${clickedQueen.genome.hiddenSize} nodos - 👑 ${clickedQueen.eggsLaid||0} huevos - ❤ ${Math.floor(clickedQueen.health)}%`);
+    pushEvent('evo',`👑 ${queenDisplayName(clickedQueen)} selected · QUEEN F${clickedQueen.faction}`, `GEN${clickedQueen.genome.gen} · ${clickedQueen.genome.hiddenSize} nodes · 👑 ${clickedQueen.eggsLaid||0} eggs · ❤ ${Math.floor(clickedQueen.health)}%`);
     setNarration(`<b>👑 ${queenDisplayName(clickedQueen)} [QUEEN F${clickedQueen.faction}]</b> · ${clickedQueen.personality?clickedQueen.personality.fertilidad+' fertility · '+clickedQueen.personality.feromona+' pheromone':''} · <b>${Math.max(0,3-economyLedger.food)} food</b> still needed for an egg.`);
     // abrir ficha reina tras 70ms (como hormiga)
     setTimeout(()=>showQueenProfile(clickedQueen),70);
@@ -9915,7 +9974,7 @@ document.getElementById('btnExpand').onclick=()=>{
   isExpanded=!isExpanded;
   document.querySelector('main').classList.toggle('collapsed',isExpanded);
   hudText('btnExpand', isExpanded?'◀ PANEL':'⛶ GRANDE');
-  if(isExpanded) showNotify('ok','Vista gigante','Panel oculto - granja a pantalla completa. Click de nuevo para volver.',2600);
+  if(isExpanded) showNotify('ok','Expanded view','Panel hidden · full-screen farm. Click again to return.',2600);
 };
 document.getElementById('btnFood').onclick=e=>{
   if(e)e.stopPropagation();setMapTool(mapTool==='honey'?'navigate':'honey');
@@ -9950,13 +10009,13 @@ document.getElementById('btnMut').onclick=()=>{
   const res=mutateGenome(sel.genome,0.22,0.75);
   sel.genome=res.genome; sel.traits=traitsFromGenome(sel.genome);
   lastMutInfo=res.changes.slice(0,2).join(' | ');
-  pushEvent('evo',`Mutación forzada ${sel.id}: ${lastMutInfo}`, `Nuevo DNA ${sel.genome.id} - 11→${sel.genome.hiddenSize}→5`);
-  pushToast(sel.x,sel.y-28,'🧬 MUTACIÓN','#ffcc00');
+  pushEvent('evo',`Forced mutation ${sel.id}: ${lastMutInfo}`, `New DNA ${sel.genome.id} · 11→${sel.genome.hiddenSize}→5`);
+  pushToast(sel.x,sel.y-28,'🧬 MUTATION','#ffcc00');
   mutations++; gen++; fitnessHistory.push(colonyFitness); if(fitnessHistory.length>36) fitnessHistory.shift();
   colonyIQ=100 + Math.floor(gen*3.8) + Math.floor((sel.genome.hiddenSize-8)*3.5) + Math.floor(Math.min(colonyFitness,8.5)*2.1);
 };
 document.getElementById('btnLay').onclick=()=>{if(economyLedger.food>=3){queen.progress=100;showNotify('ok','Egg queued','Brood care will draw from the food reserve.');}else{showNotify('error','Not enough food',`Missing <b>${3-economyLedger.food} rations</b>. Reserve: ${economyLedger.food}/3.`);pushToast(queen.x,queen.y-18,`♛ NEEDS ${3-economyLedger.food} FOOD`,'#ff3b30');}};
-document.getElementById('btnHatch').onclick=()=>{ if(brood.length===0){showNotify('warn','No hay crías','La reina aún no puso huevos.'); return;} brood.forEach(b=> b.progress=100); pushToast(queen.x,queen.y-10,'⏩ ¡ECLOSIÓN!','#b47aff'); showNotify('ok','¡Eclosión!',''+brood.length+' crías.'); };
+document.getElementById('btnHatch').onclick=()=>{ if(brood.length===0){showNotify('warn','No brood','The queen has not laid any eggs yet.'); return;} brood.forEach(b=> b.progress=100); pushToast(queen.x,queen.y-10,'⏩ HATCHING!','#b47aff'); showNotify('ok','Hatching!',''+brood.length+ ' brood.'); };
 document.getElementById('btnPause').onclick=()=>{paused=!paused; hudText('btnPause', paused?'▶':'⏸');};
 function syncCorner(n){
   // también sincroniza nueva barra vel
@@ -9978,7 +10037,7 @@ function syncCorner(n){
 // el bucle de abajo los cablageaba por patron de id. Se borran del markup y de los pasos, para que tampoco
 // el boton turbo pueda ciclar a ellos. El juego puede seguir corriendo a 32 o 64 cuando una prueba lo pide
 // (todas las condiciones son gameSpeed>8 / >1, no igualdad con 32 o 64), pero la pantalla no ofrece el paso.
-const SPEED_STEPS=[1,2,4,8,16];
+const SPEED_STEPS=TOPO_DEBUG_TOOLS?[1,2,4,8,16]:[1,2,4];
 const SPEED_TINT={1:'var(--amber)',2:'var(--amber)',4:'#ff3b30',8:'#b47aff',16:'#ffcc00'};
 function setGameSpeed(n){
   // Topo: velocidades 1..64. Los botones se repintan por patron de id, no por id concreto:
@@ -10015,44 +10074,21 @@ SPEED_STEPS.forEach(v=>{
     if(el && !el.dataset.wired){ el.dataset.wired='1'; el.addEventListener('click', ()=> setGameSpeed(v)); }
   });
 });
-document.getElementById('btnSpeed2')?.addEventListener('click', ()=> setGameSpeed(2));
-document.getElementById('btnSpeed4')?.addEventListener('click', ()=> setGameSpeed(4));
-document.getElementById('btnSpeed8')?.addEventListener('click', ()=> setGameSpeed(8));
-document.getElementById('btnSpeed16')?.addEventListener('click', ()=> setGameSpeed(16));
+setTimeout(()=>syncCorner(gameSpeed),700);
 
-document.getElementById('btnSpeed1b')?.addEventListener('click', ()=> setGameSpeed(1));
-document.getElementById('btnCorner1')?.addEventListener('click', ()=> setGameSpeed(1));
-setTimeout(()=>syncCorner(gameSpeed), 700);
-document.getElementById('btnCorner2')?.addEventListener('click', ()=> setGameSpeed(2));
-document.getElementById('btnCorner4')?.addEventListener('click', ()=> setGameSpeed(4));
-document.getElementById('btnCorner8')?.addEventListener('click', ()=> setGameSpeed(8));
-document.getElementById('btnCorner16')?.addEventListener('click', ()=> setGameSpeed(16));
-
-// velAntBar - nueva barra VEL+OBRERAS sobre calendario
-document.getElementById('btnVelPause')?.addEventListener('click', ()=>{ paused=!paused; hudStyle('btnVelPause', 'background', paused?'#ffcc00':'#1a140f'); document.getElementById('btnVelPause').style.color=paused?'#000':'#8a7a5a'; });
-document.getElementById('btnVel1')?.addEventListener('click', ()=> setGameSpeed(1));
-document.getElementById('btnVel2')?.addEventListener('click', ()=> setGameSpeed(2));
-document.getElementById('btnVel4')?.addEventListener('click', ()=> setGameSpeed(4));
-document.getElementById('btnVel8')?.addEventListener('click', ()=> setGameSpeed(8));
-document.getElementById('btnVel16')?.addEventListener('click', ()=> setGameSpeed(16));
-
-
-document.getElementById('btnCornerPause')?.addEventListener('click', ()=>{ paused=!paused; hudText('btnCornerPause', paused?'▶':'⏸'); document.getElementById('btnPause').textContent=paused?'▶':'⏸'; const c=document.getElementById('btnCornerPause'); if(paused){c.style.background='var(--red)'; c.style.color='#fff';} else {c.style.background='#1a140f'; c.style.color='#fff8dc';} });
-
-document.getElementById('btnSpeed2b')?.addEventListener('click', ()=> setGameSpeed(2));
-document.getElementById('btnSpeed4b')?.addEventListener('click', ()=> setGameSpeed(4));
-// x8 and x16 not in ai-pane, but handle if exists
-document.getElementById('btnSpeed8b')?.addEventListener('click', ()=> setGameSpeed(8));
-document.getElementById('btnSpeed16b')?.addEventListener('click', ()=> setGameSpeed(16));
+// Pause controls are separate from the single speed wiring loop above.
+document.getElementById('btnVelPause')?.addEventListener('click',()=>{paused=!paused;hudStyle('btnVelPause','background',paused?'#ffcc00':'#1a140f');document.getElementById('btnVelPause').style.color=paused?'#000':'#8a7a5a';});
+document.getElementById('btnCornerPause')?.addEventListener('click',()=>{paused=!paused;hudText('btnCornerPause',paused?'▶':'⏸');document.getElementById('btnPause').textContent=paused?'▶':'⏸';const c=document.getElementById('btnCornerPause');if(paused){c.style.background='var(--red)';c.style.color='#fff';}else{c.style.background='#1a140f';c.style.color='#fff8dc';}});
 
 let _fastForwarding=false;
 function passDays(nDays=1){
-  if(_fastForwarding) return;
-  if(nDays!==1) nDays=1; // solo 1 día para no exigir máquina
+  if(!TOPO_DEBUG_TOOLS)return false;
+  if(_fastForwarding)return false;
+  if(nDays!==1)nDays=1;
   _fastForwarding=true;
   const btn=document.getElementById('btnDay1');
-  if(btn){ btn.textContent='⏳ 1 DÍA...'; btn.disabled=true; btn.style.opacity='0.6'; }
-  pushToast(W/2, H/2-18, '⏩ Avanzando 1 DÍA real...', '#ff8800', 1.0);
+  if(btn){btn.textContent='⏳ 1 DAY...';btn.disabled=true;btn.style.opacity='0.6';}
+  pushToast(W/2,H/2-18,'⏩ Simulating 1 full day...','#ff8800',1.0);
   // Fast-forward real: corre el loop a x64 sin renderizar cada frame para no lagear
   const targetTime = time + nDays*DAY_LENGTH;
   const prevSpeed = gameSpeed;
@@ -10095,14 +10131,14 @@ function passDays(nDays=1){
     } else {
       // Fin
       _fastForwarding=false;
-      if(btn){ btn.textContent='⏩ +1 DÍA'; btn.disabled=false; btn.style.opacity='1'; }
+      if(btn){btn.textContent='⏩ +1 DAY';btn.disabled=false;btn.style.opacity='1';}
       // Solo devuelvo la velocidad si el salto la sigue teniendo: si el jugador cambio de
       // velocidad MIENTRAS saltaba el dia, gana la eleccion del jugador, no mi prevSpeed.
       if(gameSpeed===16){ gameSpeed=prevSpeed; turbo=prevTurbo; }
       if(wasPaused) paused=true;
       try{ if(typeof serializeSave==='function') serializeSave(true); }catch(e){}
-      pushToast(W/2, H/2-10, '✅ +1 DÍA simulado', '#2de67a', 1.2);
-      pushEvent('evo','⏩ +1 DÍA simulado', 'Día '+Math.floor(time/DAY_LENGTH)+' - '+(typeof digs!=='undefined'?digs:'0')+' bloques cavados en total');
+      pushToast(W/2,H/2-10,'✅ +1 DAY simulated','#2de67a',1.2);
+      pushEvent('evo','⏩ +1 DAY simulated','Day '+Math.floor(time/DAY_LENGTH)+' · '+(typeof digs!=='undefined'?digs:'0')+' total blocks excavated');
       markSoilDirty();
       if(typeof drawFarm==='function') try{ drawFarm(document.getElementById('farmCanvas').getContext('2d'), W, H, false); }catch(e){}
     }
@@ -10141,11 +10177,11 @@ document.getElementById('btnClearHist').onclick=()=>{events=[]; renderEvents();}
 window.addEventListener('keydown',e=>{
   const typing=e.target&&(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.isContentEditable);
   if(!typing&&e.code==='Space'){paused=!paused;e.preventDefault();}
-  if(e.key==='1'){ setGameSpeed(1); }
-  if(e.key==='2'){ setGameSpeed(2); }
-  if(e.key==='4'){ setGameSpeed(4); }
-  if(e.key==='8'){ setGameSpeed(8); }
-  if(e.key==='6'){ setGameSpeed(16); }
+  if(!typing&&e.key==='1')setGameSpeed(1);
+  if(!typing&&e.key==='2')setGameSpeed(2);
+  if(!typing&&e.key==='4')setGameSpeed(4);
+  if(!typing&&TOPO_DEBUG_TOOLS&&e.key==='8')setGameSpeed(8);
+  if(!typing&&TOPO_DEBUG_TOOLS&&e.key==='6')setGameSpeed(16);
   if(!typing&&_topoHasWorld&&(e.key==='m'||e.key==='M'||e.key==='h'||e.key==='H'))document.getElementById('btnFood').click();
   if(!typing&&_topoHasWorld&&(e.key==='p'||e.key==='P'))document.getElementById('btnPhero').click();
   if(e.key==='+'||e.key==='=')setZoom(view.zoom*1.2);
@@ -10406,11 +10442,11 @@ function updateCalendarWidget(){
     const dayNightEl=document.getElementById('calDayNightLabel');
     if(iconEl) iconEl.textContent=cal.season.icon;
     if(nameEl) { nameEl.textContent=cal.season.name; nameEl.style.color='#000'; }
-    if(yearEl) yearEl.textContent='AÑO '+cal.year;
+    if(yearEl) yearEl.textContent='YEAR '+cal.year;
     if(seasonBox){
       const bannerCols=['#3aa99e','#ffcc33','#d07a2e','#cfe9ff'];
       const borderCols=['#0f3a35','#7a4a00','#5a2a0a','#1a3a5a'];
-      seasonBox.className='cal-season-bg s-'+['prima','vera','oto','inv'][cal.seasonIdx];
+      seasonBox.className='cal-season-bg s-'+['spring','summer','autumn','winter'][cal.seasonIdx];
       seasonBox.style.background=bannerCols[cal.seasonIdx]||bannerCols[0];
       seasonBox.style.borderColor=borderCols[cal.seasonIdx]||borderCols[0];
       seasonBox.style.color='#000';
@@ -10847,7 +10883,7 @@ if(_topoHasWorld){
 
 // === SAVE PERSISTENTE - la granja sobrevive a recargar ===
 const SAVE_KEY='antFarm_fullSave_v2';
-const SAVE_VER='20261020m';
+const SAVE_VER='20261022p';
 const LS_ALIVE='antfarm_worldAlive';
 const LS_INGAME='antfarm_inGame';
 let _loadedSaveSavedAt=0;
@@ -10893,7 +10929,8 @@ function topoHasSave(){
     if(!d || !Array.isArray(d.soil) || d.soil.length===0) return null;
     const pop = Array.isArray(d.workers)? d.workers.length : 0;
     if(pop===0 && !(Array.isArray(d.queens)&&d.queens.length)) return null;
-    return {day:d.day||1,pop,cols:d.COLS||64,rows:d.ROWS||36,maxRows:d.depthLimit||worldDepthProfile(d.COLS||64).limit,savedAt:d.savedAt||0,v:d.v||'1'};
+    const cols=d.COLS||64,sizeKey=d.sizeKey||worldSizeKeyForCols(cols);
+    return {name:sanitizeWorldName(d.worldName,defaultWorldName(sizeKey,cols)),day:d.day||1,pop,cols,rows:d.ROWS||36,maxRows:d.depthLimit||worldDepthProfile(cols).limit,savedAt:d.savedAt||0,v:d.v||'1'};
   }catch(e){ return null; }
 }
 window.topoHasSave=topoHasSave;
@@ -10906,7 +10943,7 @@ function serializeSave(force){
     if((!workers || workers.length===0) && (!queens || queens.length===0)) return false;
     try{_syncProtectedLotsWithLedger();}catch(e){}
     const data={
-      v:SAVE_VER, savedAt:Date.now(), day,
+      v:SAVE_VER, savedAt:Date.now(), day, worldName:sanitizeWorldName(worldName,defaultWorldName('',COLS)),
       offline:{v:1,unlocks:{lineage:!!_offlineUnlocks.lineage,lateStage:!!_offlineUnlocks.lateStage},receipt:_lastOfflineReceipt?{..._lastOfflineReceipt}:null,presented:[..._offlinePresentedStamps].slice(-64),pending:_offlineReturnPending.slice(0,16)},
       lineage:lineageSnapshot(lineageState),lineageRun:{relicsFound:Math.max(0,lineageRun.relicsFound|0)},
       time, gen, colonyIQ, colonyFood:economyLedger.food, digs, deliveries, accidents, rewardsFound, mutations, commsCount, worldAge,
@@ -10955,6 +10992,7 @@ function serializeSave(force){
     localStorage.setItem(LS_ALIVE,'1');
     localStorage.setItem('antfarm_worldSize_cols', String(COLS));
     localStorage.setItem('antfarm_worldSize_rows',String(worldStartRows(COLS)));
+    localStorage.setItem('antfarm_worldName',sanitizeWorldName(worldName,defaultWorldName('',COLS)));
     localStorage.setItem('antfarm_lastReal', String(Date.now()));
     localStorage.setItem('antfarm_time', String(time));
     return true;
@@ -10975,8 +11013,10 @@ function deserializeSave(){
     _lastOfflineReceipt=data.offline&&data.offline.receipt&&typeof data.offline.receipt==='object'?{...data.offline.receipt}:null;
     _offlinePresentedStamps.clear();for(const key of data.offline&&Array.isArray(data.offline.presented)?data.offline.presented:[])if(typeof key==='string'&&key.length<96)_offlinePresentedStamps.add(key);
     {const pending=data.offline&&data.offline.pending,list=Array.isArray(pending)?pending:(pending&&typeof pending==='object'?[pending]:[]);_offlineReturnPending=list.filter(x=>x&&typeof x.key==='string'&&x.key.length<96).slice(0,16);}
-    // 1) dimensiones primero: W/H/canvas/soilCache deben coincidir con el mapa guardado
+    // 1) dimensions first: canvas and cached grids must match the saved world.
     COLS=data.COLS||64;ROWS=data.ROWS||36;
+    worldName=sanitizeWorldName(data.worldName,defaultWorldName(data.sizeKey,COLS));
+    try{localStorage.setItem('antfarm_worldName',worldName);}catch(e){}
     const _savedDepth=worldDepthProfile(COLS),_declaredLimit=Number(data.depthLimit);
     worldDepthLimit=Number.isFinite(_declaredLimit)&&_declaredLimit>=ROWS?Math.floor(_declaredLimit):Math.max(_savedDepth.limit,ROWS>_savedDepth.start?ROWS+_savedDepth.chunk:_savedDepth.limit);
     worldCoreFound=!!data.worldCoreFound;
@@ -11524,7 +11564,7 @@ function topoResumeGame(opts){
   try{ detectarEntrada(); }catch(e){ console.warn('entrada', e.message); } // el sitio elegido se respeta
   try{ checkWorldExpansion(); }catch(e){}
   try{ clampView(); updateColonyUI(); _updateBothAntCounts(); }catch(e){}
-  if(!silent){ try{ pushToast(W/2, SURFACE_Y-40, '🐜 Granja reanudada · Día '+day, '#2de67a'); }catch(e){} pushEvent('evo','💾 Partida reanudada', workers.length+' obreras · Día '+day); }
+  if(!silent){ try{ pushToast(W/2, SURFACE_Y-40, '🐜 Farm resumed · Day '+day, '#2de67a'); }catch(e){} pushEvent('evo','💾 Farm resumed', workers.length+ ' workers · Day '+day); }
   setTimeout(_presentPendingOfflineReturn,80);
   return true;
 }
@@ -11548,46 +11588,63 @@ document.addEventListener('visibilitychange', ()=>{
 });
 window.addEventListener('pagehide', ()=>{ try{ serializeSave(); }catch(e){} });
 // borrar partida (consola o boton de la pantalla de carga)
-window._clearSave=()=>{ try{ localStorage.removeItem(SAVE_KEY); localStorage.removeItem(LS_ALIVE); localStorage.removeItem(LS_INGAME); localStorage.removeItem('antfarm_lastReal'); localStorage.removeItem('antfarm_time'); }catch(e){} location.reload(); };
+window._clearSave=()=>{ try{ [SAVE_KEY,LS_ALIVE,LS_INGAME,'antfarm_lastReal','antfarm_time','antfarm_worldName'].forEach(k=>localStorage.removeItem(k)); }catch(e){} location.reload(); };
 // === GRANJAS MÚLTIPLES: la anterior se archiva, no se destruye ===
 const FARMS_KEY='antfarm_farms';
 function topoListFarms(){
-  try{ const raw=localStorage.getItem(FARMS_KEY); if(!raw) return []; const a=JSON.parse(raw); return Array.isArray(a)?a:[]; }catch(e){ return []; }
+  try{
+    const raw=localStorage.getItem(FARMS_KEY);if(!raw)return [];
+    const a=JSON.parse(raw);if(!Array.isArray(a))return [];
+    return a.filter(f=>f&&f.snap).map(f=>{
+      let d=null;try{d=JSON.parse(f.snap);}catch(e){}
+      const cols=Number(f.cols||(d&&d.COLS)||64),sizeKey=f.sizeKey||(d&&d.sizeKey)||worldSizeKeyForCols(cols);
+      const name=sanitizeWorldName(f.worldName||(d&&d.worldName),defaultWorldName(sizeKey,cols));
+      return {...f,label:name,worldName:name,cols,rows:Number(f.rows||(d&&d.ROWS)||36),maxRows:Number(f.maxRows||(d&&d.depthLimit)||worldDepthProfile(cols).limit)};
+    });
+  }catch(e){return [];}
 }
 function topoWriteFarms(list){
-  // recorta hasta que quepa (localStorage ~5MB con BIG de 48KB por granja)
-  for(let n=list.length; n>=0; n--){
-    try{ localStorage.setItem(FARMS_KEY, JSON.stringify(list.slice(0,n))); return true; }catch(e){ }
+  // Trim oldest snapshots until the browser's local quota accepts the archive.
+  for(let n=list.length;n>=0;n--){
+    try{localStorage.setItem(FARMS_KEY,JSON.stringify(list.slice(0,n)));return true;}catch(e){}
   }
   return false;
 }
-function topoArchiveCurrent(label){
+function _archiveRecord(raw,d,at){
+  const cols=d.COLS||64,sizeKey=d.sizeKey||worldSizeKeyForCols(cols);
+  const name=sanitizeWorldName(d.worldName,defaultWorldName(sizeKey,cols));
+  return {id:'f'+at.toString(36),label:name,worldName:name,sizeKey,cols,rows:d.ROWS||36,maxRows:d.depthLimit||worldDepthProfile(cols).limit,savedAt:d.savedAt||at,day:d.day||1,pop:(d.workers||[]).length,snap:raw};
+}
+function topoArchiveCurrent(){
   try{
-    const raw=localStorage.getItem(SAVE_KEY); if(!raw) return false;
-    const d=JSON.parse(raw); if(!d || !Array.isArray(d.soil) || !d.soil.length) return false;
-    const list=topoListFarms();
-    const at=Date.now();
-    list.unshift({id:'f'+at.toString(36),label:label||('Farm '+(d.COLS||64)+'×'+(d.depthLimit||worldDepthProfile(d.COLS||64).limit)),sizeKey:d.sizeKey||'',
-                   cols:d.COLS||64,rows:d.ROWS||36,maxRows:d.depthLimit||worldDepthProfile(d.COLS||64).limit,savedAt:at,day:d.day||1,pop:(d.workers||[]).length,snap:raw});
-    if(list.length>5) list.length=5;
+    const raw=localStorage.getItem(SAVE_KEY);if(!raw)return false;
+    const d=JSON.parse(raw);if(!d||!Array.isArray(d.soil)||!d.soil.length)return false;
+    const list=topoListFarms().filter(f=>f.snap!==raw);
+    list.unshift(_archiveRecord(raw,d,Date.now()));if(list.length>5)list.length=5;
     return topoWriteFarms(list);
-  }catch(e){ console.warn('archive fail',e); return false; }
+  }catch(e){console.warn('archive fail',e);return false;}
 }
 function topoRestoreFarm(id){
   try{
-    const f=topoListFarms().find(x=>x.id===id); if(!f || !f.snap) return false;
-    topoArchiveCurrent('Granja activa (antes de cambiar)');
-    localStorage.setItem(SAVE_KEY, f.snap);
-    localStorage.setItem('antfarm_worldSize', f.sizeKey||'');
-    localStorage.setItem('antfarm_worldSize_cols', String(f.cols));
-    localStorage.setItem('antfarm_worldSize_rows',String(worldStartRows(f.cols)));
+    const list=topoListFarms(),f=list.find(x=>x.id===id);if(!f||!f.snap)return false;
+    const remaining=list.filter(x=>x.id!==id),currentRaw=localStorage.getItem(SAVE_KEY);
+    if(currentRaw&&currentRaw!==f.snap){
+      try{const d=JSON.parse(currentRaw);if(d&&Array.isArray(d.soil)&&d.soil.length)remaining.unshift(_archiveRecord(currentRaw,d,Date.now()));}catch(e){}
+    }
+    if(remaining.length>5)remaining.length=5;if(!topoWriteFarms(remaining))return false;
+    let restored=null;try{restored=JSON.parse(f.snap);}catch(e){}
+    localStorage.setItem(SAVE_KEY,f.snap);
+    localStorage.setItem('antfarm_worldSize',f.sizeKey||restored&&restored.sizeKey||'');
+    localStorage.setItem('antfarm_worldSize_cols',String(f.cols));
+    localStorage.setItem('antfarm_worldSize_rows',String(f.rows||restored&&restored.ROWS||worldStartRows(f.cols)));
+    localStorage.setItem('antfarm_worldName',sanitizeWorldName(f.worldName||(restored&&restored.worldName),defaultWorldName(f.sizeKey,f.cols)));
     return true;
-  }catch(e){ return false; }
+  }catch(e){return false;}
 }
 function topoDeleteFarm(id){ try{ const list=topoListFarms().filter(x=>x.id!==id); topoWriteFarms(list); return true; }catch(e){ return false; } }
 window.topoListFarms=topoListFarms; window.topoArchiveCurrent=topoArchiveCurrent;
 window.topoRestoreFarm=topoRestoreFarm; window.topoDeleteFarm=topoDeleteFarm;
-window.topoDropCurrent=()=>{ try{ [SAVE_KEY,LS_ALIVE,LS_INGAME,'antfarm_lastReal','antfarm_time','antfarm_createdAt'].forEach(k=>localStorage.removeItem(k)); return true; }catch(e){ return false; } };
+window.topoDropCurrent=()=>{ try{ [SAVE_KEY,LS_ALIVE,LS_INGAME,'antfarm_lastReal','antfarm_time','antfarm_createdAt','antfarm_worldName'].forEach(k=>localStorage.removeItem(k)); return true; }catch(e){ return false; } };
 
 window.serializeSave=serializeSave;
 window.deserializeSave=deserializeSave;
@@ -11599,9 +11656,9 @@ try{
   Object.defineProperty(window,'ROWS',{ get:()=>ROWS, set:v=>{ ROWS=v|0; }, configurable:true });
 }catch(e){}
 
-if(_topoHasWorld && queen && queen.genome) pushEvent('birth', 'Colonia fundada - Reina ' + (queen.personalName||queen.name) + ' + obreras', 'DNA reina ' + queen.genome.id + ' - IQ 100 - puede llegar a 380');
+if(_topoHasWorld && queen && queen.genome) pushEvent('birth', 'Colony founded · Queen ' + (queen.personalName||queen.name) + ' + workers', 'Queen DNA ' + queen.genome.id + ' · IQ 100 · potential up to 380');
 if(_topoHasWorld){
-  pushEvent('evo','Granja lista: túneles claros, suelo oscuro, colonia activa', 'Cada hormiga muestra qué hace con su burbuja');
+  pushEvent('evo','Farm ready: clear tunnels, dark soil, active colony', 'Every ant shows her current task in a status bubble');
   setNarration('<b>Your farm is ready.</b> <small>Status bubbles show exploration, carried food, digging, and ink signals. To add honey, arm DROP HONEY first; ordinary map clicks only navigate or select.</small>');
 }
 try{ renderEvents(); updateColonyUI(); updateZoomLabel(); }catch(e){ console.error('initUI',e); }
@@ -11641,6 +11698,18 @@ setTimeout(_updateBothAntCounts, 1800);
   const worldGenSc=document.getElementById('worldGenScreen');
   const legacyOnboarding=document.getElementById('onboardingLegacy');
   const menuScreens=[createSc,loadSc,settingsSc,creditsSc,onboarding,worldGenSc].filter(Boolean);
+  let _onboardingReplay=false;
+  function setOnboardingMode(replay,name){
+    _onboardingReplay=!!replay;
+    const button=document.getElementById('btnOnboardingStart'),note=document.getElementById('onboardingFooterNote'),kicker=document.getElementById('onboardingWorldName');
+    if(button)button.textContent=_onboardingReplay?'BACK TO SETTINGS':'ENTER THE FARM';
+    if(note)note.textContent=_onboardingReplay?'HONEY IS ONE SHOT · TRAILS USE DRAG':'THE COLONY SAVES ITSELF';
+    if(kicker){
+      const meta=(typeof topoHasSave==='function')?topoHasSave():null;
+      const label=sanitizeWorldName(name||meta&&meta.name||worldName,defaultWorldName('',64));
+      kicker.textContent=(_onboardingReplay?'FIRST STEPS · ':'DAY 0 · ')+label.toUpperCase();
+    }
+  }
 
   // Front-door preferences are deliberately separate from the simulation save: importing a farm must
   // not unexpectedly change accessibility choices, and deleting a farm must not reset the display.
@@ -11729,8 +11798,8 @@ setTimeout(_updateBothAntCounts, 1800);
       const ago = meta.savedAt? Math.max(0, Date.now()-meta.savedAt) : 0;
       const mins=Math.floor(ago/60000);
       const when = mins<1? 'seconds ago' : mins<60? mins+' min ago' : mins<1440? Math.floor(mins/60)+'h ago' : Math.floor(mins/1440)+'d ago';
-      const detail='Day '+meta.day+' · '+meta.cols+'×'+meta.maxRows+' world · depth '+Math.max(0,meta.rows-SURFACE_ROW)+' open · '+meta.pop+' ants · saved '+when;
-      btn.hidden=false; btn.style.display='flex'; btn.title=detail; btn.setAttribute('aria-label','Continue — '+detail);
+      const detail=meta.name+' · Day '+meta.day+' · '+meta.cols+'×'+meta.maxRows+' world · depth '+Math.max(0,meta.rows-SURFACE_ROW)+' open · '+meta.pop+' ants · saved '+when;
+      btn.hidden=false;btn.style.display='flex';btn.title=detail;btn.setAttribute('aria-label','Continue '+meta.name+' — '+detail);
       const label=btn.querySelector('.topo-menu-label'); if(label) label.textContent='CONTINUE';
       const sr=document.getElementById('mainContinueMeta'); if(sr) sr.textContent=' · '+detail;
     } else {
@@ -11801,14 +11870,15 @@ setTimeout(_updateBothAntCounts, 1800);
     const saves=[];
     try{
       const meta=(typeof topoHasSave==='function')?topoHasSave():null;
-      if(meta)saves.push({key:SAVE_KEY,label:'ACTIVE FARM',size:meta.cols+'×'+meta.maxRows,day:meta.day,pop:meta.pop,savedAt:meta.savedAt,kind:'active'});
+      if(meta)saves.push({key:SAVE_KEY,label:meta.name,size:meta.cols+'×'+meta.maxRows,day:meta.day,pop:meta.pop,savedAt:meta.savedAt,kind:'active'});
       for(const k of ['antfarm_save_v4','antfarm_save_v3','antfarm_save_v2','antfarm_save']){
-        const raw=localStorage.getItem(k); if(!raw) continue;
-        try{ const d=JSON.parse(raw); if(!d||!Array.isArray(d.workers)||!d.workers.length) continue;
-          saves.push({key:k,label:'LEGACY FARM',size:(d.COLS||64)+'×'+(d.ROWS||36),day:d.day||1,pop:d.workers.length,savedAt:d.savedAt||0,kind:'legacy'});
+        const raw=localStorage.getItem(k);if(!raw)continue;
+        try{const d=JSON.parse(raw);if(!d||!Array.isArray(d.workers)||!d.workers.length)continue;
+          const cols=d.COLS||64,name=sanitizeWorldName(d.worldName,defaultWorldName(d.sizeKey,cols));
+          saves.push({key:k,label:name,size:cols+'×'+(d.ROWS||36),day:d.day||1,pop:d.workers.length,savedAt:d.savedAt||0,kind:'legacy'});
         }catch(e){}
       }
-      topoListFarms().forEach(f=>saves.push({key:'ARCHIVE:'+f.id,label:f.label||'ARCHIVED FARM',size:f.cols+'×'+(f.maxRows||worldDepthProfile(f.cols).limit),day:f.day,pop:f.pop,savedAt:f.savedAt,kind:'archive'}));
+      topoListFarms().forEach(f=>saves.push({key:'ARCHIVE:'+f.id,label:f.worldName||f.label,size:f.cols+'×'+(f.maxRows||worldDepthProfile(f.cols).limit),day:f.day,pop:f.pop,savedAt:f.savedAt,kind:'archive'}));
     }catch(e){ console.warn('loadList',e); }
     return saves;
   }
@@ -11826,11 +11896,11 @@ setTimeout(_updateBothAntCounts, 1800);
       const card=document.createElement('article'); card.className='topo-save-card'; card.dataset.saveKind=entry.kind;
       const preview=document.createElement('div'); preview.className='topo-save-preview'; preview.setAttribute('aria-hidden','true');
       const info=document.createElement('div'); info.className='topo-save-info';
-      const title=document.createElement('strong'); title.textContent=entry.label+' · '+entry.size;
+      const title=document.createElement('strong');title.dataset.noTranslate='true';title.textContent=entry.label+' · '+entry.size;
       const detail=document.createElement('p'); detail.textContent='Day '+entry.day+' · '+entry.pop+' ants';
       const when=document.createElement('small'); when.textContent='Saved '+friendlySaveTime(entry.savedAt);
       info.append(title,detail,when);
-      const actions=document.createElement('div'); actions.className='topo-save-actions';
+      const actions=document.createElement('div');actions.className='topo-save-actions';actions.dataset.noTranslate='true';
       const load=document.createElement('button'); load.type='button'; load.className='load'; load.textContent='LOAD'; load.setAttribute('aria-label','Load '+entry.label);
       const del=document.createElement('button'); del.type='button'; del.className='delete'; del.textContent='DELETE'; del.setAttribute('aria-label','Delete '+entry.label);
       load.onclick=()=>{
@@ -11844,7 +11914,7 @@ setTimeout(_updateBothAntCounts, 1800);
       del.onclick=()=>gameConfirm('Delete this farm?','“'+entry.label+'” will be removed. This cannot be undone.',()=>{
         try{
           if(entry.key.indexOf('ARCHIVE:')===0) topoDeleteFarm(entry.key.slice(8));
-          else { localStorage.removeItem(entry.key); if(entry.key===SAVE_KEY){ localStorage.removeItem(LS_ALIVE); localStorage.removeItem(LS_INGAME); localStorage.removeItem('antfarm_lastReal'); localStorage.removeItem('antfarm_time'); _topoHasWorld=false; } }
+          else{localStorage.removeItem(entry.key);if(entry.key===SAVE_KEY){[LS_ALIVE,LS_INGAME,'antfarm_lastReal','antfarm_time','antfarm_worldName'].forEach(k=>localStorage.removeItem(k));_topoHasWorld=false;}}
         }catch(e){}
         renderLoadList(); try{ topoRefreshContinueBtn(); }catch(e){}
       });
@@ -11853,7 +11923,7 @@ setTimeout(_updateBothAntCounts, 1800);
   }
   if(btnLoad) btnLoad.onclick=()=>{ show(loadSc); renderLoadList(); };
   function farmSummaryRow(label,detail,kind,actions){
-    const row=document.createElement('div'); row.className='topo-farm-summary';
+    const row=document.createElement('div');row.className='topo-farm-summary';row.dataset.noTranslate='true';
     const dot=document.createElement('span'); dot.className='topo-farm-dot'+(kind==='archive'?' archive':''); dot.setAttribute('aria-hidden','true');
     const copy=document.createElement('div'); copy.className='topo-farm-copy';
     const strong=document.createElement('strong'); strong.textContent=label;
@@ -11865,7 +11935,7 @@ setTimeout(_updateBothAntCounts, 1800);
   function renderSettingsFarms(){
     const box=document.getElementById('settingsFarms'); if(!box) return; box.innerHTML='';
     const cur=(typeof topoHasSave==='function')?topoHasSave():null;
-    if(cur) box.appendChild(farmSummaryRow('ACTIVE FARM','Day '+cur.day+' · '+cur.pop+' ants · '+cur.cols+'×'+cur.rows,'active'));
+    if(cur)box.appendChild(farmSummaryRow(cur.name,'ACTIVE · Day '+cur.day+' · '+cur.pop+' ants · '+cur.cols+'×'+cur.maxRows,'active'));
     else box.appendChild(farmSummaryRow('NO ACTIVE FARM','Create or import a farm to begin.','active'));
     const farms=(typeof topoListFarms==='function')?topoListFarms():[];
     const deleteActiveButton=document.getElementById('btnDeleteActive'); if(deleteActiveButton) deleteActiveButton.disabled=!cur;
@@ -11887,7 +11957,8 @@ setTimeout(_updateBothAntCounts, 1800);
   document.querySelectorAll('[data-setting-ui]').forEach(b=>b.onclick=()=>saveMenuSettings({ui:b.dataset.settingUi}));
   const ambBtn=document.getElementById('settingAmbience'); if(ambBtn) ambBtn.onclick=()=>saveMenuSettings({ambience:!menuSettings.ambience});
   const contrastBtn=document.getElementById('settingContrast'); if(contrastBtn) contrastBtn.onclick=()=>saveMenuSettings({contrast:!menuSettings.contrast});
-  const resetBtn=document.getElementById('btnResetMenuSettings'); if(resetBtn) resetBtn.onclick=()=>window.topoResetMenuSettings();
+  const resetBtn=document.getElementById('btnResetMenuSettings');if(resetBtn)resetBtn.onclick=()=>window.topoResetMenuSettings();
+  const firstStepsBtn=document.getElementById('btnSettingsFirstSteps');if(firstStepsBtn)firstStepsBtn.onclick=()=>{setOnboardingMode(true);show(onboarding);};
   const fullscreenBtn=document.getElementById('btnFullscreen');
   if(fullscreenBtn) fullscreenBtn.onclick=async()=>{ try{ if(document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); }catch(e){ gameAlert('Fullscreen unavailable','This browser or embedded preview did not allow fullscreen.'); } renderMenuSettings(); };
   document.addEventListener('fullscreenchange',renderMenuSettings);
@@ -11945,7 +12016,7 @@ setTimeout(_updateBothAntCounts, 1800);
   // === FLUJO DE SIEMBRA (único dueño: app.js) ===
   // Topo: blindado - un solo flujo, reentrancia bloqueada, ningun paso puede dejar la pantalla
   // de carga colgada y si algo revienta se ve el porqué con boton de reintento.
-  let _topoCreating=false;
+  let _topoCreating=false,_topoNaming=false;
   function topoGenScreenEls(){
     return {
       sc: document.getElementById('worldGenScreen'),
@@ -11963,23 +12034,26 @@ setTimeout(_updateBothAntCounts, 1800);
     gameAlert('WORLD GENERATION STOPPED', (msg||'Unknown reason')+'\n\nReturn to NEW FARM and try again. If it repeats, reload the page; ANT FARM autosaves every few seconds.',
       ()=>{ try{ topoShowMainMenu(); }catch(e){} });
   }
-  function topoBeginCreate(sizeKey, s){
-    if(_topoCreating){ tlog('[TOPO] siembra en curso - click ignorado'); return; }
+  function topoBeginCreate(sizeKey,s,chosenName){
+    if(_topoCreating){tlog('[TOPO] world creation already running — click ignored');return;}
     _topoCreating=true;
+    const safeName=sanitizeWorldName(chosenName,defaultWorldName(sizeKey,s.cols));
     try{
-      localStorage.setItem('antfarm_worldSize', sizeKey);
-      localStorage.setItem('antfarm_worldSize_cols', s.cols);
-      localStorage.setItem('antfarm_worldSize_rows', s.rows);
-      localStorage.setItem('antfarm_createdAt', new Date().toISOString());
+      localStorage.setItem('antfarm_worldSize',sizeKey);
+      localStorage.setItem('antfarm_worldSize_cols',s.cols);
+      localStorage.setItem('antfarm_worldSize_rows',s.rows);
+      localStorage.setItem('antfarm_worldName',safeName);
+      localStorage.setItem('antfarm_createdAt',new Date().toISOString());
     }catch(e){ console.warn('ls fail',e); }
     try{ show(worldGenSc); }catch(e){}
     const g=topoGenScreenEls();
     const done=()=>{ _topoCreating=false; };
     if(!g.sc){ // sin pantalla de carga: sembrar ya
-      try{ topoCreateFreshWorld(s.cols, s.rows); }catch(e){ console.error('[TOPO] create', e); topoGenFail(e && e.message); return; }
-      done(); try{ show(onboarding); }catch(e){} return;
+      try{ topoCreateFreshWorld(s.cols,s.rows,{worldName:safeName,sizeKey}); }catch(e){ console.error('[TOPO] create', e); topoGenFail(e && e.message); return; }
+      done();try{setOnboardingMode(false,safeName);show(onboarding);}catch(e){}return;
     }
-    if(g.size){const dp=worldDepthProfile(s.cols);g.size.textContent=String(sizeKey).toUpperCase()+' '+s.cols+'×'+dp.limit+' · COMPLETE WORLD';}
+    if(g.size){const dp=worldDepthProfile(s.cols);g.size.textContent=safeName+' · '+String(sizeKey).toUpperCase()+' '+s.cols+'×'+dp.limit;}
+    const onboardName=document.getElementById('onboardingWorldName');if(onboardName)onboardName.textContent='DAY 0 · '+safeName.toUpperCase();
     if(g.seed) g.seed.textContent = 'SEED ' + Math.floor(Math.random()*999999999).toString(36).toUpperCase() + ' · ' + new Date().toLocaleString('en-US');
     g.sc.style.display='flex';
     if(g.bar) g.bar.style.width='0%';
@@ -12007,17 +12081,16 @@ setTimeout(_updateBothAntCounts, 1800);
         try{ if(g.sc) g.sc.style.display='none'; }catch(e){}
         // Topo: la colonia se guarda YA, antes del onboarding: si el navegador se cierra o recarga
         // sin pulsar EMPEZAR, la granja no se pierde (antes quedaba solo en memoria).
-        try{ if(typeof serializeSave==='function') serializeSave(true); }catch(e){ console.warn('save post-crear', e.message); }
-        try{ if(typeof topoArchiveCurrent==='function') topoArchiveCurrent('Farm · Day '+day+' · '+COLS+'×'+ROWS); }catch(e){}
-        try{ if(typeof topoRefreshContinueBtn==='function') topoRefreshContinueBtn(); }catch(e){}
-        try{ show(onboarding); }catch(e){}
-        try{ if(typeof pushToast==='function') pushToast((typeof W!=='undefined'?W/2:200),100,String(sizeKey).toUpperCase()+' world ready','#2de67a'); }catch(e){}
+        try{if(typeof serializeSave==='function')serializeSave(true);}catch(e){console.warn('post-creation save',e.message);}
+        try{if(typeof topoRefreshContinueBtn==='function')topoRefreshContinueBtn();}catch(e){}
+        try{setOnboardingMode(false,safeName);show(onboarding);}catch(e){}
+        try{if(typeof pushToast==='function')pushToast((typeof W!=='undefined'?W/2:200),100,'WORLD READY','#2de67a');}catch(e){}
       }, 240);
     }
     iv=setInterval(()=>{
       try{
         if(idx>=steps.length){
-          try{ topoCreateFreshWorld(s.cols, s.rows); }catch(e){ console.error('[TOPO] create', e); finish(e); return; }
+          try{ topoCreateFreshWorld(s.cols,s.rows,{worldName:safeName,sizeKey}); }catch(e){ console.error('[TOPO] create', e); finish(e); return; }
           finish(null);
           return;
         }
@@ -12033,24 +12106,29 @@ setTimeout(_updateBothAntCounts, 1800);
     wd=setInterval(()=>{ if(finished) return; const max=steps.length*stepMs+12000; if(Date.now()-t0>max) finish(new Error('world generation timed out')); }, 1500);
   }
   function handleSizeChoice(sizeKey){
-    if(_topoCreating){ tlog('[TOPO] siembra en curso - click ignorado'); return; }
-    const s=sizes[sizeKey]||sizes.medium;
+    if(_topoCreating||_topoNaming){tlog('[TOPO] world creation step already open — click ignored');return;}
+    _topoNaming=true;
+    const s=sizes[sizeKey]||sizes.medium,dp=worldDepthProfile(s.cols),suggested=defaultWorldName(sizeKey,s.cols);
     let meta=null;
-    try{ meta=(typeof topoHasSave==='function')? topoHasSave():null; }catch(e){ console.warn('estado de guardado', e.message); }
-    if(meta){
-      // Topo: confirmacion dentro del juego (el confirm() nativo no existe en iframes sandboxeados)
-      gameConfirm('Create a different farm?',
-        'Day '+meta.day+' · '+meta.pop+' ants · '+meta.cols+'×'+meta.maxRows+'\n\nYour current farm will move to the archive and remain available from LOAD FARM.',
-        ()=>{
-          try{topoArchiveCurrent('Farm · Day '+meta.day+' · '+meta.cols+'×'+meta.maxRows);}catch(e){console.warn('archive',e.message);}
-          try{ localStorage.removeItem(SAVE_KEY); localStorage.removeItem('antfarm_worldAlive'); localStorage.removeItem('antfarm_time'); localStorage.removeItem('antfarm_lastReal'); }catch(e){}
+    try{meta=(typeof topoHasSave==='function')?topoHasSave():null;}catch(e){console.warn('save status',e.message);}
+    const replacement=meta?'\n\nYour active world, “'+meta.name+'” (Day '+meta.day+'), will move to LOAD FARM before the new world is created.':'';
+    gameDialog({
+      preserveText:true,title:'NAME YOUR WORLD',
+      body:'You chose '+String(sizeKey).toUpperCase()+' · '+s.cols+'×'+dp.limit+'. Give this world a short name, or leave the suggested name unchanged.'+replacement,
+      input:{label:'WORLD NAME · OPTIONAL · MAX '+WORLD_NAME_MAX,value:suggested,placeholder:suggested,maxLength:WORLD_NAME_MAX,ariaLabel:'Optional world name'},
+      yes:meta?'ARCHIVE & CREATE':'CREATE WORLD',no:'BACK',
+      onYes:(rawName)=>{
+        _topoNaming=false;
+        const chosen=sanitizeWorldName(rawName,suggested);
+        if(meta){
+          try{topoArchiveCurrent();}catch(e){console.warn('archive',e.message);}
+          try{[SAVE_KEY,'antfarm_worldAlive','antfarm_time','antfarm_lastReal','antfarm_worldName'].forEach(k=>localStorage.removeItem(k));}catch(e){}
           _topoHasWorld=false;
-          topoBeginCreate(sizeKey, s);
-        },
-        ()=>{ try{ topoShowMainMenu(); }catch(e){} });
-      return;
-    }
-    topoBeginCreate(sizeKey, s);
+        }
+        topoBeginCreate(sizeKey,s,chosen);
+      },
+      onNo:()=>{_topoNaming=false;}
+    });
   }
   document.querySelectorAll('#createSizeScreen [data-size]').forEach(b=>{
     b.addEventListener('click', (e)=>{ e.preventDefault(); e.stopPropagation(); handleSizeChoice(b.dataset.size); });
@@ -12068,9 +12146,10 @@ setTimeout(_updateBothAntCounts, 1800);
   tlog('[TOPO] FLOW ready, createSc', !!createSc, 'onboarding', !!onboarding);
 
   const btnOn=document.getElementById('btnOnboardingStart');
-  if(btnOn) btnOn.onclick=()=>{
-    if(onboarding) onboarding.style.display='none';
-    if(main) main.style.display='none';
+  if(btnOn)btnOn.onclick=()=>{
+    if(_onboardingReplay){setOnboardingMode(false);show(settingsSc);renderMenuSettings();renderSettingsFarms();return;}
+    if(onboarding)onboarding.style.display='none';
+    if(main)main.style.display='none';
     hideAll();
     try{ document.body.classList.add('game-started'); const ar=document.getElementById('appRoot'); if(ar) ar.style.display='flex'; const vb=document.getElementById('velAntBar'); if(vb) vb.style.visibility='visible'; const cw=document.getElementById('calendarWidget'); if(cw) cw.style.visibility='visible'; }catch(e){}
     // reanudar loop si estaba pausado en menu
@@ -12079,14 +12158,14 @@ setTimeout(_updateBothAntCounts, 1800);
       const c=parseInt(localStorage.getItem('antfarm_worldSize_cols')||'64');
       const r=parseInt(localStorage.getItem('antfarm_worldSize_rows')||'36');
       if(!_topoHasWorld || COLS!==c || ROWS!==r){
-        if(typeof topoCreateFreshWorld==='function') topoCreateFreshWorld(c,r);
+        if(typeof topoCreateFreshWorld==='function') topoCreateFreshWorld(c,r,{worldName:localStorage.getItem('antfarm_worldName')||defaultWorldName('',c),sizeKey:localStorage.getItem('antfarm_worldSize')||worldSizeKeyForCols(c)});
       } else {
         tlog('[TOPO] mundo ya existe, skip regen');
       }
       try{ localStorage.setItem('antfarm_inGame','1'); }catch(e){}
       try{ if(typeof serializeSave==='function') serializeSave(true); }catch(e){}
     }catch(e){ console.error('fresh world',e); }
-    try{ if(typeof pushToast==='function') pushToast(W/2,H/2-20,'🐜 ¡Granja creada!',' #2de67a'); }catch(e){}
+    try{ if(typeof pushToast==='function') pushToast(W/2,H/2-20,'🐜 FARM CREATED!',' #2de67a'); }catch(e){}
   };
   // si ya hay mundo creado y no es primera vez, saltar splash? No, siempre splash breve
 })();

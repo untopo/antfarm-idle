@@ -197,10 +197,10 @@
     border-bottom:3px solid #000; padding:0 6px; background:#2a4a4a;
     border-top:3px solid #8b5a2b; border-left:3px solid #8b5a2b; border-right:3px solid #5a3a1a;
   }
-  .cal-season-bg.s-prima{ background:linear-gradient(90deg,#2d5a5a,#1e3a1e); }
-  .cal-season-bg.s-vera{ background:linear-gradient(90deg,#5a4a0a,#3a2d0a); }
-  .cal-season-bg.s-oto{ background:linear-gradient(90deg,#5a3a1f,#3a1e0a); }
-  .cal-season-bg.s-inv{ background:linear-gradient(90deg,#3a4a5a,#1a2a3a); }
+  .cal-season-bg.s-spring{ background:linear-gradient(90deg,#2d5a5a,#1e3a1e); }
+  .cal-season-bg.s-summer{ background:linear-gradient(90deg,#5a4a0a,#3a2d0a); }
+  .cal-season-bg.s-autumn{ background:linear-gradient(90deg,#5a3a1f,#3a1e0a); }
+  .cal-season-bg.s-winter{ background:linear-gradient(90deg,#3a4a5a,#1a2a3a); }
   #calSeasonIcon{ font-size:14px; line-height:1; filter:drop-shadow(1px 1px 0 #000) }
   #calSeasonName{ flex:1; text-align:center; letter-spacing:0.5px; font-size:8px; color:#fff }
   #calYear{ font-size:8px; color:#ffcc00; background:#1a140f; border:2px solid #000; padding:2px 4px; }
@@ -321,7 +321,7 @@
   .cal-season-tabs{ display:flex; gap:0; background:#000; border-bottom:4px solid #000; }
   .cal-tab{ flex:1; padding:8px 4px; text-align:center; font-family:'Press Start 2P',monospace; font-size:8px; color:#8a7a5a; background:#1a140f; border-right:3px solid #000; cursor:pointer; line-height:1.3; }
   .cal-tab.active{ background:var(--amber); color:#000; }
-  .cal-tab.s-prima.active{ background:#2de67a; color:#000; } .cal-tab.s-vera.active{ background:#ffcc00; color:#000; } .cal-tab.s-oto.active{ background:#ff8c00; color:#000; } .cal-tab.s-inv.active{ background:#7ec8e3; color:#000; }
+  .cal-tab.s-spring.active{ background:#2de67a; color:#000; } .cal-tab.s-summer.active{ background:#ffcc00; color:#000; } .cal-tab.s-autumn.active{ background:#ff8c00; color:#000; } .cal-tab.s-winter.active{ background:#7ec8e3; color:#000; }
   .cal-grid{ display:grid; grid-template-columns:repeat(6,1fr); gap:6px; padding:12px; background:#0f0a05; }
   .cal-cell{ background:#fff8dc; border:3px solid #000; box-shadow:3px 3px 0 #000; padding:6px 4px; text-align:center; min-height:58px; display:flex; flex-direction:column; gap:2px; align-items:center; justify-content:center; cursor:default; }
   .cal-cell.today{ background:var(--amber); border-color:#000; box-shadow:4px 4px 0 #000, 0 0 0 2px rgba(255,204,0,0.4); }

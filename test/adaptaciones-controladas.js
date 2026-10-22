@@ -27,7 +27,7 @@ async function boot(page){
   await page.waitForFunction('window._topoFlowReady===true',{timeout:20000});
   await page.waitForFunction("!document.getElementById('splashScreen') || document.getElementById('splashScreen').style.display==='none'",{timeout:16000}).catch(()=>{});
   await page.click('#btnMainCreate');await sleep(350);await page.click('#createSizeScreen [data-size="small"]');await sleep(350);
-  await page.evaluate(()=>{const h=document.querySelector('.topo-dialog-host');const b=h&&[...h.querySelectorAll('button')].find(x=>/^(SÍ|YES)$/i.test(x.textContent.trim()));if(b)b.click();});
+  await page.evaluate(()=>{const h=document.querySelector('.topo-dialog-host');const b=h&&[...h.querySelectorAll('button')].find(x=>/^(SÍ|YES|CREATE WORLD|ARCHIVE & CREATE)$/i.test(x.textContent.trim()));if(b)b.click();});
   for(let i=0;i<20;i++){const seen=await page.evaluate(()=>{const m=document.getElementById('onboardingModal');if(!m||getComputedStyle(m).display==='none')return false;const b=document.getElementById('btnOnboardingStart')||[...m.querySelectorAll('button')].pop();if(b)b.click();return true;});if(seen)break;await sleep(220);}
   await page.waitForFunction("document.body.classList.contains('game-started')",{timeout:20000});await sleep(650);
 }

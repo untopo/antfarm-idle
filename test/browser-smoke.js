@@ -66,7 +66,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await page.click('#createSizeScreen [data-size="big"]');
     await sleep(260);
     // si ya habia granja guardada, el juego pregunta antes de sobrescribir: responder SÍ
-    const pregunta = await page.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (!h) return null; const b = [...h.querySelectorAll('button')].find(x => /^(SÍ|YES)$/i.test(x.textContent.trim())); const txt = h.textContent.slice(0, 90); if (b) b.click(); return txt; });
+    const pregunta = await page.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (!h) return null; const b = [...h.querySelectorAll('button')].find(x => /^(SÍ|YES|CREATE WORLD|ARCHIVE & CREATE)$/i.test(x.textContent.trim())); const txt = h.textContent.slice(0, 90); if (b) b.click(); return txt; });
     if (pregunta) console.log('   dialogo de sobrescritura detectado y confirmado: ' + pregunta.replace(/\s+/g, ' '));
     await page.screenshot({ path: '/tmp/antfarm-capturas/03b-post-confirmar.png' });
     const genState = await visible('#worldGenScreen');
@@ -139,7 +139,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     // Antes esta prueba exigia lo contrario: que x32 y x64 EXISTIERAN y que el juego los aceptara. El dueño
     // los quito (2026-10-15: «lo de velocidad 32 y 64, bórralo»); aqui queda el contrato nuevo, medido.
     ok(spd.present === 0, 'x32 y x64 ya no estan en ninguna fila de velocidad (' + spd.present + '/4 botones)');
-    ok((!spd.err || spd.tres === 2) && al32 === 16, 'y pedir x32 no lanza: cae en el tope de la casa, x16 - no congela en x1 · x3 cae en x' + spd.tres + (spd.err ? ' :: ' + spd.err : ''));
+    ok((!spd.err || spd.tres === 2) && al32 === 4, 'on the public URL x32 clamps safely to x4, while x3 falls to x' + spd.tres + (spd.err ? ' :: ' + spd.err : ''));
+    const publicDebugTools=await page.evaluate(()=>({day:document.getElementById('btnDay1').hidden,x8:document.getElementById('btnVel8').hidden,x16:document.getElementById('btnVel16').hidden,mode:document.documentElement.dataset.topoDebug}));
+    ok(publicDebugTools.day&&publicDebugTools.x8&&publicDebugTools.x16&&publicDebugTools.mode==='false','the public URL hides +1 DAY, x8 and x16');
     await page.evaluate(() => setGameSpeed(1));
 
     // --- el atajo incremental del cache del suelo tiene que dar los MISMOS pixeles que pintar todo ---
@@ -258,7 +260,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       await page2.screenshot({ path: '/tmp/antfarm-capturas/06-iframe-tamanos.png' });
       await frame.evaluate(() => { document.querySelector('#createSizeScreen [data-size="small"]').click(); });
       await sleep(400);
-      await frame.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (h) { const b = [...h.querySelectorAll('button')].find(x => /^(SÍ|YES)$/i.test(x.textContent.trim())); if (b) b.click(); } });
+      await frame.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (h) { const b = [...h.querySelectorAll('button')].find(x => /^(SÍ|YES|CREATE WORLD|ARCHIVE & CREATE)$/i.test(x.textContent.trim())); if (b) b.click(); } });
       const genInFrame = await frame.evaluate(() => { const e = document.getElementById('worldGenScreen'); return e ? getComputedStyle(e).display : 'no-existe'; });
       ok(genInFrame === 'flex' || genInFrame === 'block' || /none/.test(genInFrame) === false, 'en el iframe bloqueado el click SI reacciona (siembra en curso: display=' + genInFrame + ')');
       let done2 = true;
@@ -293,8 +295,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       // por la medicion, no por el boton.
       const page3 = await browser.newPage();
       await page3.setViewport({ width: 1280, height: 760 });
-      await page3.goto('http://127.0.0.1:' + PORT + '/index.html', { waitUntil: 'networkidle2', timeout: 60000 });
+      await page3.goto('http://127.0.0.1:' + PORT + '/ant-farm-rpg/index.html?debug=1', { waitUntil: 'networkidle2', timeout: 60000 });
       await page3.waitForFunction('window._topoFlowReady===true', { timeout: 20000 });
+      const debugDoor=await page3.evaluate(()=>({mode:document.documentElement.dataset.topoDebug,day:btnDay1.hidden,x8:btnVel8.hidden,x16:btnVel16.hidden}));
+      ok(debugDoor.mode==='true'&&!debugDoor.day&&!debugDoor.x8&&!debugDoor.x16,'?debug=1 exposes the high-speed and one-day test tools');
       // Use the current public contract: Topo Studios is always first and can be skipped. Driving
       // hidden NEW FARM controls underneath the 6.6 s intro created a race with its final handoff.
       await page3.click('#topoIntroSkip');
@@ -305,7 +309,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       await sleep(350);
       // El aviso «¿Sobrescribir tu granja actual?» sale DESPUES de elegir el tamano. Contestarlo
       // antes (como se hacia aqui) dejaba el toldo del dialogo puesto y tapaba todo el HUD.
-      await page3.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (h) { const y = [...h.querySelectorAll('button')].find((x) => /^(SÍ|YES)$/i.test(x.textContent.trim())); if (y) y.click(); } });
+      await page3.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (h) { const y = [...h.querySelectorAll('button')].find((x) => /^(SÍ|YES|CREATE WORLD|ARCHIVE & CREATE)$/i.test(x.textContent.trim())); if (y) y.click(); } });
       await page3.waitForFunction('window.COLS===64', { timeout: 90000 });
       // Estado "el dueño ya está jugando": sin modal de onboarding, sin pantalla de generando
       // mundo, sin menu encima. Mientras alguno de esos toldos esta puesto, tapan el HUD y un

@@ -129,7 +129,7 @@ if (A.err) bad('sesión A: app.js reventó al cargar -> ' + A.err.message);
 else ok('sesión A: app.js carga completo (el crash de queen=null ya no ocurre)');
 
 try {
-  A.sandbox.topoCreateFreshWorld(64, 36);
+  A.sandbox.topoCreateFreshWorld(64,36,{worldName:'Old Hollow',sizeKey:'medium'});
   vm.runInContext('for(let i=0;i<25;i++){ soil[10][8+i]=0; soilType[10][8+i]=1; } day=7; time=DAY_LENGTH*6.4; colonyFood=31; gen=1; digs=88;', A.ctx);
   const saved = A.sandbox.serializeSave(true);
   if (!saved) bad('A: serializeSave false'); else ok('A: granja 64x36 guardada (día 7, 25 celdas excavadas, 88 digs)');
@@ -196,11 +196,11 @@ try {
     // la UI real archiva ANTES de crear (mismo orden que handleSizeChoice)
     if (!D.sandbox.topoArchiveCurrent('Granja 64x36 del día 7')) bad('D: no se archivó la granja actual antes de crear');
     else ok('D: antes de crear, la granja actual quedó archivada');
-    D.sandbox.topoCreateFreshWorld(96, 48);
+    D.sandbox.topoCreateFreshWorld(96,48,{worldName:'Deep Crown',sizeKey:'big'});
     vm.runInContext('for(let i=0;i<40;i++){ soil[20][10+i]=0; } day=2; digs=5;', D.ctx);
     D.sandbox.serializeSave(true);
     const list = D.sandbox.topoListFarms();
-    if (!list.length || list[0].cols !== 64 || list[0].rows !== 36) bad('D: archivo inesperado ' + JSON.stringify(list.map(f => f.cols + 'x' + f.rows + ' d' + f.day)));
+    if(!list.length||list[0].cols!==64||list[0].rows!==36||list[0].worldName!=='Old Hollow')bad('D: archivo inesperado '+JSON.stringify(list.map(f=>f.worldName+' '+f.cols+'x'+f.rows+' d'+f.day)));
     else ok(`D: archivo con ${list.length} granja · ${list[0].cols}x${list[0].rows} · día ${list[0].day} · ${list[0].pop} hormigas`);
 
     // la BIG ahora es la activa: sigue cargable
@@ -218,9 +218,9 @@ try {
       else if (st.c !== 64 || st.r !== 36) bad('D: la archivada volvió con tamaño ' + st.c + 'x' + st.r);
       else if (st.day !== 7) bad('D: la archivada volvió en día ' + st.day + ' (esperado 7)');
       else ok(`D: archivada recuperada → 64x36 · día ${st.day} · ${st.tunnels} celdas abiertas · ${st.digs} digs`);
-      const now = D.sandbox.topoListFarms();
-      if (now.length < 2) bad('D: la BIG se perdió al cambiar de granja (archivadas=' + now.length + ')');
-      else ok(`D: intercambio sin pérdidas · ${now.length} granjas en el archivo`);
+      const now=D.sandbox.topoListFarms();
+      if(now.length!==1||now[0].cols!==96||now[0].worldName!=='Deep Crown'||D.sandbox.getWorldName()!=='Old Hollow')bad('D: el intercambio perdió nombres '+JSON.stringify({active:D.sandbox.getWorldName(),archive:now.map(f=>f.worldName)}));
+      else ok('D: intercambio real sin duplicados · activa Old Hollow + Deep Crown en el archivo');
       const before2 = now.length;
       D.sandbox.topoDeleteFarm(now[0].id);
       if (D.sandbox.topoListFarms().length !== before2 - 1) bad('D: borrar archivo no surte efecto');

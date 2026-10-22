@@ -59,7 +59,7 @@ const queenMarkup = sliceBetween(html,'id="queenProfile"','<!-- CONTROLES ESQUIN
   await page.waitForFunction("!document.getElementById('splashScreen') || document.getElementById('splashScreen').style.display==='none'",{timeout:15000}).catch(()=>{});
   await page.click('#btnMainCreate'); await sleep(300);
   await page.click('#createSizeScreen [data-size="small"]'); await sleep(420);
-  await page.evaluate(()=>{ const h=document.querySelector('.topo-dialog-host'); if(!h)return; const b=[...h.querySelectorAll('button')].find(x=>/^(YES|SÍ)$/i.test(x.textContent.trim())); if(b)b.click(); });
+  await page.evaluate(()=>{ const h=document.querySelector('.topo-dialog-host'); if(!h)return; const b=[...h.querySelectorAll('button')].find(x=>/^(YES|SÍ|CREATE WORLD|ARCHIVE & CREATE)$/i.test(x.textContent.trim())); if(b)b.click(); });
   for(let i=0;i<20;i++){
     const entered=await page.evaluate(()=>{ const b=document.getElementById('btnOnboardingStart'); if(b&&b.offsetParent!==null){b.click();return true;} return document.body.classList.contains('game-started'); });
     if(entered)break; await sleep(220);

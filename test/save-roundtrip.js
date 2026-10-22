@@ -144,7 +144,7 @@ const w = sandbox;
 const getVars = () => run('({soil,soilType,geologyHost,water,waterVisual,floodBarriers:[...floodBarriers],fertility,plants,hiddenRewards,foods,workers,queens,queen,brood,structures,worldSeed,ancientSites,ancientMasonry,COLS,ROWS,W,H,SURFACE_ROW,SURFACE_Y,day,time,digs,colonyFood,worldMaterials,reliquias,gen,_hasWorld:_topoHasWorld})');
 
 try {
-  w.topoCreateFreshWorld(48, 28);
+  w.topoCreateFreshWorld(48,28,{worldName:'Roundtrip Nest',sizeKey:'small'});
   let v = getVars();
   const esperado = run('sizeProfile().founderWorkers');
   if (v.workers.length !== esperado) fail(`mundo fresco: esperadas ${esperado} obreras (perfil 48x28), hay ` + v.workers.length); else ok(`mundo fresco 48x28 · ${esperado} obreras (lo que manda el tamano) · reina ` + (v.queen ? v.queen.name : 'null'));
@@ -161,7 +161,8 @@ try {
   else {
     ok('save persistido: ' + raw.length + ' bytes');
     const d = JSON.parse(raw);
-    for (const f of ['soil', 'soilType', 'workers', 'day', 'savedAt', 'COLS', 'ROWS', 'depthLimit', 'worldCoreFound', 'digs', 'colonyFood', 'gen', 'foods', 'water', 'floodBarriers', 'hiddenRewards', 'worldSeed', 'ancientSites', 'ancientMasonry']) if (d[f] === undefined) fail('save sin campo ' + f);
+    for(const f of ['soil','soilType','workers','day','savedAt','COLS','ROWS','depthLimit','worldCoreFound','worldName','digs','colonyFood','gen','foods','water','floodBarriers','hiddenRewards','worldSeed','ancientSites','ancientMasonry'])if(d[f]===undefined)fail('save sin campo '+f);
+    if(d.worldName!=='Roundtrip Nest')fail('save perdió el nombre: '+d.worldName);else ok('save conserva el nombre opcional del mundo');
     if (d.COLS !== 48 || d.ROWS !== 28) fail('save con tamaño incorrecto ' + d.COLS + 'x' + d.ROWS); else ok('save guarda tamaño 48x28 · día ' + d.day + ' · digs ' + d.digs);
     if (typeof d.soil[0] !== 'string') fail('soil no codificado como string compacto');
     if (store.get('antfarm_worldAlive') !== '1') fail('no se marcó antfarm_worldAlive');
@@ -179,8 +180,9 @@ try {
   else if (typeof w.topoHasSave === 'function') ok('topoHasSave detecta: día ' + w.topoHasSave().day + ' · ' + w.topoHasSave().pop + ' hormigas · ' + w.topoHasSave().cols + 'x' + w.topoHasSave().rows);
 
   const loaded = w.deserializeSave();
-  if (!loaded) fail('deserializeSave devolvió false'); else ok('deserializeSave OK');
-  v = getVars();
+  if(!loaded)fail('deserializeSave devolvió false');else ok('deserializeSave OK');
+  if(w.getWorldName()!=='Roundtrip Nest')fail('deserializeSave perdió el nombre: '+w.getWorldName());else ok('deserializeSave restaura el nombre del mundo');
+  v=getVars();
   if (v.COLS !== 48 || v.ROWS !== 28) fail('dimensiones tras cargar: ' + v.COLS + 'x' + v.ROWS);
   if (v.W !== 48 * 16 || v.H !== 28 * 16) fail('W/H no recalculados: ' + v.W + 'x' + v.H); else ok('lienzo redimensionado a ' + v.W + 'x' + v.H);
   if (v.soil.length !== 28 || v.soil[0].length !== 48) fail('soil restaurado con forma ' + v.soil.length + 'x' + (v.soil[0] ? v.soil[0].length : '?'));
@@ -217,15 +219,16 @@ try {
   // Compatibilidad real: una partida anterior puede traer comida cero, materiales y nombres de
   // reliquia en español. El libro nuevo debe cargarlos sin convertir 0 en el saldo que hubiera antes.
   const legacy = JSON.parse(store.get('antFarm_fullSave_v2'));
-  delete legacy.worldSeed; delete legacy.ancientSites; delete legacy.ancientMasonry;
+  delete legacy.worldSeed;delete legacy.ancientSites;delete legacy.ancientMasonry;delete legacy.worldName;
   legacy.colonyFood = 0;
   legacy.worldMaterials = {stone:7, clay:2, fiber:1};
   legacy.reliquias = [{tipo:'Fósil de hormiga león',piso:3,dia:2,gen:1,lore:'legado',bonus:0.02}];
   store.set('antFarm_fullSave_v2', JSON.stringify(legacy));
   run("colonyFood=99; worldMaterials={stone:99,wood:8}; reliquias=[];");
-  if (!w.deserializeSave()) fail('la partida española anterior no carga');
-  else {
-    const old = getVars();
+  if(!w.deserializeSave())fail('la partida española anterior no carga');
+  else{
+    const old=getVars();
+    if(w.getWorldName()!=='SMALL BURROW')fail('guardado sin nombre no migró al default: '+w.getWorldName());else ok('guardado anterior sin nombre migra a SMALL BURROW');
     if (old.colonyFood !== 0) fail('el saldo 0 del guardado se sustituyó por el saldo en memoria: '+old.colonyFood);
     else ok('el libro restaura también una despensa a cero');
     if (old.worldMaterials.stone !== 7 || old.worldMaterials.clay !== 2 || old.worldMaterials.wood !== 0) fail('materiales anteriores mal restaurados');

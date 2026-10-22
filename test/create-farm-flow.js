@@ -45,7 +45,7 @@ function makeEl(id, isCanvas) {
     _l: Object.create(null),
     appendChild(c) { this.children.push(c); c.parentNode = this; return c; },
     insertBefore(c) { this.children.unshift(c); c.parentNode = this; return c; },
-    append() { }, prepend() { }, removeChild() { },
+    append(...cs) { cs.forEach(c=>this.appendChild(c)); }, prepend(...cs) { cs.reverse().forEach(c=>this.insertBefore(c)); }, removeChild() { },
     remove() { if (this.parentNode) { const i = this.parentNode.children.indexOf(this); if (i >= 0) this.parentNode.children.splice(i, 1); this.parentNode = null; } },
     insertAdjacentHTML() { }, setAttribute(k, v) { this.dataset[k] = v; }, getAttribute(k) { return this.dataset[k] ?? null; },
     hasAttribute(k) { return this.dataset[k] !== undefined; }, removeAttribute(k) { delete this.dataset[k]; },
@@ -126,7 +126,7 @@ const sb = {
   clearInterval: id => timers.delete(id), clearTimeout: id => timers.delete(id), queueMicrotask: f => f(),
   requestAnimationFrame: f => mkTimer(() => f(clock), 16, false), cancelAnimationFrame: id => timers.delete(id),
   fetch: () => Promise.reject(new Error('nf')), XMLHttpRequest: class { open() { } send() { } },
-  URL: { createObjectURL: () => '', revokeObjectURL() { } }, Blob: class { },
+  URL: { createObjectURL: () => '', revokeObjectURL() { } }, URLSearchParams, Blob: class { },
   navigator: { userAgent: 'node', hardwareConcurrency: 4, maxTouchPoints: 0 },
   location: { href: 'http://localhost/ant-farm-rpg/index.html', search: '', reload() { } },
   getComputedStyle: () => ({ display: 'flex', visibility: 'visible', getPropertyValue: () => '' }),
@@ -159,15 +159,20 @@ function clickSize(k, keepFlow) { // orden real: listener del boton, luego el de
 }
 const hosts = () => body.children.filter(c => c.className === 'topo-dialog-host');
 function findBtn(node, label) { let out = null; (function walk(n) { if (!n || out) return; if (n.textContent === label) { out = n; return; } (n.children || []).forEach(walk); })(node); return out; }
+function findTag(node, id) { let out=null;(function walk(n){if(!n||out)return;if(n.id===id){out=n;return;}(n.children||[]).forEach(walk);})(node);return out; }
+function confirmName(name){const h=hosts()[0],field=findTag(h,'c_input'),b=findBtn(h,'CREATE WORLD')||findBtn(h,'ARCHIVE & CREATE');if(field)field.value=name||'';if(b)b.dispatch('click',{});return!!b;}
 const world = () => sb.COLS + 'x' + sb.ROWS;
 const gen = getEl('worldGenScreen');
 
-/* ---------- 3) sin guardado: elegir tamano siembra ---------- */
+/* ---------- 3) sin guardado: elegir tamano, nombrar y sembrar ---------- */
 clickSize('big');
-ok(gen.style.display === 'flex', 'al pulsar el tamano aparece la pantalla de siembra (no se queda sorda)');
+ok(hosts().length===1&&!!findTag(hosts()[0],'c_input'),'elegir tamaño abre el paso integrado para nombrar el mundo');
+ok(confirmName('Deep Lima'),'el diálogo ofrece CREATE WORLD');
+ok(gen.style.display === 'flex', 'tras confirmar el nombre aparece la pantalla de siembra (no se queda sorda)');
 pump(8);
 ok(world() === '96x48', 'BIG: el mundo es 96x48 tras confirmar el tamano (' + world() + ')');
 ok(store.get('antfarm_worldSize') === 'big', 'el tamano elegido queda registrado en localStorage');
+ok(store.get('antfarm_worldName')==='Deep Lima','el nombre opcional queda registrado y sanitizado');
 ok(gen.style.display === 'none', 'la pantalla de siembra se cierra sola (barra colgada = 0)');
 ok(sb.__errors.length === 0, 'cero errores en la siembra' + (sb.__errors[0] ? ' | ' + sb.__errors[0] : ''));
 
@@ -177,30 +182,35 @@ let gens = 0;
 const realCreate = sb.topoCreateFreshWorld;
 sb.topoCreateFreshWorld = function (c, r) { gens++; return realCreate(c, r); };
 beginBurst(); clickSize('small', 1); clickSize('small', 1); clickSize('small', 1);
+ok(hosts().length===1,'tres clicks seguidos abren un solo diálogo de nombre');confirmName('');
 pump(8);
 ok(gens === 1, 'tres clicks seguidos generan UNA sola vez el mundo (guarda anti-reentrancia)');
 ok(world() === '48x28', 'SMALL 48x28 sembrado (' + world() + ')');
+ok(store.get('antfarm_worldName')==='SMALL BURROW','dejar el nombre vacío usa un default claro según el tamaño');
+const hostile=sb.sanitizeWorldName('  <script>\u202E'+('X'.repeat(60))+'[]  ','FALLBACK');
+ok(hostile.length<=28&&!/[<>\[\]{}\u202a-\u202e]/.test(hostile),'el nombre importado se sanea y queda en 28 caracteres como máximo');
 
 /* ---------- 5) con granja guardada: dialogo propio, y la anterior se archiva ---------- */
 const saveObj = { v: 2, day: 7, time: 4000, COLS: 48, ROWS: 28, savedAt: 1, soil: [[1, 1], [1, 1]], workers: [{ id: 1 }, { id: 2 }], queens: [{ id: 3 }] };
 store.set('antFarm_fullSave_v2', JSON.stringify(saveObj));
 gens = 0;
 clickSize('medium');
-ok(hosts().length === 1, 'con granja existente sale el dialogo propio pidiendo confirmacion');
-const yes = findBtn(hosts()[0], 'YES');
-ok(!!yes, 'el diálogo tiene botón YES');
+ok(hosts().length === 1, 'con granja existente el mismo paso de nombre explica que la archivará');
+const yes = findBtn(hosts()[0], 'ARCHIVE & CREATE');
+ok(!!yes, 'el diálogo tiene botón ARCHIVE & CREATE');
+const replacementField=findTag(hosts()[0],'c_input');if(replacementField)replacementField.value='Second Nest';
 yes && yes.dispatch('click', {});
 pump(8);
 ok(world() === '64x36', 'al confirmar se siembra MEDIUM 64x36 (' + world() + ')');
 ok(gens === 1, 'la confirmacion genera exactamente un mundo');
 const farms = JSON.parse(store.get('antfarm_farms') || '[]');
-ok(Array.isArray(farms) && farms.length >= 1, 'la granja anterior paso a Archivadas (' + (farms.length) + ') en vez de destruirse');
+ok(Array.isArray(farms)&&farms.length>=1&&farms[0].worldName==='SMALL BURROW','the legacy unnamed farm moves to Archived with a stable default name ('+farms.length+')');
 
 /* ---------- 6) negarse no toca nada ---------- */
 const before = world();
 clickSize('small');
-const no = findBtn(hosts()[0], 'NO');
-ok(!!no, 'el dialogo tiene boton NO');
+const no = findBtn(hosts()[0], 'BACK');
+ok(!!no, 'el dialogo tiene boton BACK');
 no && no.dispatch('click', {});
 pump(8);
 ok(world() === before, 'pulsar NO deja el mundo intacto (' + world() + ')');
@@ -210,7 +220,7 @@ ok(hosts().length === 0, 'el dialogo se retira del DOM al responder');
 sb.topoCreateFreshWorld = function () { throw new Error('roca dura'); };
 store.delete('antFarm_fullSave_v2'); store.delete('antfarm_worldAlive');
 const worldBefore = world();
-clickSize('big');
+clickSize('big');confirmName('Broken Rock');
 pump(8);
 ok(hosts().length === 1, 'un fallo sembrando muestra un aviso en pantalla');
 const txt = hosts().map(h => JSON.stringify(h)).join(' ') + ' ' + hosts().map(h => (h.children || []).map(c => c.textContent + ' ' + (c.children || []).map(x => x.textContent).join(' ')).join(' ')).join(' ');

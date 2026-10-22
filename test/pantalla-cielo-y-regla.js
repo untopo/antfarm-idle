@@ -37,7 +37,7 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   await page.waitForFunction("!document.getElementById('splashScreen') || document.getElementById('splashScreen').style.display==='none'",{timeout:20000}).catch(()=>{});
   await page.click('#btnMainCreate'); await sleep(400);
   await page.click('#createSizeScreen [data-size="small"]'); await sleep(400);
-  await page.evaluate(()=>{ const h=document.querySelector('.topo-dialog-host'); if(!h) return; const b=[...h.querySelectorAll('button')].pop(); if(b) b.click(); });
+  await page.evaluate(()=>{const h=document.querySelector('.topo-dialog-host');if(!h)return;const b=h.querySelector('button.primary');if(b)b.click();});
   await page.waitForFunction('window.COLS===48 && window.ROWS===28',{timeout:60000});
   for(let i=0;i<10;i++){ const abierto=await page.evaluate(()=>{ const m=document.getElementById('onboardingModal');
       if(!m || getComputedStyle(m).display==='none') return false;

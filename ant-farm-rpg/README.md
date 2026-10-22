@@ -12,11 +12,17 @@ node dev-server.js 8017      # raiz: ant-farm-rpg/, sin cache (Cache-Control: no
 
 Servir con `no-store` importa: con HTML nuevo y `app.js` de la cache vieja el juego se comporta de
 forma distinta a como está escrito y no se puede depurar. `index.html`, `css/style.css` y los assets
-llevan **un solo** `?v=` (`20261021o`); al tocar CSS o JS se sube en todos los sitios a la vez.
+llevan **un solo** `?v=` (`20261022p`); al tocar CSS o JS se sube en todos los sitios a la vez.
 
 Depuración: `?debug=1` en la URL (o `localStorage.antfarm_debug='1'`) enciende el registro del juego
 (`tlog`) que está callado por defecto. En la consola: `_topoDbg()` devuelve día, obreras, comida,
 dimensiones y si está pausado.
+
+## Build P: revisión pública, mundos con nombre e interfaz inglesa
+
+La URL pública ofrece únicamente **×1 / ×2 / ×4**; `?debug=1` habilita ×8, ×16 y `+1 DAY` para pruebas. Tras elegir SMALL, MEDIUM o BIG, el mismo flujo solicita un nombre opcional corto, lo sanea y lo conserva en guardado, exportación/importación, CONTINUE, LOAD FARM, SETTINGS, generación y primeros pasos. Cambiar de granja intercambia activa y archivada sin perder ni duplicar snapshots.
+
+Toda superficie alcanzable —DOM, diálogos, canvas, perfiles, sociedad, reliquias e historial— se presenta en inglés sin cambiar los identificadores heredados de guardados. SETTINGS incorpora `REPLAY FIRST STEPS` y un aviso sobre almacenamiento local, posible separación entre iframe y URL directa y backups portátiles. CREDITS identifica Build 20261022P, asistencia de IA, copyright, repositorio y canal de incidencias.
 
 ## Build O: profundidad completa, mandíbulas I–IV y Underworld físico
 

@@ -153,7 +153,7 @@ const TIRA = `(() => {
 
   await page.evaluate(() => { const b = document.getElementById('btnMainCreate'); if (b) b.click(); }); await sleep(600);
   await page.evaluate(() => { const b = document.querySelector('#createSizeScreen [data-size="small"]'); if (b) b.click(); }); await sleep(600);
-  await page.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (!h) return; const b = [...h.querySelectorAll('button')].find(x => /ENTENDER|EMPEZAR|SALTO|DESTRABAR/.test(x.textContent)); if (b) b.click(); });
+  await page.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (!h) return; const b=[...h.querySelectorAll('button')].find(x=>/CREATE WORLD|ARCHIVE & CREATE|ENTENDER|EMPEZAR|SALTO|DESTRABAR/.test(x.textContent)); if (b) b.click(); });
   try { await page.waitForFunction('window.COLS===48 && window.ROWS===28', { timeout: 40000 }); } catch (e) { }
   await page.evaluate(() => { const b = document.getElementById('btnOnboardingStart'); if (b) b.click(); });
   await sleep(900);

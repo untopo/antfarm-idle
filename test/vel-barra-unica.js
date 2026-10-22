@@ -45,8 +45,8 @@ const js = fs.readFileSync(path.join(ROOT, 'ant-farm-rpg/js/app.js'), 'utf8');
   const prohibidos = ['btnSpeed32', 'btnSpeed64', 'btnSpeed32b', 'btnSpeed64b', 'btnVel32', 'btnVel64', 'btnCorner32', 'btnCorner64'];
   const enHtml = prohibidos.filter(id => html.includes('id="' + id + '"'));
   ok(enHtml.length === 0, 'x32 y x64 fuera del markup de las dos tiras viejas', enHtml.join(', ') || 'ni uno: ' + (html.match(/id="btnSpeed\d+b?"/g) || []).length + ' botones btnSpeed quedan (x1..x16 en dos tiras selladas)');
-  const pasos = (js.match(/const SPEED_STEPS=\[([\d,\s]+)\]/) || [, ''])[1].replace(/\s/g, '');
-  ok(pasos === '1,2,4,8,16', 'SPEED_STEPS es 1,2,4,8,16 (el tope de la casa)', pasos || 'no se encontro la lista');
+  const pasos=/const SPEED_STEPS=TOPO_DEBUG_TOOLS\?\[1,2,4,8,16\]:\[1,2,4\]/.test(js);
+  ok(pasos,'SPEED_STEPS offers x1/x2/x4 publicly and reserves x8/x16 for ?debug=1');
   const tinte = (js.match(/const SPEED_TINT=\{([^}]*)\}/) || [, ''])[1];
   ok(!/32:|64:/.test(tinte), 'y el repintado de botones no tiene tinte para 32 ni 64', tinte.slice(0, 70) + '…');
   ok(/gameSpeed>8|gameSpeed>7/.test(js), 'el simulador sigue con sus umbrales (gameSpeed>8), no con igualdades a 32 o 64', 'por eso las pruebas pueden seguir corriendo a x64 por dentro');
@@ -64,7 +64,7 @@ const js = fs.readFileSync(path.join(ROOT, 'ant-farm-rpg/js/app.js'), 'utf8');
   await page.waitForFunction("!document.getElementById('splashScreen') || document.getElementById('splashScreen').style.display==='none'", { timeout: 15000 }).catch(() => { });
   await page.click('#btnMainCreate'); await sleep(400);
   await page.click('#createSizeScreen [data-size="small"]'); await sleep(400);
-  await page.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (!h) return; const b = [...h.querySelectorAll('button')].find(x => /^(SÍ|YES)$/i.test(x.textContent.trim())); if (b) b.click(); });
+  await page.evaluate(() => { const h = document.querySelector('.topo-dialog-host'); if (!h) return; const b = [...h.querySelectorAll('button')].find(x => /^(SÍ|YES|CREATE WORLD|ARCHIVE & CREATE)$/i.test(x.textContent.trim())); if (b) b.click(); });
   for (let i = 0; i < 16; i++) {
     const abierto = await page.evaluate(() => {
       const m = document.getElementById('onboardingModal');
@@ -81,7 +81,7 @@ const js = fs.readFileSync(path.join(ROOT, 'ant-farm-rpg/js/app.js'), 'utf8');
 
   console.log('\n· la barra viva, pinchada con el raton');
   const leidos = [];
-  for (const v of [1, 2, 4, 8, 16]) {
+  for (const v of [1, 2, 4]) {
     await page.click('#btnVel' + v);
     await sleep(220);
     const e = await page.evaluate(`(()=>({g:gameSpeed, turbo:!!turbo, pintado:(document.getElementById('btnVel${v}')||{}).style?.background||''}))()`);
@@ -101,7 +101,7 @@ const js = fs.readFileSync(path.join(ROOT, 'ant-farm-rpg/js/app.js'), 'utf8');
     for(let i=0;i<12;i++){ b.click(); vistos.push(gameSpeed); }
     return {vistos, max:Math.max(...vistos)};
   })()`);
-  ok(!ciclo.sinBoton && ciclo.max <= 16, 'el boton del ciclo no puede subir de x16', 'secuencia ' + ciclo.vistos.join(' → '));
+  ok(!ciclo.sinBoton && ciclo.max <= 4, 'the legacy cycle cannot escape the public x4 cap', 'sequence ' + ciclo.vistos.join(' → '));
   const visible = await page.evaluate(`(()=>{
     const ver=[]; for(const e of document.querySelectorAll('[id^="btnSpeed"],[id^="btnVel"],[id^="btnCorner"]')){
       const cs=getComputedStyle(e), r=e.getBoundingClientRect();
@@ -113,17 +113,22 @@ const js = fs.readFileSync(path.join(ROOT, 'ant-farm-rpg/js/app.js'), 'utf8');
     return ver;
   })()`);
   const deLaBarra = visible.filter(id => /^btnVel/.test(id));
-  ok(visible.length === deLaBarra.length && deLaBarra.length >= 5, 'solo la barra nueva ofrece velocidad (ni una tira duplicada a la vista)', visible.join(', ') || 'ningun boton de velocidad a la vista');
+  ok(visible.length === deLaBarra.length && deLaBarra.length >= 3&&!visible.some(id=>/8|16/.test(id)), 'only the public x1/x2/x4 bar is visible (no duplicate or debug speed)', visible.join(', ') || 'no speed button visible');
   const topes = await page.evaluate(`(()=>{
     const sale={}; setGameSpeed(1);
     for (const n of [32,64,3,0,-5,100]) { setGameSpeed(n); sale[n]=gameSpeed; }
     setGameSpeed(1); return sale;
   })()`);
-  ok(topes[32] === 16 && topes[64] === 16 && topes[100] === 16, 'pedir x32 o x64 cae en el tope de la casa y no congela el mundo en x1', 'x32->x' + topes[32] + ' · x64->x' + topes[64] + ' · x100->x' + topes[100]);
+  ok(topes[32]===4&&topes[64]===4&&topes[100]===4,'public calls above x4 clamp safely to x4','x32->x'+topes[32]+' · x64->x'+topes[64]+' · x100->x'+topes[100]);
   ok(topes[3] === 2 && topes[0] === 1 && topes[-5] === 1, 'un paso suelto baja al de abajo y un valor raro vuelve a x1', 'x3->x' + topes[3] + ' · 0->x' + topes[0] + ' · -5->x' + topes[-5]);
   const enVivo = await page.evaluate(`(()=>({pasos:SPEED_STEPS.slice(), botones:[...document.querySelectorAll('[id^="btnSpeed32"],[id^="btnSpeed64"]')].length}))()`);
-  ok(enVivo.botones === 0 && enVivo.pasos.join() === '1,2,4,8,16', 'y en la pagina servida tampoco quedan los botones ni los pasos', `SPEED_STEPS [${enVivo.pasos}] · ${enVivo.botones} botones x32/x64`);
-  await page.screenshot({ path: '/tmp/antfarm-capturas/vel-barra-unica.png' });
+  ok(enVivo.botones===0&&enVivo.pasos.join()==='1,2,4','the served public page exposes only public speed steps',`SPEED_STEPS [${enVivo.pasos}] · ${enVivo.botones} x32/x64 buttons`);
+  const publicTools=await page.evaluate(()=>({day:btnDay1.hidden,high:[btnVel8.hidden,btnVel16.hidden],debug:document.documentElement.dataset.topoDebug}));
+  ok(publicTools.day&&publicTools.high.every(Boolean)&&publicTools.debug==='false','+1 DAY, x8 and x16 stay hidden on the public URL');
+  const debugPage=await browser.newPage();await debugPage.goto(`http://127.0.0.1:${PORT}/ant-farm-rpg/index.html?debug=1`,{waitUntil:'load'});await debugPage.waitForFunction('window._topoFlowReady===true');
+  const debugTools=await debugPage.evaluate(()=>({steps:SPEED_STEPS.slice(),day:btnDay1.hidden,high:[btnVel8.hidden,btnVel16.hidden],set:(setGameSpeed(16),gameSpeed),debug:document.documentElement.dataset.topoDebug}));
+  ok(debugTools.steps.join()==='1,2,4,8,16'&&!debugTools.day&&debugTools.high.every(v=>!v)&&debugTools.set===16&&debugTools.debug==='true','?debug=1 restores x8, x16 and +1 DAY',JSON.stringify(debugTools));await debugPage.close();
+  fs.mkdirSync('/tmp/antfarm-capturas',{recursive:true});await page.screenshot({path:'/tmp/antfarm-capturas/vel-barra-unica.png'});
 
   ok(errs.length === 0, 'cero errores de JavaScript en todo el recorrido', errs.slice(0, 2).join(' | '));
 
