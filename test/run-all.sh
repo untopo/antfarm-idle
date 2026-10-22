@@ -6,13 +6,24 @@ if [ -d /tmp/libs ]; then export LD_LIBRARY_PATH="/tmp/libs${LD_LIBRARY_PATH:+:$
 # Uso: bash test/run-all.sh
 cd "$(dirname "$0")/.." || exit 1
 fail=0
-for t in no-orphans pages-root create-farm-flow texture-pack core-offline lineage lineage-integration offline-integration offline-work-integration offline-sizes storage-pressure economia-integracion proyectos-integracion proyectos-save core-agua core-agua-flujo core-mundo geologia-integracion agua-sucesion-integracion agua-visual vestigios-ambientales world-size-rules almacen-fisico conectividad-recursos niebla-profundidad oficios-emergentes brood-hatch foundacion-dias paron-fundacion exterior-emergente salida-emergente-real salida-superficie exploracion-tridireccional tandem-objetivo expansion-agua primera-losa profundidad-continuable save-roundtrip reload-simulation; do
+for t in no-orphans pages-root create-farm-flow texture-pack core-offline lineage lineage-integration offline-integration offline-work-integration offline-sizes storage-pressure economia-integracion proyectos-integracion proyectos-save core-agua core-agua-flujo core-mundo geologia-integracion agua-sucesion-integracion agua-visual vestigios-ambientales world-size-rules almacen-fisico conectividad-recursos niebla-profundidad oficios-emergentes brood-hatch foundacion-dias paron-fundacion exterior-emergente salida-emergente-real salida-superficie exploracion-tridireccional tandem-objetivo expansion-agua primera-losa profundidad-continuable excavation-tiers save-roundtrip reload-simulation; do
   printf '\n=== test/%s.js ===\n' "$t"
   if node "test/$t.js" > /tmp/_t.out 2>&1; then
     tail -n 3 /tmp/_t.out
     if grep -q "^FAIL" /tmp/_t.out; then echo ">> HAY FALLOS"; fail=1; fi
   else
     echo ">> EL TEST MURIO"; grep -E "^FAIL|^FALLO" /tmp/_t.out | head -n 12; tail -n 20 /tmp/_t.out; fail=1
+  fi
+done
+
+# Descenso de juego real: no llama expandWorld, no abre celdas ni inyecta tecnología. Cada perfil corre
+# solo y debe llevar hormigas físicas hasta el núcleo, manteniendo exploradoras laterales y la colonia viva.
+for size in small medium big; do
+  printf '\n=== descenso natural %s (hasta 30 días simulados) ===\n' "$size"
+  if node test/natural-depth-long.js "$size" 30 > /tmp/_natural-depth.out 2>&1; then
+    tail -n 6 /tmp/_natural-depth.out
+  else
+    echo ">> FALLO EN DESCENSO NATURAL $size"; tail -n 35 /tmp/_natural-depth.out; fail=1
   fi
 done
 printf '\n=== navegador real (si hay puppeteer) ===\n'

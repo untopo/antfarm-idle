@@ -149,7 +149,7 @@ try {
   const esperado = run('sizeProfile().founderWorkers');
   if (v.workers.length !== esperado) fail(`mundo fresco: esperadas ${esperado} obreras (perfil 48x28), hay ` + v.workers.length); else ok(`mundo fresco 48x28 · ${esperado} obreras (lo que manda el tamano) · reina ` + (v.queen ? v.queen.name : 'null'));
 
-  run("for(let i=0;i<7;i++){ soil[8][10+i]=0; soilType[8][10+i]=1; } [10,11,12,13,14,15,16,17,18].forEach((t,i)=>soilType[20][2+i]=t); water[8][10]=1.75; floodBarriers.add('12,8'); ancientSites=[{id:'test-site',c:7,r:25,depth:17,w:8,h:5,style:0,kind:'old_gallery',biome:'stone_fault',damage:0.4,muralSeed:123}]; ancientMasonry=[{c:7,r:20,siteId:'test-site',style:0,joint:'resin'}]; rebuildAncientIndexes(); digs=42; colonyFood=9; gen=2;");
+  run("for(let i=0;i<7;i++){ soil[8][10+i]=0; soilType[8][10+i]=1; } [10,11,12,13,14,15,16,17,18,19].forEach((t,i)=>soilType[20][2+i]=t); water[8][10]=1.75; floodBarriers.add('12,8'); ancientSites=[{id:'test-site',c:7,r:25,depth:17,w:8,h:5,style:0,kind:'old_gallery',biome:'stone_fault',damage:0.4,muralSeed:123}]; ancientMasonry=[{c:7,r:20,siteId:'test-site',style:0,joint:'resin'}]; rebuildAncientIndexes(); digs=42; colonyFood=9; gen=2;");
   v = getVars();
   const carved = v.soil[8].filter(x => x === 0).length;
   const seedBefore = v.worldSeed;
@@ -161,7 +161,7 @@ try {
   else {
     ok('save persistido: ' + raw.length + ' bytes');
     const d = JSON.parse(raw);
-    for (const f of ['soil', 'soilType', 'workers', 'day', 'savedAt', 'COLS', 'ROWS', 'digs', 'colonyFood', 'gen', 'foods', 'water', 'floodBarriers', 'hiddenRewards', 'worldSeed', 'ancientSites', 'ancientMasonry']) if (d[f] === undefined) fail('save sin campo ' + f);
+    for (const f of ['soil', 'soilType', 'workers', 'day', 'savedAt', 'COLS', 'ROWS', 'depthLimit', 'worldCoreFound', 'digs', 'colonyFood', 'gen', 'foods', 'water', 'floodBarriers', 'hiddenRewards', 'worldSeed', 'ancientSites', 'ancientMasonry']) if (d[f] === undefined) fail('save sin campo ' + f);
     if (d.COLS !== 48 || d.ROWS !== 28) fail('save con tamaño incorrecto ' + d.COLS + 'x' + d.ROWS); else ok('save guarda tamaño 48x28 · día ' + d.day + ' · digs ' + d.digs);
     if (typeof d.soil[0] !== 'string') fail('soil no codificado como string compacto');
     if (store.get('antfarm_worldAlive') !== '1') fail('no se marcó antfarm_worldAlive');
@@ -185,8 +185,12 @@ try {
   if (v.W !== 48 * 16 || v.H !== 28 * 16) fail('W/H no recalculados: ' + v.W + 'x' + v.H); else ok('lienzo redimensionado a ' + v.W + 'x' + v.H);
   if (v.soil.length !== 28 || v.soil[0].length !== 48) fail('soil restaurado con forma ' + v.soil.length + 'x' + (v.soil[0] ? v.soil[0].length : '?'));
   if (v.soil[8].filter(x => x === 0).length !== carved) fail('túneles perdidos: ' + v.soil[8].filter(x => x === 0).length + ' vs ' + carved); else ok('túneles restaurados (' + carved + ' celdas abiertas en la fila 8)');
-  const deepTypes=v.soilType[20].slice(2,11).join(',');
-  if (deepTypes !== '10,11,12,13,14,15,16,17,18') fail('soilType profundo truncado al guardar: '+deepTypes); else ok('codificación base 20 conserva tipos profundos 10–18');
+  const deepTypes=v.soilType[20].slice(2,12);
+  if (deepTypes.slice(0,7).join(',') !== '10,11,12,13,14,15,16' || deepTypes[8]!==18 || deepTypes[9]!==19)
+    fail('soilType profundo truncado al guardar: '+deepTypes.join(','));
+  else ok('codificación base 20 conserva materiales 10–16, sal 18 y WORLD CORE 19');
+  if(deepTypes[7]===17||v.soil[20][9]!==1)fail('la losa heredada tipo 17 sobrevivió a la migración: '+deepTypes.join(','));
+  else ok('la losa heredada tipo 17 migra a geología sólida sin truncar sus vecinas');
   if (v.worldSeed !== seedBefore) fail('semilla mundial cambió al recargar: '+seedBefore+' → '+v.worldSeed); else ok('semilla mundial restaurada sin rerrollear geología');
   if (v.ancientSites.length !== 1 || v.ancientSites[0].id !== 'test-site' || v.ancientMasonry.length !== 1) fail('vestigios antiguos no restaurados'); else ok('sitios y mampostería antigua restaurados');
   const evidenceIndex=run('({art:_ancientArtCells.size,stone:_ancientMasonryCells.has("7,20"),generated:_generatedSiteIds.has("test-site")})');

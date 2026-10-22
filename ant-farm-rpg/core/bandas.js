@@ -16,8 +16,8 @@ const BANDAS=[
 const PISOS_BANDA=8;                     // grosor de banda que se abre de golpe (la losa se come uno)
 const VETA_P=[0,0,0,0.052,0.040,0.032,0.026,0.022,0.018];   // mas hondo = mas escaso
 // Tipos que no son banda: 5 piedra suelta, 7 roca madre, 8 cobre, 9 hierro, 10 oro, 15 MAGMA (no se
-// cava), 16 veta de gemas, 17 LA LOSA DEL UMBRAL, 18 sal de roca.
-const DUREZA_EXTRA={5:6, 7:38, 8:15, 9:20, 10:26, 15:999, 16:22, 17:999, 18:12};
+// cava), 16 veta de gemas, 17 losa de guardados antiguos, 18 sal y 19 NÚCLEO INFERNAL (límite final).
+const DUREZA_EXTRA={5:6, 7:38, 8:15, 9:20, 10:26, 15:999, 16:22, 17:999, 18:12, 19:999};
 function bandaDe(piso){ let b=0; for(let i=0;i<BANDAS.length;i++) if(piso>=BANDAS[i].desde) b=i; return b; }
 function tipoDePiso(piso){ return BANDAS[bandaDe(piso)].tipo; }
 function durezaDe(t){

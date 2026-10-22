@@ -21,10 +21,10 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
     const c0=11,r0=24,cc=12,rr=25,ec=entradaCol>=0?entradaCol:detectarEntrada();
     // Anillo 5×5 y bolsa 3×3: el generador no puede darle otra salida por detrás.
     for(let r=r0-1;r<=r0+3;r++)for(let c=c0-1;c<=c0+3;c++){soil[r][c]=1;soilType[r][c]=4;}
-    for(let r=r0;r<r0+3;r++)for(let c=c0;c<c0+3;c++){soil[r][c]=0;soilType[r][c]=0;}
+    for(let r=r0;r<r0+3;r++)for(let c=c0;c<c0+3;c++){soil[r][c]=0;soilType[r][c]=0;if(water[r])water[r][c]=0;if(waterVisual[r])waterVisual[r][c]=0;}
     markSoilDirty();refreshExploration(true);view.zoom=1.6;clampView();const initial=getPanBounds();
     // Un pozo conocido llega a la misma cota, pero aún no toca la bolsa.
-    for(let r=SURFACE_ROW;r<=rr;r++){soil[r][ec]=0;soilType[r][ec]=0;}
+    for(let r=SURFACE_ROW;r<=rr;r++){soil[r][ec]=0;soilType[r][ec]=0;if(water[r])water[r][ec]=0;if(waterVisual[r])waterVisual[r][ec]=0;}
     markSoilDirty();refreshExploration(true);view.zoom=1.6;view.x=0;view.y=rr*CELL-VIEW_H/view.zoom*.60;clampView();
     const shaft=getPanBounds();foods=[{x:(cc+.5)*CELL,y:(rr+.5)*CELL,amount:2,max:2,r:9,ftype:'honey',rot:0,fresh:1,grounded:true}];
     _miniAt=-1e9;renderLoop();updateDepthRuler();
@@ -59,7 +59,7 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 
   const reveal=await page.evaluate(()=>{
     const f=__fogCase;
-    for(let c=Math.min(f.cc,f.ec);c<=Math.max(f.cc,f.ec);c++){soil[f.rr][c]=0;soilType[f.rr][c]=0;}
+    for(let c=Math.min(f.cc,f.ec);c<=Math.max(f.cc,f.ec);c++){soil[f.rr][c]=0;soilType[f.rr][c]=0;if(water[f.rr])water[f.rr][c]=0;if(waterVisual[f.rr])waterVisual[f.rr][c]=0;}
     markSoilDirty();refreshExploration(true);clampView();_miniAt=-1e9;renderLoop();updateDepthRuler();
     return{seen:isExploredCell(f.cc,f.rr),interactive:canInteractAt((f.cc+.5)*CELL,(f.rr+.5)*CELL),maxY:getPanBounds().maxY};
   });

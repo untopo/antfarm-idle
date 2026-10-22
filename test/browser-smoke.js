@@ -231,7 +231,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await sleep(600);
     const reload0 = await page.evaluate(() => ({ cont: (document.getElementById('btnMainContinue') || { textContent: null }).textContent, started: document.body.classList.contains('game-started'), dbg: window._topoDbg ? window._topoDbg() : {} }));
     const contTxt = reload0.cont ? reload0.cont.replace(/\s+/g, ' ').trim() : null;
-    ok(!!contTxt && /96×48/.test(contTxt) || reload0.started, 'tras recargar la granja sigue viva: ' + (contTxt ? 'menu con ' + contTxt : 'reanudada directa, dia ' + reload0.dbg.day));
+    ok(!!contTxt && /96×144/.test(contTxt) || reload0.started, 'tras recargar la granja conserva el mundo BIG completo: ' + (contTxt ? 'menu con ' + contTxt : 'reanudada directa, dia ' + reload0.dbg.day));
     await page.evaluate(() => { const b = document.getElementById('btnMainContinue'); if (b) b.click(); });
     await sleep(1500);
     const reloaded = await page.evaluate(() => (window._topoDbg ? window._topoDbg() : {}));

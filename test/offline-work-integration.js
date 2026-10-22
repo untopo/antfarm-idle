@@ -1,4 +1,4 @@
-// test/offline-work-integration.js — obras y losa abiertas se liquidan; nada nuevo se aprueba solo.
+// test/offline-work-integration.js — approved work and active digs settle; nothing new is approved.
 const {sb,ctx,vm,store}=require('./world-perf-proflib.js');
 let ok=0,fail=0;
 function check(name,cond,extra){if(cond){ok++;console.log('  ok   '+name);}else{fail++;console.log('  FAIL '+name+(extra!==undefined?' → '+JSON.stringify(extra):''));}}
@@ -9,32 +9,36 @@ vm.runInContext(`
   economyLedger.replaceMaterials({clay:12,fiber:9,wood:4,stone:4},'offline work fixture');
   economyLedger.setFood(12,'offline work fixture');
   approveColonyProject('clay_jars');
-  const __a=colonyProjects.activeRef(),__builder=workers[0],__slabWorker=workers[1];
+  const __a=colonyProjects.activeRef(),__builder=workers[0],__deepWorker=workers[1],__c=entradaCol>=0?entradaCol:CENTER_COL;
   colonyProjects.setCrew([__builder.id]);
-  __slabWorker.state='CAVANDO';__slabWorker.digTarget={c:umbral.c0,r:umbral.r};__slabWorker.digProgress=0;__slabWorker._umbralLead=true;
-  umbral.hp=2;umbral.hpMax=Math.max(2,umbral.hpMax);
+  for(let r=SURFACE_ROW;r<ROWS-7;r++){soil[r][__c]=0;soilType[r][__c]=0;}
+  __deepWorker.state='CAVANDO';__deepWorker.x=__c*CELL+8;__deepWorker.y=(ROWS-8)*CELL+8;
+  __deepWorker.digTarget={c:__c,r:ROWS-7};__deepWorker.digProgress=0;__deepWorker.digNeeded=2;
+  markSoilDirty();
   window.__offlineWorkBefore={project:JSON.parse(JSON.stringify(__a)),clay:economyLedger.materials.clay,fiber:economyLedger.materials.fiber,
-    umbrales:umbralesRotos,rows:ROWS,proposals:colonyProjects.completed().length};
+    openings:umbralesRotos,rows:ROWS,proposals:colonyProjects.completed().length,target:{c:__c,r:ROWS-7}};
   serializeSave(true);
 `,ctx);
 let save=JSON.parse(store.get('antFarm_fullSave_v2'));save.savedAt=now-60*60*1000;store.set('antFarm_fullSave_v2',JSON.stringify(save));
 vm.runInContext(`
-  deserializeSave();const __report=_applyOfflineAfterLoad(${now});
+  deserializeSave();const __report=_applyOfflineAfterLoad(${now});checkWorldExpansion();
   window.__offlineWorkAfter={report:__report,active:colonyProjects.active(),completed:colonyProjects.completed(),clay:economyLedger.materials.clay,
-    fiber:economyLedger.materials.fiber,heldClay:economyLedger.materialHeld('clay'),heldFiber:economyLedger.materialHeld('fiber'),umbrales:umbralesRotos,rows:ROWS};
+    fiber:economyLedger.materials.fiber,heldClay:economyLedger.materialHeld('clay'),heldFiber:economyLedger.materialHeld('fiber'),openings:umbralesRotos,rows:ROWS,
+    targetSoil:soil[window.__offlineWorkBefore.target.r][window.__offlineWorkBefore.target.c],slabs:soilType.flat().filter(t=>t===17).length};
 `,ctx);
 const before=sb.__offlineWorkBefore,after=sb.__offlineWorkAfter;
 check('la obra ya aprobada termina durante la ausencia',!after.active&&after.completed.length===1&&after.completed[0].type==='clay_jars',after.completed);
 check('materiales comprometidos se cargan y pagan exactamente una vez',after.clay===before.clay-3&&after.fiber===before.fiber-2&&after.heldClay===0&&after.heldFiber===0,
   {before:{clay:before.clay,fiber:before.fiber},after:{clay:after.clay,fiber:after.fiber},held:[after.heldClay,after.heldFiber]});
-const projectReceipt=after.report.applied.project,slabReceipt=after.report.applied.slab;
+const projectReceipt=after.report.applied.project;
 check('el recibo identifica materiales, nombre y ubicación de la obra',projectReceipt.materialsConsumed.clay===3&&projectReceipt.materialsConsumed.fiber===2&&projectReceipt.name&&Number.isFinite(projectReceipt.anchor.x)&&Number.isFinite(projectReceipt.anchor.y),projectReceipt);
-check('el recibo conserva ubicación y daño físico de la losa',slabReceipt.completed&&slabReceipt.damage>0&&Number.isFinite(slabReceipt.anchor.x)&&Number.isFinite(slabReceipt.anchor.y),slabReceipt);
-check('la cuadrilla que ya mordía la losa abre una sola banda',after.umbrales===before.umbrales+1&&after.report.applied.slabCompleted===true,{before:before.umbrales,after:after.umbrales});
-check('el agregado registra obra y losa como eventos discretos ordenados',after.report.events.filter(e=>e.kind==='project_complete').length===1&&after.report.events.filter(e=>e.kind==='slab_complete').length===1,
+check('el frente activo se completa físicamente durante la ausencia',after.targetSoil===0&&after.report.applied.digs.completed>=1,after.report.applied.digs);
+check('al volver, ese túnel conectado abre exactamente un tramo sin tecnología ni losa',after.openings===before.openings+1&&after.rows===42&&after.slabs===0,
+  {before:before.openings,after:after.openings,rows:after.rows,slabs:after.slabs});
+check('el agregado registra obra y excavación, nunca una losa retirada',after.report.events.filter(e=>e.kind==='project_complete').length===1&&after.report.events.some(e=>e.kind==='dig_complete')&&!after.report.events.some(e=>e.kind==='slab_complete'),
   after.report.events.map(e=>e.kind));
-check('el regreso no aprueba otra obra ni encadena otra losa',after.completed.length===1&&!after.active&&after.umbrales===before.umbrales+1,
-  {completed:after.completed.length,active:after.active,umbrales:after.umbrales});
+check('el regreso no aprueba otra obra ni encadena otra expansión',after.completed.length===1&&!after.active&&after.openings===before.openings+1,
+  {completed:after.completed.length,active:after.active,openings:after.openings});
 
 const nowDig=now+100000;
 vm.runInContext(`(()=>{

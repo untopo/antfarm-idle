@@ -16,7 +16,7 @@
  *   - que la rueda DENTRO del panel mueve el panel (antes: nada);
  *   - que la última fila, que no se veía, se ve al bajar;
  *   - que el pie («▶ IR AL ALMACÉN») sigue anclado y no se va con el scroll;
- *   - que la rueda SOBRE EL LIENZO sigue moviendo el mundo (no vale arreglar un scroll rompiendo el otro);
+ *   - que la rueda SOBRE EL LIENZO desplaza el mundo y Ctrl/⌘+rueda conserva el zoom opcional;
  *   - y un barrido: NINGÚN elemento de las tres hojas deja contenido recortado sin poder scrollear
  *     (se perdonan los rótulos con puntos suspensivos, que son a propósito).
  *
@@ -66,7 +66,7 @@ const BARRIDO = `(raiz)=>{
 
 (async () => {
   await new Promise(r => server.listen(PORT, '0.0.0.0', r));
-  const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--disable-dev-shm-usage'] });
+  const browser = await puppeteer.launch({ headless: 'new', executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: ALTURA });
   const errs = [];
@@ -160,27 +160,26 @@ const BARRIDO = `(raiz)=>{
   const barridoInv = await page.evaluate(`(${BARRIDO})('invSheet')`);
   ok(barridoInv.length === 0, 'ninguna caja de la hoja del almacén deja contenido cortado sin scroll', barridoInv.slice(0, 3).join(' · ') || 'limpia');
 
-  // los otros dos gestos del mundo: la rueda sobre el lienzo es ZOOM (asi siempre fue) y la vertical va
-  // por la regla de la izquierda. Ninguno se puede haber comido el panel nuevo.
+  // Fuera de una hoja, la rueda normal desplaza la cámara como un mundo alto de Terraria. El zoom no se
+  // pierde: queda deliberadamente detrás de Ctrl/⌘+rueda. La regla izquierda acepta el mismo paneo.
   await page.keyboard.press('Escape'); await sleep(320);
   const cerrado = await page.evaluate(`(()=>{const s=document.getElementById('invSheet');return {display:getComputedStyle(s).display, abierto:!!s.getAttribute('data-open')}})()`);
   ok(cerrado.display === 'none' && !cerrado.abierto, 'Escape cierra la hoja y la deja cerrada', 'display: ' + cerrado.display);
-  // Los dos gestos del mundo con la rueda son los de siempre: acercado en el lienzo y bajar por el nido
-  // desde la regla de profundidad. Se sueltan los eventos contra los elementos mismos (el arnes de
-  // puppeteer a veces entrega la rueda al scroll container que quedo bajo el raton; aqui lo que se quiere
-  // comprobar es que el MANEJADOR del juego sigue vivo y que el panel nuevo no se lo comio).
   const ruedaMundo = await page.evaluate(`(()=>{
-    const antes={z:+view.zoom.toFixed(3), y:Math.round(view.y*100)/100};
-    const wrap=document.querySelector('.canvas-wrap');
-    wrap.dispatchEvent(new WheelEvent('wheel',{deltaY:-240,bubbles:true,cancelable:true,clientX:620,clientY:300}));
-    const despuesZoom={z:+view.zoom.toFixed(3), y:Math.round(view.y*100)/100};
-    setZoom(2.2); view.y=getPanBounds().minY; const y0=Math.round(view.y*100)/100;
-    // Start away from the lower clamp: a scrollbar at its bottom correctly cannot move farther down.
+    const wrap=document.querySelector('.canvas-wrap');setZoom(2.2);view.y=getPanBounds().minY;
+    const antes={z:+view.zoom.toFixed(3),y:Math.round(view.y*100)/100};
+    wrap.dispatchEvent(new WheelEvent('wheel',{deltaY:300,bubbles:true,cancelable:true,clientX:620,clientY:300}));
+    const paneo={z:+view.zoom.toFixed(3),y:Math.round(view.y*100)/100};
+    wrap.dispatchEvent(new WheelEvent('wheel',{deltaY:-240,ctrlKey:true,bubbles:true,cancelable:true,clientX:620,clientY:300}));
+    const zoom={z:+view.zoom.toFixed(3),y:Math.round(view.y*100)/100};
+    view.y=getPanBounds().minY;const regla0=Math.round(view.y*100)/100;
     document.querySelector('.depth-ruler').dispatchEvent(new WheelEvent('wheel',{deltaY:300,bubbles:true,cancelable:true}));
-    return {antes, despuesZoom, y0, y:Math.round(view.y*100)/100, max:Math.round(getPanBounds().maxY)};
+    return{antes,paneo,zoom,regla0,reglaY:Math.round(view.y*100)/100,max:Math.round(getPanBounds().maxY)};
   })()`);
-  ok(ruedaMundo.despuesZoom.z > ruedaMundo.antes.z, 'la rueda sobre el lienzo sigue acercando el mundo (su gesto de siempre)', `zoom ${ruedaMundo.antes.z} -> ${ruedaMundo.despuesZoom.z}`);
-  ok(ruedaMundo.y !== ruedaMundo.y0, 'y la rueda sobre la regla de profundidad sigue bajando por el nido', `view.y ${ruedaMundo.y0} -> ${ruedaMundo.y} (tope ${ruedaMundo.max})`);
+  ok(ruedaMundo.paneo.y > ruedaMundo.antes.y && ruedaMundo.paneo.z === ruedaMundo.antes.z,
+    'la rueda normal sobre el lienzo desplaza el mundo sin cambiar zoom', `view.y ${ruedaMundo.antes.y} -> ${ruedaMundo.paneo.y} · zoom ${ruedaMundo.paneo.z}`);
+  ok(ruedaMundo.zoom.z > ruedaMundo.paneo.z, 'Ctrl+rueda conserva el zoom opcional', `zoom ${ruedaMundo.paneo.z} -> ${ruedaMundo.zoom.z}`);
+  ok(ruedaMundo.reglaY > ruedaMundo.regla0, 'la rueda sobre la regla también baja por el nido', `view.y ${ruedaMundo.regla0} -> ${ruedaMundo.reglaY} (tope ${ruedaMundo.max})`);
 
   console.log('\n· la hoja de la hormiga (perfil) y la de la reina');
   const pinchada = await page.evaluate(`(()=>{

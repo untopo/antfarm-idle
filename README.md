@@ -32,8 +32,10 @@ Comprobará de verdad, no de palabra: sintaxis de `app.js`, que no queden llamad
 ya no existen, las reglas por tamaño de mundo, que una calada repintada salga **idéntica** al mapa
 entero (píxel a píxel, en Chrome real), que el almacén sólo exista tras trabajo físico en el nido
 conectado, que los oficios emerjan de experiencia/edad/rasgos/necesidad, que ninguna simulación gaste
-materiales sin aprobación y que las herramientas antiguas migren a adaptaciones corporales, que el guardado
-sobreviva a recargar la página, y que el botón «+1 DÍA» simule el día entero y cave bloques. Necesita `npm install` (Puppeteer) y Chrome:
+materiales sin aprobación, que las herramientas antiguas migren a adaptaciones corporales y que la cadena de
+mandíbulas I–IV cobre exactamente cada escalón sin saltos, que el guardado sobreviva a recargar la página, que
+SMALL/MEDIUM/BIG lleven hormigas físicas hasta su Underworld y WORLD CORE
+sin losas ni tecnología imposible, y que el botón «+1 DÍA» simule el día entero y cave bloques. Necesita `npm install` (Puppeteer) y Chrome:
 `bash scripts/setup-sandbox.sh` reinstala lo que falte y **no deja** correr la suite si el navegador
 no arranca — una comprobación que se salta en silencio no es una comprobación.
 

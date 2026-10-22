@@ -12,11 +12,32 @@ node dev-server.js 8017      # raiz: ant-farm-rpg/, sin cache (Cache-Control: no
 
 Servir con `no-store` importa: con HTML nuevo y `app.js` de la cache vieja el juego se comporta de
 forma distinta a como está escrito y no se puede depurar. `index.html`, `css/style.css` y los assets
-llevan **un solo** `?v=` (`20261021n`); al tocar CSS o JS se sube en todos los sitios a la vez.
+llevan **un solo** `?v=` (`20261021o`); al tocar CSS o JS se sube en todos los sitios a la vez.
 
 Depuración: `?debug=1` en la URL (o `localStorage.antfarm_debug='1'`) enciende el registro del juego
 (`tlog`) que está callado por defecto. En la consola: `_topoDbg()` devuelve día, obreras, comida,
 dimensiones y si está pausado.
+
+## Build O: profundidad completa, mandíbulas I–IV y Underworld físico
+
+SMALL, MEDIUM y BIG contienen ahora el mismo descenso geológico completo: **48×84**, **64×108** y
+**96×144**. El mapa empieza ligero y materializa cuatro tramos deterministas cuando el túnel conectado se
+acerca al borde; no hay losa intermedia ni pared invisible. La cámara y la regla crecen con el terreno
+físicamente alcanzado, la rueda normal desplaza el mundo y `Ctrl/⌘ + rueda` conserva el zoom opcional.
+
+La roca dura se abre mediante una única cadena anatómica visible, nunca con picos humanos: **STONE-EDGED →
+COPPER-SERRATED → IRON-BRACED → GOLD-INLAID MANDIBLES**. Cada aprobación paga exactamente un tier desde
+`AVAILABLE`, avanza a la especialista emergente sin saltos y añade cobre/cuarcita, hierro/mármol/gema,
+oro/obsidiana y finalmente basalto. Tier IV más `DEEP MASONRY` muerde bedrock. Una evolución más lenta I–IV
+garantiza el descenso si no se gasta o muere la especialista; magma y WORLD CORE nunca se excavan.
+
+El tramo final es un Underworld de basalto, obsidiana, magma y calor, con un corredor central excavable de
+nueve columnas para que el peligro no pueda formar una barrera aleatoria de ancho completo. Las tres últimas
+filas son bloques soldados tipo `19`: el **WORLD CORE**, visible e incavable. Guardados anteriores conservan
+su progreso, retiran las losas tipo `17`, liberan a cualquier obrera que las estuviera mordiendo y migran
+`mandibles: true` o `tool: 'pick'` a tier I. La simulación natural lleva hormigas físicas hasta el núcleo en
+los tres tamaños y mantiene exploración lateral; `docs/PROFUNDIDAD.md` documenta la matriz completa y sus
+pruebas.
 
 ## Build N: perfiles legibles de un vistazo
 
@@ -127,12 +148,14 @@ node test/browser-smoke.js    # solo el navegador real (creación, iframe sandbo
 | `test/lineage-browser.js` | Una cortina de ámbar bajo el reloj; compra, confirmación/cancelación, foco, no solapamiento y tamaños desktop/retrato/landscape |
 | `test/salida-emergente-real.js` | La misma fundadora se elige por conducta, cruza la hierba, recoge y vuelve físicamente por un labio abierto antes de entregar |
 | `test/exploracion-tridireccional.js` | Un mundo intacto abre izquierda y derecha mientras una excavadora lateral y una forrajera vuelven físicamente por la boca |
-| `test/profundidad-continuable.js` | Cantería alcanzable, bedrock tardío y ocho losas consecutivas que agrandan SMALL, MEDIUM y BIG sin fondo fijo |
+| `test/profundidad-continuable.js` | Los tres perfiles completos, cuatro aperturas conectadas sin losas, Underworld, WORLD CORE, cámara y migración |
 | `test/intro-topo.js` | La transición usa la geometría responsive definitiva desde el primer píxel visible, sin título grande que luego se encoja |
 | `test/startup-menu.js` | Orden, teclado y tamaños táctiles del menú en escritorio, móvil y landscape |
 | `test/front-menu-settings.js` | Familia voxel completa: paneles sin recorte, ajustes persistentes, fondo inmóvil al desactivarlo, exportación/importación y borrado seguro |
 | `test/inventario-voxel.js` | Inventario voxel sin cifras ni controles duplicados: datos del ledger, scroll anclado y adaptación medida en desktop, portrait y landscape |
-| `test/adaptaciones-controladas.js` | Migra herramientas antiguas, compra una adaptación desde la tarjeta, protege `KEEP`/compromisos y demuestra que 32× de simulación no produce ningún débito material no aprobado |
+| `test/excavation-tiers.js` | Matriz de dureza I–IV, bedrock, ruta evolutiva, costes exactos, auditoría, secuencia, migración y especialista emergente |
+| `test/natural-depth-long.js` | Sin progreso inyectado, SMALL/MEDIUM/BIG mantienen exploración lateral y llegan físicamente al WORLD CORE |
+| `test/adaptaciones-controladas.js` | Chromium real: tarjeta compacta I–IV, cuatro aprobaciones, `KEEP`/compromisos, color corporal, persistencia y cero débitos autónomos |
 
 `test/world-perf-proflib.js` es el DOM de juguete que usan los tests de node; `world-create-breakdown.js`
 y `world-frame-driver.js` son para mirar de dónde viene el coste (la fila "crear mundo (todo)" imprime

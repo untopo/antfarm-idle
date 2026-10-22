@@ -17,9 +17,9 @@ test('the formula keeps full precision and ignores stock, age, and surplus popul
   assert.notEqual(a.award,Number(a.award.toFixed(2)),'internal amber must not be rounded to the HUD');
 });
 
-test('eligibility requires exactly a broken slab and a living queen',()=>{
+test('eligibility requires exactly one depth opening and a living queen',()=>{
   let q=quoteNuptialFlight(run({slabs:0,livingQueens:0,workers:0}));
-  assert.equal(q.eligible,false);assert.deepStrictEqual([...q.blockers],['BREAK THE FIRST SLAB','A LIVING QUEEN IS REQUIRED']);
+  assert.equal(q.eligible,false);assert.deepStrictEqual([...q.blockers],['REACH THE FIRST DEPTH OPENING','A LIVING QUEEN IS REQUIRED']);
   q=quoteNuptialFlight(run({slabs:1,livingQueens:1,workers:0}));assert.equal(q.eligible,true);
 });
 

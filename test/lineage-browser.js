@@ -36,7 +36,7 @@ async function measure(page){return page.evaluate(()=>{
   try{
     await boot(page);await openLineage(page);let m=await measure(page);
     console.log('\n· locked state and desktop geometry');
-    ok(m.disabled&&/BREAK THE FIRST SLAB/.test(m.text),'the flight is visibly locked before a real threshold is broken');
+    ok(m.disabled&&/REACH THE FIRST DEPTH OPENING/.test(m.text),'the flight is visibly locked before the connected tunnel opens real depth');
     ok(m.r.w===m.cal.w&&m.r.right===m.cal.right&&m.r.y===m.cal.bottom,'the only curtain begins immediately below the clock on its exact axis',JSON.stringify({r:m.r,cal:m.cal}));
     ok(m.r.x>=0&&m.r.right<=1280&&m.r.bottom<=820,'desktop frame remains completely on screen');
     ok(m.close[0]>=44&&m.close[1]>=44&&m.go[1]>=42,'close and primary action have touch-sized targets',`close ${m.close.join('×')} · action ${m.go.join('×')}`);
@@ -44,9 +44,9 @@ async function measure(page){return page.evaluate(()=>{
     ok(m.focus==='btnCloseLineage'&&m.hidden==='false'&&m.expanded==='true','opening moves focus and updates both ARIA states');
     ok(m.overflow.length===0,'desktop content has no horizontal spill',m.overflow.join(' | '));
 
-    await page.evaluate(()=>{umbralesRotos=1;lineageRun.relicsFound=2;_setLineageState({...lineageSnapshot(lineageState),amber:20,earned:20});renderLineageSheet(true);updateLineageHud();});await sleep(180);m=await measure(page);
+    await page.evaluate(()=>{const c=entradaCol>=0?entradaCol:CENTER_COL;for(let r=SURFACE_ROW;r<=ROWS-7;r++){soil[r][c]=0;soilType[r][c]=0;}markSoilDirty();checkWorldExpansion();lineageRun.relicsFound=2;_setLineageState({...lineageSnapshot(lineageState),amber:20,earned:20});renderLineageSheet(true);updateLineageHud();});await sleep(180);m=await measure(page);
     const occurrences=(m.text.match(new RegExp(m.reward.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'g'))||[]).length;
-    ok(!m.disabled&&m.action==='BEGIN NUPTIAL FLIGHT','a slab plus living queen unlocks one explicit action');
+    ok(!m.disabled&&m.action==='BEGIN NUPTIAL FLIGHT','one physical depth opening plus a living queen unlocks one explicit action');
     ok(occurrences===1,'the quoted amber yield is printed once in the curtain',m.reward+' × '+occurrences);
     ok((await page.$$('[data-buy-lineage]')).length===4,'exactly four finite earned-play upgrades are offered');
     await page.click('[data-buy-lineage="trail_memory"]');await sleep(180);

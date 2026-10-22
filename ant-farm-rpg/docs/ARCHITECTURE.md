@@ -64,7 +64,7 @@ Reglas duras:
 y no se forcejea; `force=true` se usa al terminar la siembra, antes del onboarding, para que recargar
 no borre la granja. `window._clearSave()` borra todo y recarga.
 
-## Autoridad material y adaptaciones (Build M)
+## Autoridad material y cadena anatómica (Build O)
 
 `core/economia.js` es el único dueño del saldo. Para cada material define cuatro conceptos distintos:
 
@@ -79,11 +79,16 @@ un proyecto previamente aprobado. Paredes de tierra, cuidado de hongos, diques, 
 pueden tocar el ledger. `test/adaptaciones-controladas.js` enumera esos call sites y deja correr la simulación
 a 32× para demostrar cero débitos autónomos.
 
-Cada obrera guarda `adaptations:{mandibles,carry,foreclaws}`. `_adaptationBook()` migra los antiguos
-`tool:pick/basket/trowel`, conserva su efecto y elimina los campos humanos antes del siguiente guardado.
-La UI nunca permite elegir una hormiga: `_adaptationCandidate()` ordena elegibles por salud, fatiga, rasgos,
-experiencia y oficio emergente. El botón desaparece como acción útil —queda deshabilitado y dice `ALL ADAPTED`—
-cuando ninguna obrera viva carece de esa modificación.
+Cada obrera guarda `adaptations:{mandibles,carry,foreclaws}`. `mandibles` es un entero 0–4; las otras dos
+adaptaciones siguen siendo booleanas. `_adaptationBook()` migra `mandibles:true` y el antiguo `tool:'pick'`
+a tier I, migra `basket/trowel`, conserva sus efectos y elimina los campos humanos antes del siguiente guardado.
+
+La UI nunca permite elegir una hormiga: `_adaptationCandidate()` prioriza continuar a la especialista con
+mayor tier y después ordena por salud, fatiga, rasgos, experiencia y oficio emergente. Una aprobación sólo
+paga y sube el tier siguiente. La única tarjeta muestra I–IV; `NEEDS AVAILABLE STOCK` distingue falta de saldo
+y `ALL AT TIER IV` sólo aparece cuando ninguna obrera viva puede avanzar más. `test/excavation-tiers.js` fija
+la matriz de durezas, la ruta evolutiva y la secuencia contable; `test/adaptaciones-controladas.js` recorre las
+cuatro aprobaciones, el cambio corporal y la persistencia en Chromium real.
 
 ## HUD tolerante
 
@@ -106,4 +111,4 @@ HUD ausente no puede parar la simulación.
 - `app.js` continúa siendo global y muy grande; partirlo sólo vale cuando los módulos reduzcan acoplamiento, no como movimiento cosmético de líneas.
 - Algunos textos y comentarios heredados siguen en español aunque la interfaz pública activa está en inglés.
 - Los slots del atlas para herramientas y estructuras antiguas siguen estables por compatibilidad, pero ya no se renderizan ni construyen.
-- Antes de llamar completo al núcleo aún hacen falta las simulaciones largas de economía/los tres tamaños y la pasada final de táctil, audio, accesibilidad, rendimiento y migración.
+- Las simulaciones largas de los tres tamaños, la migración y las hojas responsive forman ya parte de `test/run-all.sh`; audio y accesibilidad profunda siguen siendo trabajo de pulido futuro.

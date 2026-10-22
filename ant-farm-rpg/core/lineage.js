@@ -65,7 +65,7 @@
     const score=16*run.slabs+depthBeyondFounder+8*run.nextSlabProgress+2*run.relics;
     const award=Math.sqrt(Math.max(0,score)); // full precision is stored; only presentation rounds it.
     const blockers=[];
-    if(run.slabs<1)blockers.push('BREAK THE FIRST SLAB');
+    if(run.slabs<1)blockers.push('REACH THE FIRST DEPTH OPENING');
     if(run.livingQueens<1)blockers.push('A LIVING QUEEN IS REQUIRED');
     return Object.freeze({eligible:blockers.length===0,blockers:Object.freeze(blockers),award,score,depthBeyondFounder,run:Object.freeze(run)});
   }

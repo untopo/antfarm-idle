@@ -1,268 +1,232 @@
-# LA ESCALERA — cavar hacia abajo como en Terraria
+# PROFUNDIDAD COMPLETA — descenso vertical al estilo Terraria
 
-*Añadido el 2026-10-16 por petición del dueño: «quiero que puedan seguir cavando hacia abajo si quieren,
-que mientras más profundo se consigan materiales más raros, que cada vez que lleguen al límite se
-desbloquee más área, que consigan más tesoros, cosas asombrosas».*
+**Estado:** implementado para SMALL, MEDIUM y BIG.
 
-Este documento explica **lo que está implementado, con sus números**, y lo que se dejó fuera a propósito.
-No hay nada aquí «por decidir»: cada regla sale del código (`ant-farm-rpg/js/app.js`) y cada afirmación la
-sostiene `test/profundidad.js` (34 comprobaciones en Chrome real).
+La profundidad no es una sucesión de losas ni puertas invisibles. Cada tamaño contiene una geología completa,
+termina en un Underworld reconocible y tiene una frontera física final. La roca sí conserva una escala visible
+de dureza: cuatro mejoras anatómicas sucesivas o una evolución más lenta permiten morder estratos cada vez más
+duros. El tamaño modifica el ancho y la longitud del viaje, pero no elimina biomas ni corta la partida antes de
+tiempo.
 
 ---
 
-## 1 · Nueve zonas predominantes, no nueve franjas
+## 1 · Contrato de los tres mundos
 
-`BANDAS` sigue siendo la tabla maestra de progresión: dureza, herramientas, paleta y profundidad útil.
-Pero ya **no ordena cada fila**. `core/mundo.js` convierte la semilla persistente en pliegues suaves,
-lentes de la roca vecina y biomas continuos; `_buildGeologyRows()` hace la versión rápida para el mapa y
-guarda por separado la roca anfitriona bajo cada inclusión. El mismo corte generado hoy o dentro de una
-ampliación da exactamente las mismas celdas.
+| mundo | ancho | filas iniciales materializadas | profundidad final | tramo automático | inicio del Underworld | inicio del núcleo |
+|---|---:|---:|---:|---:|---:|---:|
+| SMALL | 48 | 28 | 84 | 14 | 65 | 81 |
+| MEDIUM | 64 | 36 | 108 | 18 | 84 | 105 |
+| BIG | 96 | 48 | 144 | 24 | 112 | 141 |
 
-| zona predominante | profundidad de referencia | roca | dureza | depósitos cuya abundancia crece cerca |
-|---|---:|---|---:|---|
-| RAÍCES | 0–2 | tierra | 0 | inclusiones de cobre excepcionalmente pobres pueden asomar más abajo |
-| BARRO | 3–7 | arcilla | 4 | — |
-| ARENA MOVEDIZA | 8–13 | arena | −4 | cola pobre de cobre |
-| PIEDRA | 14–21 | piedra | 9 | cobre (centro 18, núcleo ±9) |
-| PIZARRA | 22–29 | pizarra | 14 | hierro (centro 27, núcleo ±9) |
-| CUARCITA | 30–37 | cuarcita (11) | 18 | oro (centro 35, núcleo ±7) |
-| MÁRMOL NEGRO | 38–45 | mármol (12) | 23 | cristal y sal |
-| OBSIDIANA | 46–54 | obsidiana (13) | 29 | cristal (centro 44) y sal (centro 50) |
-| BASALTO ÍGNEO | 55+ | basalto (14) | 34 | colas profundas, magma y masa meteórica |
+Las tres últimas filas forman el **WORLD CORE**. Por ello, los tres mundos ofrecen:
 
-El contrato nuevo es estadístico y explícito:
+- las mismas zonas geológicas y familias de materiales;
+- exploración lateral, vetas, cuevas, agua, reliquias y peligros;
+- cuatro aperturas proporcionales hasta materializar el mapa completo;
+- un Underworld de basalto, obsidiana y magma;
+- una frontera final de tres filas que se ve y se toca, en lugar de un borde de memoria invisible.
 
-* **la dureza predominante sube** (0 → 34), aunque un pliegue local pueda hacer reaparecer una roca vecina;
-* **las inclusiones ocupan 2–5 %**, forman recorridos conectados y tienen al menos 68 % de su masa en el
-  núcleo útil; una cola pobre puede cruzar una zona, porque la naturaleza no conoce pisos numerados;
-* **el descubrimiento viene de la abundancia**: una muestra rara puede anticipar hierro, pero bajar hace
-  que cobre → hierro → oro → cristal/sal pasen de anécdota a veta explotable;
-* `test/core-mundo.js` mide 25 propiedades puras y `test/geologia-integracion.js` compara 875.520 celdas
-  generadas enteras o por cortes: cero rerroll y cero costura de veta.
+`ROWS` significa «filas materializadas ahora». `worldDepthLimit` significa «fondo físico definitivo de
+esta partida». La pantalla de selección, CONTINUE y el archivo muestran siempre las dimensiones finales
+(48×84, 64×108 o 96×144), no sólo el trozo cargado al fundar.
 
-Tipos de casilla nuevos: `11` cuarzo, `12` mármol, `13` obsidiana, `14` basalto, `15` **magma**,
-`16` **veta de gemas**, `17` **losa del umbral**, `18` sal de roca. Todos se pintan con `_VOX` +
-`_bloque`, igual que el resto del mundo: sin trazos, sin degradados, cara clara arriba y canto a sombra.
+La materialización gradual conserva el coste ligero del inicio: SMALL no necesita simular 84 filas el
+primer día. No es un límite de progreso ni contenido ausente; es almacenamiento que aparece por delante
+del túnel antes de que una hormiga pueda chocarse con su borde.
 
-## 2 · El límite es una LOSA, no el borde del mapa
+## 2 · Cómo se abre el terreno
 
-`umbral = {r, c0, c1, hp, hpMax, banda, guarda}`. La última fila del mundo se rellena de tipo `17` al
-crear el mapa (`colocarUmbral()`), y eso es lo que ven las hormigas: una franja de roca oscura con
-mordeduras que se ven (`pinta:'cincel'`: las grietas crecen con el progreso, y a más del 80 % asoma una
-línea ámbar).
+`checkWorldExpansion()` mide el componente de huecos conectado al nido. Cuando ese componente alcanza
+`ROWS - 7`, llama a `expandWorld()` y añade exactamente un tramo del perfil.
 
-**Cómo cede.** La losa no se cava bloque a bloque; tiene puntos de vida *de la colonia*:
+No consulta:
 
-```
-hpMax            = 16 + 13 · banda_que_guarda
-golpe por obrera = 1 + 0,55 si es EXCAVADORA + 0,6 con cantería
-                 + 0,42 si el jugador aprobó filo de piedra en sus mandíbulas
-                 + 0,07·GEN (tope 1,4) + (IQ−100)/200 + bonusCava
-```
+- generación;
+- IQ;
+- población mínima;
+- invenciones;
+- cantería;
+- materiales almacenados;
+- equipo de una hormiga;
+- una barra de vida colectiva.
 
-Cada vez que una excavadora remata un golpe sobre una casilla `17`, la casilla **no desaparece**: baja el
-`hp`, saltan cuatro astillas grises y vuelve a por otra (`digNeeded` para la losa es 5–11, corto a
-propósito, para que el baile sea repetir en el mismo sitio). Con `umbral.hp <= 0` llama a `abrirUmbral()`.
+Esta lista describe únicamente el disparador de **materialización**: si un túnel conectado ya alcanza la
+línea, incluso una partida GEN 0 / IQ 100 abre el siguiente bloque de filas. No confiere fuerza ficticia para
+atravesar cualquier material. La dureza de cada celda se resuelve aparte mediante la cadena anatómica de abajo.
+Una colonia que no compre ninguna mejora tarda más, pero la evolución garantiza que tampoco quede bloqueada.
 
-**Quién puede morderla.** `puedeGolpearUmbral()`: mínimo 3 obreras vivas; desde MÁRMOL NEGRO (índice 6)
-hace falta `masonry` (cantería profunda). Ya no es una llave imposible: `checkInventions()` la aprende en
-juego con GEN≥6, IQ≥145 y las tradiciones de piedra + arcilla. Si falta algo, el panel lo dice en vez de
-dejar a la colonia picando en seco. CUARCITA permanece abierta para que el límite no llegue demasiado pronto.
-Una obrera con mandíbulas de filo de piedra, aprobadas y pagadas por el jugador, puede trabajar bedrock desde
-GEN6 + IQ145 + `masonry`; sin esa adaptación, la ruta evolutiva universal de GEN8 + IQ148 permanece disponible,
-de modo que un linaje nunca depende de una receta imposible ni de que una obrera concreta siga viva.
+La activación ocurre **antes** del borde asignado. Las hormigas nunca reciben como objetivo una fila que
+todavía no existe y nunca deben amontonarse contra el fondo del `Array`.
 
-**A quién se le encarga.** En la elección de frente de excavación hay tres reglas:
+Al abrir un tramo se amplían juntos:
 
-1. **sesgo de pozo**: `distancia = |Δ| − 1,35 · piso`, o sea que entre dos frentes iguales gana el bajo;
-2. **frente profundo persistente**: desde GEN1 (o al entrar en el día 3 si el aprendizaje tarda), una
-   obrera libre mantiene un pozo conectado dentro de las tres columnas de la boca. Al abrir una losa la
-   marca se liquida y la colonia elige otra pionera para la banda nueva: no existe el antiguo «primer pozo
-   y después vagar». Si la despensa toca 5, vuelve a mandar la comida;
-3. **exploración lateral simultánea**: una colonia de 4–11 mantiene una exploradora lateral que completa
-   relevos emparejados izquierda/derecha; una colonia de 12+ puede sostener dos. Alternan ambos costados,
-   no conocen coordenadas de tesoros y descubren recursos al
-   abrir suelo conectado. Cada una lleva el escombro físicamente hasta un labio de la boca, creando el
-   tráfico ascendente que faltaba;
-4. **la obra de la losa**: si la losa está a tiro y la colonia puede morderla, se forma una cuadrilla de
-   **4 a 8** (24 % de las obreras, topada) con una líder y apoyos lentos. Reciben la casilla `17` con hueco
-   libre encima **más cercana a su columna**, sólo si están a una fila. La losa también pertenece al frente
-   genérico, por lo que ese camino vuelve a comprobar el cupo: sin esa segunda guarda terminaba reclutada
-   casi toda la colonia. Darles un objetivo lejano las ponía a rebotar contra la pared (`blocked` subiendo
-   y cero picoteos).
+- `soil`, `soilType` y la roca anfitriona;
+- agua y agua visual;
+- alto físico `H` y backing store del canvas;
+- índices de magma, cuevas, reliquias y vestigios;
+- regla de profundidad y límites de cámara.
 
-**Qué pasa al romperse** (`abrirUmbral`): la fila de la losa se convierte en el primer piso de la banda
-que se abre, `expandWorld(add, silencioso=true)` rellena la banda nueva (roca + vetas + una o dos cuevas
-con botín), `colocarUmbral()` pone la siguiente losa, `bandaMax` sube, `umbralesRotos++`, y sale *una*
-tarjeta: `🕳️ ¡NUEVA PROFUNDIDAD! · CUARCITA`. El aviso genérico de «mundo expandido» va callado en este
-camino para no decir dos veces lo mismo.
+La expansión no regala un túnel. Añade roca determinista y la colonia aún debe excavarla.
 
-El expansor antiguo (`checkWorldExpansion`, que crecía solo cuando un túnel llegaba al fondo) ahora
-**no hace nada si hay losa**: `if(umbral) return;`. Sigue ahí como red de emergencia por si un guardado
-viejo se queda sin techo.
+### 2.1 · Cuatro tiers de mandíbula, no picos humanos
 
-## 3 · Caveras, botín y cosas asombrosas
+`NEST STORES` conserva una sola tarjeta compacta de mandíbulas. En ella se ve la pista I → II → III → IV,
+el coste del siguiente paso, su potencia y los materiales que abre. Cada clic exige aprobación del jugador,
+elige de forma emergente a una obrera apta y sólo avanza **un** nivel; nunca consume stock durante la
+simulación ni permite saltar un tier. Si ya existe una especialista, se continúa su cadena antes de iniciar
+otra. `KEEP` y el material comprometido siguen fuera del stock disponible.
 
-Al abrir una banda se tallan **una o dos cuevas** (óvalo de 7–13 × 5–7 casillas) con un tesoro de la banda
-dentro. Es prestado de Core Keeper y Dwarf Fortress: el hueco vacío, en sí, ya es un premio — sitio donde
-la colonia cabe, y donde el agua y el hongo tienen dónde agarrar.
+| tier | adaptación | coste aprobado | potencia | geología que añade |
+|---:|---|---|---:|---|
+| I | STONE-EDGED MANDIBLES | 2 stone | 18 | copper y quartzite |
+| II | COPPER-SERRATED MANDIBLES | 2 copper + 1 stone | 23 | iron, black marble y gemstone |
+| III | IRON-BRACED MANDIBLES | 2 iron + 1 copper | 29 | gold y obsidian |
+| IV | GOLD-INLAID MANDIBLES | 2 gold + 1 iron | 38 | igneous basalt; bedrock si existe DEEP MASONRY |
 
-El botín (`TREASURE_DEFS`, subido a nivel de módulo) se sortea por **banda**, no por «tier 0/1/2» como
-antes, y lleva un filtro de progreso suave (`prog<2` corta lo de tier ≥4; `prog<1` lo de tier ≥3) para
-que una colonia novata no se encuentre el meteorito en el primer día. Nueve **reliquias**:
+La compra temprana se habilita en GEN1/IQ112, GEN2/IQ120, GEN2/IQ122 y GEN3/IQ124 respectivamente, además
+de exigir los materiales del escalón anterior. La vía sin gasto llega después: tier I en GEN2/IQ114, tier II
+en GEN3/IQ116, tier III en GEN3/IQ118 y tier IV en GEN4/IQ122. Estos umbrales están al borde viable de la
+capa anterior para que la colonia gane el IQ cavando y no necesite experiencia atrapada al otro lado de una
+veta de ancho completo.
 
-| reliquia | banda | da |
-|---|---|---|
-| Fósil de hormiga león | 2 | +120 XP, +2 % cava |
-| Ámbar con una hormiga dentro | 3 | +80 XP, +2 % cava |
-| Geoda de cuarzo | 4 | +3 cuarzo, +90 XP, +2 % |
-| Lente de cristal de roca | 5 | +150 XP, +3 % |
-| Hongo linterna | 6 | +10 comida, +130 XP, +3 % |
-| Lágrima de obsidiana | 7 | +2 obsidiana, +180 XP, +4 % |
-| Corazón de colina | 8 | +20 comida, +300 XP, +5 % |
-| Meteorito hundido | 9 | +1 meteorito, +220 XP, +5 % |
-| Fragmento trabajado (`Worked Chamber Fragment`) | 9 | +1 obsidiana, +260 XP, +3 % (sólo compatibilidad; ya no sale en cofres) |
+Bedrock mantiene una segunda condición física: tier IV y `DEEP MASONRY`. Si muere la especialista o el
+jugador nunca abre la tarjeta, GEN8/IQ148 más esa misma cantería ofrece la ruta universal tardía. Magma tipo
+`15` y WORLD CORE tipo `19` permanecen incavables por diseño. El tier también cambia velocidad, selección de
+la minera, color de mandíbula y lectura de potencia, de modo que la mejora existe en el cuerpo y en el trabajo,
+no como una herramienta humana invisible.
 
-Los textos describen caras, hollín, arañazos, burbujas o temperatura; no dicen quién los hizo ni qué
-significan. El antiguo «nido de la colonia vieja» se conserva sólo para migrar guardados y sale del sorteo:
-la historia de otras colonias vive en la geometría y los murales del mapa, no dentro de un cofre que la explica.
+Los guardados binarios antiguos (`mandibles: true`) y los antiguos `tool: 'pick'` migran a tier I. El save
+nuevo persiste un entero de 0 a 4.
 
-Cada maravilla **una sola vez por partida** (`anotarReliquia`); se queda en la **VITRINA** del panel del
-mundo con su nombre, el piso donde salió y el día, y su bonus de excavación se acumula con tope de
-**+30 %** (`bonusCava`, usado al calcular `digNeeded`). El marcador en el mundo de una reliquia ya
-descubierta es un rombo de cuatro bloques, para que se lea «esto es una maravilla» sin leer el cartel.
+## 3 · Geología continua, exploración lateral y recompensas
 
-Materiales nuevos en la bolsa de la colonia: `cuarzo`, `gema`, `obsidiana`, `meteorito` (además de los
-`cobre/hierro/oro` que ya saltaban de las vetas).
+`BANDAS` continúa definiendo la sucesión de dureza y aspecto: raíces, barro, arena, piedra, pizarra,
+cuarcita, mármol negro, obsidiana y basalto. `core/mundo.js` transforma la semilla persistente en pliegues,
+lentes e inclusiones continuas. Generar una fila al fundar o años después produce la misma celda: abrir un
+tramo no vuelve a sortear el mundo ni crea una costura artificial.
 
-### 3.1 · La historia enterrada no tiene narrador
+El pozo profundo es una prioridad persistente, no la única tarea. En paralelo, las obreras libres mantienen
+frentes laterales a ambos lados, descubren vetas y cuevas por conexión física y cargan el escombro de vuelta.
+El algoritmo no conoce de antemano las coordenadas de un tesoro.
 
-`createWorldProfile(seed)` crea de dos a cuatro estilos y ciclos ocultos. Cada ciclo lleva una causa de
-deterioro que **sólo se manifiesta físicamente**: línea pálida y agua finita, hollín, raíces, hundimiento,
-sellado; sitios cercanos repiten paleta y motivo, y algunas reparaciones usan el estilo de un ciclo posterior.
-`worldSitesForRange` deriva IDs por trozos de profundidad, de modo que ampliar y crear todo de una vez deja
-los mismos sitios y exactamente los mismos píxeles de mural.
+Las cuevas pueden contener reliquias y espacios útiles para agua, hongos o tránsito. Los vestigios cuentan
+historia sólo con geometría, desgaste, hollín, raíces, canales y reparaciones. No añaden códices ni ventanas
+que interpreten el hallazgo.
 
-La interfaz no recibe «templo», «tumba», traducción, cultura ni teoría. El jugador ve cámara rota, juntas,
-canales ciegos, fragmentos reparados y arte en la pared de fondo. Sólo 1,69 % de los sitios contiene uno de
-tres grupos marginales anómalos, mezclado con el mural y sin aviso. `test/vestigios-ambientales.js` exige
-cero eventos/popups y compara la expansión píxel por píxel; `test/core-mundo.js` comprueba que causa, estilo,
-cicatriz y agua estén relacionados y no sean ruido independiente.
+## 4 · Underworld y frontera final
 
-## 4 · El fuego cobra peaje
+El último tramo cambia de forma inequívoca:
 
-En la banda 8 el basalto se interrumpe con **magma** (`15`, 5,5 % de las casillas, en parches de 2–3). No
-se cava (`digNeeded 999`, y si una obrera lo intenta: `🔥 QUEMA` y sube). Lo que sí hace:
+- roca anfitriona de basalto;
+- obsidiana mezclada;
+- magma animado y luz cálida;
+- rótulo **UNDERWORLD** en la regla;
+- atmósfera y paleta distintas del subsuelo superior.
 
-* si hay magma en las 8 vecinas de una hormiga, su fatiga sube **+2,3 por paso** — no es decorativo;
-* al pasar de 84 suelta la carga, deja de cavar y se va a la superficie (`VOLVER_TIERRA`), con aviso en
-  el historial;
-* el resplandor se pinta en `drawFarm` (dos rectángulos con parpadeo), no en el caché del suelo, porque
-  congelado en el caché dejaría de ser lumbre. Se itera `magmaCells`, una lista mantenida al generar,
-  expandir y cargar — no se escanea el mapa por cuadro.
+El magma (tipo `15`) no se excava. Produce fatiga y puede obligar a una obrera a retirarse. Sin embargo, un
+corredor central de nueve columnas nunca genera magma al azar: sigue siendo roca dura que hay que cavar, pero
+deja holgura para el radio de las hormigas, sus desvíos y la zona de calor de ocho vecinas. Una pared de lava
+de ancho completo no puede hacer imposible la partida; los flancos conservan el peligro y la exploración
+lateral permite buscar otras rutas y recursos.
 
-## 5 · Lo que se guardó, y lo que no
+Las últimas tres filas son tipo `19`, **WORLD CORE**:
 
-Persisten en `antFarm_fullSave_v2`: `bandaMax`, `umbralesRotos`, `bonusCava`, `reliquias[]`, la losa,
-`worldSeed`, `ancientSites[]`, `ancientMasonry[]`, barreras y presión de agua. La cuadrícula usa un carácter
-en base 20: así preserva tipos 10–18; los guardados decimales antiguos siguen siendo un subconjunto válido.
-Al cargar se reconstruyen roca anfitriona, índices de murales, IDs materializados, magma y `waterVisual`.
-Si un guardado antiguo no termina en losa, `colocarUmbral()` la repone.
+- están sólidas;
+- no son excavables;
+- usan textura de bloques soldados, oscura y rojiza;
+- ocupan celdas reales del mundo;
+- aparecen en la regla como el final definitivo.
 
-Ya no está fuera el agua: `core/agua.js` conserva masa, llena, eleva presión, rebosa y desplaza al poner un
-dique; el mapa muestra niveles parciales y una bolsa enterrada no se rellena. Las hormigas evitan una ruta
-mojada, buscan costa si quedan sumergidas y pueden sellar la brecha con una cubierta que ellas sí atraviesan.
+Esta frontera no se abre y no promete otra ampliación. Es el final finito y explícito, equivalente funcional
+a una roca madre: cuando las hormigas llegan, el jugador ve por qué no pueden seguir.
 
-Fuera, a propósito, por ahora:
+El tipo `17` (la antigua losa de tramo) ya no se crea en una partida normal. Sólo se reconoce al migrar un
+guardado antiguo.
 
-* **reliquias construyendo cámaras** — hoy la vitrina es el panel; poner los objetos físicamente en una
-  cámara es un trabajo de dibujo aparte y lo dejo apuntado en el roadmap;
-* **las marcas de la colonia actual convertidas en ruinas futuras** — queda como nota causal en
-  `BACKLOG_FUTURO.md`, sin fabricar eventos antes de que el juego jugable esté cerrado;
-* **nada del cerebro**: las 5 salidas de la red siguen siendo `steer/thrust/cava/tinta×2`; la losa y las
-  bandas cambian el *mundo*, no la red neuronal. La respuesta honesta sobre la inteligencia está en
-  `ROADMAP.md` § P6.
+## 5 · Cámara, niebla y controles
 
-## 6 · Pantalla de TOPO STUDIOS
+El canvas conserva coordenadas físicas completas aunque la ventana jugable permanezca en `960×576`. Así,
+el navegador no comprime un mundo alto dentro del mismo recuadro.
 
-`js/splash-topo.js` (143 líneas, sin dependencias) pinta en un lienzo de **176×88** duplicado a
-352 con `image-rendering:pixelated`, sobre una retícula de 8 px, usando `_bloque`/`_tilde16` si app.js ya
-las definió y una copia local si no. Cielo en cinco fajas cuantizadas, once columnas de tierra con su
-tilde por bloque, montículo, boca de madriguera, y el topo: dos empujones (580 ms y 950 ms), zarpazos con
-polvo que cae con gravedad, respiración y dos parpadeos. **34 rellenos por cuadro** y se congela solo al
-terminar (2,2 s): el menú entra a los 2,32 s y el `visible()` del lienzo corta el bucle en cuanto el logo
-desaparece, así que no drena ni un cuadro durante la partida. Con
-`prefers-reduced-motion: reduce` sale directamente el cuadro final.
+La cámara se limita por `exploredBottomY()`, no por la altura inicial ni por una cifra fija. Puede seguir a
+las hormigas hasta el terreno físicamente alcanzado y deja unas pocas celdas de respiración delante. No
+revela cuevas sin conexión: la niebla conserva la exploración.
 
-Lo sostiene `test/intro-topo.js` (14 comprobaciones, incluyendo «dos cuadros a 0,5 s no son el mismo»,
-«cuando acaba, dos cuadros seguidos sí son el mismo» y el modo de movimiento reducido).
+Controles verticales:
 
-## 7 · Coste
+- **rueda normal sobre el mundo:** paneo vertical;
+- **rueda sobre la regla izquierda:** paneo vertical;
+- **arrastre de la regla:** salto proporcional dentro de lo alcanzado;
+- **Home / End, Page Up / Page Down y flechas:** navegación accesible;
+- **Ctrl/⌘ + rueda:** zoom opcional;
+- seguimiento de una hormiga: la cámara usa los mismos límites físicos actualizados.
 
-Medido en el mismo arnés que las otras pruebas de pintura, con la colonia sembrada a 34 obreras, mapa de
-70 filas y las nueve bandas abiertas:
+El zoom mínimo también respeta el ancho real. Alejar la vista no centra un mundo estrecho dentro de franjas
+vacías fuera del frame.
 
-| | rellenos por cuadro | mediana | p95 |
-|---|---|---|---|
-| antes de la escalera (48 obreras, 28 filas) | 4 110 | 20,8 ms | 28,8 ms |
-| con la escalera (70 filas, magma y losa) | 2 793 – 4 300 | 16,2 – 16,8 ms | 21,9 – 40 ms |
+## 6 · Guardado y migración
 
-El coste nuevo es O(casillas de magma visibles) + 2 rectángulos de barra de losa + 34 rellenos de logo
-solo en el arranque. El suelo sigue pasando por el repintado incremental: la losa marca *una* celda
-(`markSoilDirty(c, r)`) por mordisco, nunca el mapa entero.
+`antFarm_fullSave_v2` persiste `depthLimit` y `worldCoreFound`, además de la cuadrícula, exploración, agua,
+reliquias y progreso existente.
 
-Un detalle que salió caro y vale la pena anotado: pintar el rombo de la reliquia con `cx`/`cy` **antes** de
-`const cx = x+8` metía un `ReferenceError` en cada cuadro (TDZ, el mismo error de familia que el `_tw` de
-los luceros) y reventaba `renderLoop` entero. El test lo cazó; de ahí la regla de no usar una variable
-declarada más abajo.
+Al cargar una partida anterior a este diseño:
 
-## 8 · Huecos de prueba
+1. se infiere el perfil final por el ancho;
+2. se conservan todas las filas ya excavadas y todo el progreso válido;
+3. cada celda de losa tipo `17` vuelve a ser geología determinista sólida;
+4. se eliminan objetivos de excavación que apuntaban a esa losa retirada;
+5. esas obreras regresan a `EXPLORAR`;
+6. el Underworld se aplica a filas profundas ya existentes;
+7. si el mapa ya estaba en el fondo, el núcleo se sella de forma idempotente.
 
-`window._escalera()` devuelve el estado completo (losa, banda, losas rotas, filas, vetas, reliquias,
-`magma`); `window._morderUmbral(n)` pega `n` mordiscos de verdad por la función del juego;
-`window._irABanda(b)` abre bandas hasta `b` reventando losas (para inspección, no para jugar). Los tres
-están en `ant-farm-rpg/js/app.js`, al final de `initSoil`, junto a los `_spawnTreasure`/`_treasures` que
-ya estaban.
+`umbralesRotos` y el campo de linaje `slabs` conservan sus nombres internos para no romper recibos antiguos,
+pero ahora cuentan **aperturas de profundidad**. En interfaz, el requisito del vuelo nupcial es
+`REACH THE FIRST DEPTH OPENING`. La profundidad fundacional no otorga progreso parcial gratuito.
 
-## 9 · De dónde viene cada idea
+Un nuevo vuelo nupcial reinicia la cuadrícula al tamaño inicial ligero del perfil, conservando como fondo
+real el límite completo correspondiente.
 
-| juego | qué se tomó | qué se dejó |
-|---|---|---|
-| **Terraria** | los minerales por piso y el «el fondo no es el borde, es una pared que se rompe» (esferas de sombra / altares: rompes algo del fondo y el mundo te da más) | no hay dificultad por capa con enemigos; aquí el riesgo es el fuego y la fatiga |
-| **SteamWorld Dig 1–2** | bajar tiene coste (tiempo y fatiga), cada capa con su color propio, y el «un poco más abajo» como motor | no hay tienda ni mejora de pico con dinero: la mejora es la colonia (GEN, IQ, cantería, reliquias) |
-| **Motherload** | la profundidad como progresión continua y el botín que justifica el viaje | sin mapa de cuadrícula aparte ni combustible: la fatiga hace ese papel |
-| **Deep Rock Galactic** | el bioma hostil abajo del todo (magma que te quema si te pones) y el «algo no debería estar ahí abajo» | sin enjambre hostil ni clases |
-| **Core Keeper** | cuevas abiertas al entrar en una banda nueva, luz como recurso | sin agua/anegamiento todavía |
-| **Aground / Dwarf Fortress** | reliquias que cuentan una historia (el nido viejo, el ámbar con la hormiga dentro) sin cutscenes | sin biblioteca ni museo de objetos múltiples: la vitrina es una lista y un bonus |
-| **Minecraft** | la roca madre irrompible como marco del mundo (aquí `17` la hereda y la convierte en puerta) | sin bioma de infierno ni portales |
+## 7 · Trabajo offline
 
-Y una idea que no es de ningún juego de la lista, sino de la colonia: **la losa se rompe entre todas, o no
-se rompe**. La barra de progreso está encima de la roca, en el mundo, y solo avanza si hay cuadrilla
-abajo. Ninguna hormiga sola abre banda, y eso es exactamente lo que la IA actual (una red de 59 pesos de
-media) no puede fingir: el avance es de la colonia, no del individuo.
+El cálculo offline puede completar una excavación que ya estaba físicamente iniciada. Al volver, el juego
+recalcula el componente conectado y abre un tramo si ese túnel alcanzó el frente.
 
-## 10 · El fondo de las cuevas: pared de ladrillo detrás del hueco (2026-10-16)
+No inventa una obra, no crea una excavación sin objetivo y no encadena secciones futuras que la colonia aún
+no ha alcanzado. El recibo distingue excavaciones terminadas de progreso parcial y no contiene eventos de
+«losa rota».
 
-**Lo que vio el dueño:** un flash de textura de un cuadro en el fondo de las cuevas, y el pedido de una
-pared de fondo voxel como en Terraria.
+## 8 · Pruebas que sostienen el contrato
 
-**Causa del flash, medida:** el mundo principal se pintaba desde el cache solo cuando no había repintado
-pendiente; en cualquier otro cuadro salía por un camino a mano que pintaba el hueco en crema `#fff1c8` y
-el agua encima. Con la colonia cavando, eso ocurría cuadro sí, cuadro no. Ahora el mundo principal se
-pinta siempre desde el cache (reconstruido en el mismo cuadro si hace falta) y el agua va encima en cada
-cuadro. El color crema ya no existe en el código; el hueco lo pintan los mismos ayudantes en las tres
-rutas (cache, emergencia y minimapa).
+- `test/profundidad-continuable.js`: contrato exacto de SMALL/MEDIUM/BIG, cuatro aperturas, ausencia de
+  losas, Underworld, núcleo, cámara y migración.
+- `test/excavation-tiers.js`: matriz exacta de materiales I–IV, bedrock, evolución sin gasto, costes,
+  auditoría, secuencia sin saltos, migración y continuidad de la especialista emergente.
+- `test/adaptaciones-controladas.js`: Chromium real; una sola tarjeta muestra los cuatro tiers, paga cada
+  escalón desde AVAILABLE, persiste tier IV, cambia los píxeles de mandíbula y no admite gasto autónomo.
+- `test/natural-depth-long.js`: una semilla sin progreso, dureza ni tecnología inyectados lleva hormigas
+  físicas hasta el WORLD CORE en SMALL, MEDIUM y BIG y exige exploración lateral en la misma corrida.
+- `test/primera-losa.js`: pese al nombre histórico del fichero, ejecuta la simulación natural y exige que
+  SMALL abra el primer tramo antes de terminar el día 5, sin intervención externa.
+- `test/profundidad.js`: Chromium real; valida tarjetas, los tres perfiles, rueda/paneo, regla y píxeles
+  visibles del Underworld/núcleo.
+- `test/offline-work-integration.js`: una excavación ya activa puede terminar offline y abrir un solo tramo,
+  sin aprobar ni encadenar trabajo nuevo.
+- `test/lineage.js` y `test/lineage-integration.js`: requisito, precisión, reinicio y ausencia de progreso
+  fundacional gratuito.
+- `test/expansion-agua.js`: agua y dimensiones crecen en sincronía.
+- `test/niebla-profundidad.js`: la cámara llega a lo explorado sin revelar el resto.
+- `test/core-bandas.js`: materiales, durezas y núcleo tipo `19`.
 
-**La pared:** detrás del hueco hay roca que queda, con aparejo de piezas de 8×8 desplazadas medio ladrillo,
-junta de mortero en las dos direcciones, tono por material (la del obsidiana es casi negra y tira a
-violeta; la de mármol, gris frío), sombra de voladizo donde arriba hay roca, y raíces colgando solo en
-las bandas de tierra. Va siempre por detrás del corte tallado: al menos un 20 % más apagada.
+Las pruebas de contrato pueden materializar secciones directamente para inspeccionar todos los perfiles. La
+aceptación jugable no depende de eso: además se ejecuta simulación prolongada sin rebajar durezas, HP ni
+requisitos y recorridos reales de Chromium.
 
-**Lo que se descartó:** una primera versión con hiladas de 4 px salió como persiana y el musgo verde se
-leía como polvo. Se cambió a piezas de 8 px con mortero más suave.
+## 9 · Compatibilidad interna
 
-**Prueba:** `test/fondo-cueva.js` (23 ok · 0 fallos). Mide cuadros que pintan el mundo por el camino viejo
-(0), el color crema fuera del código, el aparejo en dos direcciones, la pared por detrás, la
-determinación (repintar dos veces da la misma firma), el agua en cada cuadro y cero errores de consola.
-Dos condiciones se fabrican a mano y se dicen en el propio test: el repintado pendiente constante (sin él
-el flash no aparece) y la cámara de obsidiana (en el mapa pequeño todavía no existe).
+Permanecen algunos nombres históricos (`umbral`, `umbralesRotos`, `_escalera`, `_irABanda`) porque forman
+parte de guardados, tests y herramientas de inspección. No describen una losa activa en una partida nueva.
+`colocarUmbral()` sólo sirve para construir fixtures de migración; no pertenece al flujo normal.
+
+El contrato público es simple: **cada mandíbula abre la siguiente dureza; cavar terreno conectado
+materializa más terreno; cada tamaño contiene el viaje completo; el Underworld avisa que se acerca el final;
+el WORLD CORE es el final físico.**

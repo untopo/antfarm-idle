@@ -127,6 +127,24 @@ setTimeout(()=>{
 
 let COLS=64, ROWS=36, CELL=16, SURFACE_ROW=6, SURFACE_Y=SURFACE_ROW*CELL, CENTER_COL=Math.floor(COLS/2);
 
+// Terraria-style depth: SMALL, MEDIUM and BIG all contain the complete geological descent and end in
+// the same unmistakable Underworld/core boundary. `ROWS` is only the currently materialised slice; four
+// seamless chunks grow ahead of the connected tunnel, so no full-width slab or technology gate can
+// strand a colony at an allocation edge. Width still controls population/performance, while the chosen
+// starting height controls the final proportional depth (28→84, 36→108, 48→144 rows).
+const WORLD_CORE_ROWS=3;
+function worldStartRows(cols=COLS){ return cols<=48?28:cols>=96?48:36; }
+function worldDepthProfile(cols=COLS){
+  const start=worldStartRows(cols);
+  return {start,limit:start*3,chunk:Math.max(10,Math.round(start/2)),underworld:start*3-Math.round(start*2/3),core:WORLD_CORE_ROWS};
+}
+let worldDepthLimit=worldDepthProfile(COLS).limit;
+let worldCoreFound=false;
+function worldUnderworldStart(){ return Math.max(SURFACE_ROW+BANDAS[BANDAS.length-1].desde,worldDepthLimit-Math.round(worldStartRows(COLS)*2/3)); }
+function worldCoreStart(){ return Math.max(SURFACE_ROW+2,worldDepthLimit-WORLD_CORE_ROWS); }
+function worldAtFinalDepth(){ return ROWS>=worldDepthLimit; }
+function worldDepthRemaining(){ return Math.max(0,worldDepthLimit-ROWS); }
+
 let view={x:205,y:12,zoom:1.38}; // offset para no quedar bajo calendario 168x257 (centro visible)
 let showEyes=true, showTrail=true, showInk=true, showFront=true;
 // El lienzo puede crecer con el mundo para conservar el cache y las coordenadas físicas, pero la ventana
@@ -298,8 +316,16 @@ const STRUCTURE_DEFS={
   bridge:{w:3,h:1,need:{},iq:999,gen:999,name:'LEGACY BRIDGE',color:'#6b4a1f',bonus:'scenery only · no path effect'},
   tower:{w:2,h:3,need:{},iq:999,gen:999,name:'LEGACY TOWER',color:'#7a7a7a',bonus:'scenery only · no current effect'}
 };
+const MANDIBLE_TIERS=Object.freeze([
+  Object.freeze({level:1,name:'STONE-EDGED MANDIBLES',mark:'JAW I',need:Object.freeze({stone:2}),gen:1,iq:112,power:18,speed:1.18,color:'#b9c0c7',opens:'SLATE · QUARTZITE · COPPER'}),
+  Object.freeze({level:2,name:'COPPER-SERRATED MANDIBLES',mark:'JAW II',need:Object.freeze({cobre:2,stone:1}),gen:2,iq:120,power:23,speed:1.32,color:'#d77a43',opens:'IRON · BLACK MARBLE · GEMSTONE'}),
+  Object.freeze({level:3,name:'IRON-BRACED MANDIBLES',mark:'JAW III',need:Object.freeze({hierro:2,cobre:1}),gen:2,iq:122,power:29,speed:1.48,color:'#9fb0bd',opens:'GOLD · OBSIDIAN'}),
+  Object.freeze({level:4,name:'GOLD-INLAID MANDIBLES',mark:'JAW IV',need:Object.freeze({oro:2,hierro:1}),gen:3,iq:124,power:38,speed:1.68,color:'#f2c84b',opens:'IGNEOUS BASALT · BEDROCK WITH MASONRY'})
+]);
 const BODY_ADAPTATION_DEFS={
-  mandibles:{need:{stone:2},iq:126,gen:3,invention:'stone',name:'STONE-EDGED MANDIBLES',mark:'MD',effect:'+38% DIG · BEDROCK FROM GEN 6 MASONRY',detail:'One selected worker excavates faster, bites threshold slabs harder, and can cut bedrock two generations early once deep masonry is known.'},
+  // One compact card owns this four-step chain. It upgrades the strongest living deep miner one tier at
+  // a time, so Terraria-like material progression does not multiply menus or resemble human pickaxes.
+  mandibles:{tiers:MANDIBLE_TIERS,name:'MANDIBLE EXCAVATION TIERS',mark:'JAW',effect:'4 MATERIAL TIERS · STONE → COPPER → IRON → GOLD',detail:'Approve one anatomical reinforcement at a time. Each tier uses material from the previous depth, raises digging power, changes the jaw pixels, and opens harder geology earlier. Evolution remains the slower fail-safe.'},
   carry:{need:{fiber:2},iq:128,gen:3,invention:'fiber',name:'FIBER CARRY BINDINGS',mark:'CB',effect:'+1 CARRY CAPACITY',detail:'One selected forager can bring one additional food ration home on each physical pickup.'},
   foreclaws:{need:{clay:1,stone:1},iq:132,gen:4,invention:'clay',name:'CLAY-GRIP FORECLAWS',mark:'FC',effect:'+24% BUILD · +28% FLOOD WORK',detail:'One selected builder completes stores and approved projects faster and handles flood-control work more effectively.'}
 };
@@ -308,26 +334,57 @@ function _adaptationBook(ant){
   if(!ant)return {};
   if(!ant.adaptations||typeof ant.adaptations!=='object'||Array.isArray(ant.adaptations))ant.adaptations={};
   const legacy=LEGACY_TOOL_ADAPTATION[ant.tool];
-  if(legacy)ant.adaptations[legacy]=true;
+  if(legacy){
+    if(legacy==='mandibles')ant.adaptations.mandibles=Math.max(1,Number(ant.adaptations.mandibles)||0);
+    else ant.adaptations[legacy]=true;
+  }
+  // Build M stored mandibles as a boolean. It becomes tier I without losing its earned effect.
+  if(ant.adaptations.mandibles===true)ant.adaptations.mandibles=1;
+  else if(ant.adaptations.mandibles!=null)ant.adaptations.mandibles=Math.max(0,Math.min(MANDIBLE_TIERS.length,Math.floor(Number(ant.adaptations.mandibles)||0)));
   // Old saves keep their earned effect, but the human-looking implement is retired from rendering.
   if(ant.tool){delete ant.tool;delete ant.toolBonus;}
   return ant.adaptations;
 }
+function antMandibleTier(ant){return ant?Math.max(0,Math.min(MANDIBLE_TIERS.length,Number(_adaptationBook(ant).mandibles)||0)):0;}
 function antHasAdaptation(ant,type){
   if(!ant)return false;
-  const book=ant.adaptations;
-  if(book&&typeof book==='object'&&!Array.isArray(book)&&!ant.tool)return !!book[type];
+  if(type==='mandibles')return antMandibleTier(ant)>0;
   return !!_adaptationBook(ant)[type];
 }
-function _adaptationUnlocked(type){
-  const d=BODY_ADAPTATION_DEFS[type];return !!(d&&gen>=d.gen&&colonyIQ>=d.iq&&inventions[d.invention]);
+function mandibleTierDefinition(level){return MANDIBLE_TIERS[Math.max(0,Math.min(MANDIBLE_TIERS.length-1,(level|0)-1))]||null;}
+function _naturalDigTier(){
+  // Equipment lets a colony enter hard strata generations early. The no-spend route arrives later,
+  // but each IQ gate sits at the viable edge of the preceding layer: a colony earns the next step by
+  // digging instead of deadlocking behind a full-width vein whose missing XP is trapped beyond it.
+  if(gen>=4&&colonyIQ>=122)return 4;
+  if(gen>=3&&colonyIQ>=118)return 3;
+  if(gen>=3&&colonyIQ>=116)return 2;
+  if(gen>=2&&colonyIQ>=114)return 1;
+  return 0;
+}
+function _materialDigTier(type){
+  if(type===15||type===19)return 99;
+  if(type===7)return 4;
+  const hard=durezaDe(type);
+  return hard<=14?0:hard<=18?1:hard<=23?2:hard<=29?3:4;
+}
+function _effectiveDigTier(ant){return Math.max(antMandibleTier(ant),_naturalDigTier());}
+function _adaptationUnlocked(type,level=0){
+  const d=BODY_ADAPTATION_DEFS[type];if(!d)return false;
+  if(type==='mandibles'){
+    const tier=mandibleTierDefinition(level||1);return !!(tier&&gen>=tier.gen&&colonyIQ>=tier.iq);
+  }
+  return !!(gen>=d.gen&&colonyIQ>=d.iq&&inventions[d.invention]);
 }
 function _adaptationCandidate(type){
   let best=null,bestScore=-Infinity;
   for(const w of workers){
-    if(!w||(w.health||0)<=20||antHasAdaptation(w,type))continue;
+    if(!w||(w.health||0)<=20)continue;
+    const jaw=antMandibleTier(w);
+    if(type==='mandibles'){if(jaw>=MANDIBLE_TIERS.length)continue;}
+    else if(antHasAdaptation(w,type))continue;
     const t=w.traits||{},e=_jobBook(w),p=antProfession(w);let score=0;
-    if(type==='mandibles')score=(t.construccion||40)*.7+(e.dig||0)*16+(p==='MINERA_PROFUNDA'?45:0);
+    if(type==='mandibles')score=jaw*10000+(t.construccion||40)*.7+(e.dig||0)*16+(p==='MINERA_PROFUNDA'?45:0);
     else if(type==='carry')score=(t.recoleccion||40)*.7+(t.exploracion||40)*.25+(e.forage||0)*16+(p==='RECOLECTORA_EXTERIOR'?45:0);
     else score=(t.construccion||40)*.65+(t.cuidado||40)*.18+(e.build||0)*16+(p==='CONSTRUCTORA'?45:0);
     score+=(w.health||100)*.03-(w.fatigue||0)*.18;
@@ -336,21 +393,31 @@ function _adaptationCandidate(type){
   }
   return best;
 }
+function _adaptationPlan(type){
+  const d=BODY_ADAPTATION_DEFS[type],ant=d&&_adaptationCandidate(type);if(!d)return null;
+  if(type==='mandibles'){
+    const level=ant?antMandibleTier(ant)+1:MANDIBLE_TIERS.length,tier=mandibleTierDefinition(level);
+    return {type,ant,level,definition:tier,need:tier?tier.need:{},unlocked:!!(ant&&_adaptationUnlocked(type,level))};
+  }
+  return {type,ant,level:1,definition:d,need:d.need,unlocked:!!(ant&&_adaptationUnlocked(type))};
+}
 function approveBodyAdaptation(type){
-  const d=BODY_ADAPTATION_DEFS[type],ant=d&&_adaptationCandidate(type);
+  const d=BODY_ADAPTATION_DEFS[type],plan=d&&_adaptationPlan(type),ant=plan&&plan.ant,upgrade=plan&&plan.definition;
   if(!d)return {ok:false,reason:'unknown'};
-  if(!_adaptationUnlocked(type)){showNotify('warn','ADAPTATION LOCKED','The colony has not learned the required material practice yet.');return {ok:false,reason:'locked'};}
   if(!ant){showNotify('warn','EVERY WORKER ADAPTED','A new adult must emerge before another '+d.name.toLowerCase()+' treatment is useful.');return {ok:false,reason:'complete'};}
-  if(!economyLedger.payMaterials(d.need,'player-approved '+type+' adaptation')){
+  if(!plan.unlocked){showNotify('warn','ADAPTATION LOCKED',type==='mandibles'?'This jaw tier needs GEN '+upgrade.gen+', IQ '+upgrade.iq+', and the previous anatomical tier.':'The colony has not learned the required material practice yet.');return {ok:false,reason:'locked'};}
+  if(!economyLedger.payMaterials(plan.need,'player-approved '+type+(type==='mandibles'?' tier '+plan.level:'')+' adaptation')){
     showNotify('warn','NOT ENOUGH AVAILABLE MATERIAL','Project commitments and KEEP reserves are protected.');return {ok:false,reason:'materials'};
   }
-  _adaptationBook(ant)[type]=true;recordJobExperience(ant,type==='carry'?'forage':type==='mandibles'?'dig':'build',.35);
-  const name=antDisplayName(ant);pushEvent('evo',name+' develops '+d.name,d.effect+' · player-approved material use');
-  pushToast(ant.x,ant.y-18,d.mark+' ADAPTED','#ffcc33',2.1);showNotify('ok',d.name,name+' was selected by need, traits and experience.');
+  const book=_adaptationBook(ant);if(type==='mandibles')book.mandibles=plan.level;else book[type]=true;
+  recordJobExperience(ant,type==='carry'?'forage':type==='mandibles'?'dig':'build',.35);
+  const shown=upgrade.name||d.name,effect=type==='mandibles'?'DIG POWER '+upgrade.power+' · '+upgrade.opens:d.effect,name=antDisplayName(ant);
+  pushEvent('evo',name+' develops '+shown,effect+' · player-approved material use');
+  pushToast(ant.x,ant.y-18,(upgrade.mark||d.mark)+' ADAPTED',upgrade.color||'#ffcc33',2.1);showNotify('ok',shown,name+' was selected by need, traits and experience.');
   try{serializeSave(true);}catch(e){}try{pintarInventario();updateEcoHud();}catch(e){}
-  return {ok:true,antId:ant.id,type};
+  return {ok:true,antId:ant.id,type,tier:type==='mandibles'?plan.level:1};
 }
-window.approveBodyAdaptation=approveBodyAdaptation;
+window.approveBodyAdaptation=approveBodyAdaptation;window.antMandibleTier=antMandibleTier;
 
 // ===== LA ESCALERA =====
 // Topo pidio que cavar hacia abajo valga la pena: cada capa mas dura, cada capa con su material, y un
@@ -397,6 +464,55 @@ function reindexMagma(){
     for(let c=0;c<COLS;c++) if(row[c]===15) magmaCells.push({r,c,x:c*CELL,y:r*CELL});
   }
 }
+function _applyUnderworldRows(rowLo,rowHi){
+  const lo=Math.max(SURFACE_ROW,worldUnderworldStart(),rowLo|0),hi=Math.min(ROWS,rowHi|0),core=worldCoreStart();
+  if(lo>=hi)return 0;
+  let changed=0;
+  for(let r=lo;r<hi;r++) for(let c=0;c<COLS;c++){
+    if(r>=core){
+      if(soil[r])soil[r][c]=1;
+      if(soilType[r])soilType[r][c]=19;
+      if(geologyHost[r])geologyHost[r][c]=19;
+      if(water[r])water[r][c]=0;if(waterVisual[r])waterVisual[r][c]=0;
+      changed++;continue;
+    }
+    if(!soil[r]||soil[r][c]!==1||!soilType[r])continue;
+    // A nine-cell central travel corridor can never roll magma. It is not a pre-dug shaft: it remains
+    // hard basalt/obsidian that ants must excavate. The width matters physically: ants have a radius,
+    // scouts sidestep, and heat checks all eight neighbours, so a three-cell line still burned traffic
+    // walking along its edge and could strand every carrier. Flanks retain the Underworld hazard.
+    const safe=Math.abs(c-CENTER_COL)<=4,h=worldHash(worldSeed,c,r,1901),h2=worldHash(worldSeed,c,r,1902);
+    let t=14;
+    if(!safe&&h<0.14)t=15;
+    else if(h2<0.19)t=13;
+    else if(h2>0.965)t=16;
+    soilType[r][c]=t;if(geologyHost[r])geologyHost[r][c]=14;changed++;
+  }
+  return changed;
+}
+function _sealWorldCore(){
+  if(!worldAtFinalDepth()||!Array.isArray(soil)||!soil.length)return false;
+  const core=worldCoreStart(),already=soilType[core]&&soilType[core].every(t=>t===19)&&soilType[ROWS-1]&&soilType[ROWS-1].every(t=>t===19);
+  if(already){umbral=null;return false;}
+  _applyUnderworldRows(core,ROWS);umbral=null;reindexMagma();markSoilDirty();return true;
+}
+function _retireLegacySlabs(){
+  let changed=0;const old=new Set();umbral=null;
+  if(Array.isArray(soilType))for(let r=SURFACE_ROW;r<ROWS;r++)for(let c=0;c<COLS;c++)if(soilType[r]&&soilType[r][c]===17){
+    old.add(c+','+r);soilType[r][c]=_geoType(c,r);if(soil[r])soil[r][c]=1;changed++;
+  }
+  try{for(const w of workers||[]){
+    delete w._umbralLead;delete w._umbralSupport;delete w._obraUmbralHasta;
+    const t=w.digTarget;if(t&&old.has(t.c+','+t.r)){w.digTarget=null;w.digProgress=0;if(w.state==='CAVANDO')w.state='EXPLORAR';}
+  }}catch(_e){}
+  if(changed)markSoilDirty();return changed;
+}
+function _depthFrontPending(){
+  if(!_topoHasWorld)return false;
+  if(!worldAtFinalDepth())return true;
+  try{return nestReachableData().cells.reduce((m,p)=>Math.max(m,p[1]),SURFACE_ROW)<worldCoreStart()-1;}catch(_e){return true;}
+}
+function _depthGoalRow(){return worldAtFinalDepth()?worldCoreStart()-1:ROWS-1;}
 function colocarUmbral(){
   if(!Array.isArray(soil) || soil.length<8) return;
   const r=ROWS-1;
@@ -416,15 +532,15 @@ function colocarUmbral(){
   tlog('[UMBRAL] losa en fila '+r+' ('+NOMBRE_BANDA(b)+') guarda '+NOMBRE_BANDA(guarda)+' · hp '+umbral.hp);
 }
 function _canExcavateMaterial(type,ant){
-  if(type===15)return false; // magma is a hazard to route around, never a mineable wall
+  if(type===15||type===19)return false; // magma is routed around; the visible world core is the final boundary
   if(type===7){
-    // Evolution alone remains the eventual, impossible-to-lose route. A worker whose stone-edged jaws
-    // were explicitly approved can work bedrock two generations earlier once deep masonry is known.
+    // Tier IV jaws still need the colony's masonry knowledge for bedrock. Evolution alone remains the
+    // eventual impossible-to-lose route if the player never spends material or the adapted ant dies.
     const evolved=gen>=8&&colonyIQ>=148&&!!inventions.masonry;
-    const adapted=!!ant&&gen>=6&&colonyIQ>=145&&!!inventions.masonry&&antHasAdaptation(ant,'mandibles');
+    const adapted=!!ant&&antMandibleTier(ant)>=4&&!!inventions.masonry;
     return evolved||adapted;
   }
-  return true;
+  return _effectiveDigTier(ant)>=_materialDigTier(type);
 }
 function puedeGolpearUmbral(){
   if(!umbral) return false;
@@ -530,6 +646,7 @@ function anotarReliquia(def, c, r){
 function isValidTreasurePos(c,r){
   if(c<4||c>=COLS-4||r<SURFACE_ROW+4||r>=ROWS-3) return false;
   if(!soil[r]||soil[r][c]!==1) return false;
+  const _tt=soilType[r]&&soilType[r][c];if(_tt===15||_tt===17||_tt===19)return false;
   // no muy cerca de otro tesoro - la separacion minima sigue la escala del mapa
   const _minD=Math.max(3, Math.min(7, Math.round(5*Math.sqrt(worldAreaRatio()))));
   for(let tr of hiddenRewards){ if(Math.hypot(tr.c-c,tr.r-r)<_minD) return false; }
@@ -730,7 +847,7 @@ function _materializeAncientSite(raw,rowLo,rowHi){
   if(top>bot||left>right) return false;
   let carved=0;
   for(let r=top;r<=bot;r++) for(let c=left;c<=right;c++){
-    if(!soil[r]||!soilType[r]||soilType[r][c]===17) continue;
+    if(!soil[r]||!soilType[r]||soilType[r][c]===17||soilType[r][c]===19) continue;
     const nx=(c-site.c)/Math.max(1,site.w/2),ny=(r-site.r)/Math.max(1,site.h/2);
     const inside=nx*nx+ny*ny<0.92;
     let scar=0; try{ scar=worldHash(site.muralSeed,c,r,701); }catch(_e){ scar=Math.random(); }
@@ -786,18 +903,13 @@ function initSoil(){
   const _geo=_buildGeologyRows(0,ROWS); geologyHost=_geo.hosts; soilType=_geo.types;
   // Depth is a tendency, not a ruler-straight command. Warped strata, neighbouring lenses and
   // crooked deposits make every seed readable as geology while deeper rows still predominate.
-  // Y el fuego: en la ultima banda el magma asoma entre el basalto. No se cava, calienta y gasta fatiga.
-  const _FUEGO=BANDAS.length-1;
-  for(let r=SURFACE_ROW+BANDAS[_FUEGO].desde; r<ROWS-1; r++){
-    for(let c=1;c<COLS-1;c++){
-      if(soilType[r][c]!==BANDAS[_FUEGO].tipo) continue;
-      if(worldHash(worldSeed,c,r,1501)>0.055) continue;
-      soilType[r][c]=15;
-      for(let k=0;k<2;k++){ const cc2=c+(worldHash(worldSeed,c+k,r,1502)<0.5?-1:1); if(cc2>0&&cc2<COLS-1&&soilType[r][cc2]===14&&worldHash(worldSeed,cc2,r+k,1503)<0.6) soilType[r][cc2]=15; }
-    }
-  }
+  // Fire belongs only to the proportional Underworld near the real end of the selected world; no
+  // intermediate full-width slab is installed. Custom/debug worlds already at their final depth are
+  // sealed with the same three-row core used by normal SMALL, MEDIUM and BIG runs.
+  _applyUnderworldRows(0,ROWS);
+  if(worldAtFinalDepth())_sealWorldCore();
   reindexMagma();
-  colocarUmbral();
+  bandaMax=bandaDe(Math.max(0,Math.min(ROWS-2,worldCoreStart()-1)-SURFACE_ROW));
   // (antes los metales se sembraban aqui con umbrales de piso a mano; ahora la pasada por bandas de
   //  arriba, con VETA_P, deja el cobre en PIEDRA, el hierro en PIZARRA y el oro en CUARCITA)
   const cc=CENTER_COL; entradaCol=cc;
@@ -851,25 +963,21 @@ function initSoil(){
   spawnInitialTreasures();
   // exponer para debug
   window._spawnTreasure=(c,r,t)=>spawnSmartTreasure(c,r,t);
-  // huecos de prueba de la Escalera (test/profundidad.js): leer y forzar el estado sin depender del azar
-  window._escalera=()=>({umbral: umbral? {r:umbral.r,hp:Math.round(umbral.hp*10)/10,hpMax:umbral.hpMax,banda:umbral.banda,guarda:umbral.guarda} : null,
-                         bandaMax, umbralesRotos, filas:ROWS, pisos:ROWS-SURFACE_ROW,
-                         losa: (soilType[ROWS-1]? soilType[ROWS-1][3] : -1),
-                         losaSuelo: (soil[ROWS-1]? soil[ROWS-1][3] : -1), magma:magmaCells.length,
-                         bandaFondo: bandaDe(Math.max(0,ROWS-2-SURFACE_ROW)),
-                         vetas:{cobre:economyLedger.materials.cobre||0, hierro:economyLedger.materials.hierro||0, oro:economyLedger.materials.oro||0,
-                                cuarzo:economyLedger.materials.cuarzo||0, gema:economyLedger.materials.gema||0, obsidiana:economyLedger.materials.obsidiana||0},
-                         reliquias:reliquias.length, bonusCava});
-  window._morderUmbral=(n)=>{ for(let i=0;i<(n||1);i++) golpearUmbral({id:'TEST',role:'EXCAVADORA',x:umbral?umbral.r*0+ (umbral.c0*CELL):0, y:umbral?umbral.r*CELL:0}); return window._escalera(); };
-  window._irABanda=(b)=>{   // deja la losa a un mordisco y la revienta: el test quiere ver la banda, no esperar
-    for(let i=0;i<14 && bandaMax < b; i++){
-      if(!umbral) colocarUmbral();
-      if(!umbral) break;
-      umbral.hp = Math.min(umbral.hp, 1);
-      if(!abrirUmbral()) break;
-    }
+  // Depth inspection hooks use the real seamless allocator. They never lower hardness, invent progress
+  // or create a slab; browser tests can materialise a seeded layer without waiting several game days.
+  window._escalera=()=>({umbral:null,bandaMax,umbralesRotos,filas:ROWS,pisos:ROWS-SURFACE_ROW,
+                         limite:worldDepthLimit,restantes:worldDepthRemaining(),inframundo:worldUnderworldStart(),nucleo:worldCoreStart(),
+                         losa:(soilType[ROWS-1]?soilType[ROWS-1][3]:-1),losaSuelo:(soil[ROWS-1]?soil[ROWS-1][3]:-1),magma:magmaCells.length,
+                         bandaFondo:bandaDe(Math.max(0,Math.min(ROWS-2,worldCoreStart()-1)-SURFACE_ROW)),
+                         vetas:{cobre:economyLedger.materials.cobre||0,hierro:economyLedger.materials.hierro||0,oro:economyLedger.materials.oro||0,
+                                cuarzo:economyLedger.materials.cuarzo||0,gema:economyLedger.materials.gema||0,obsidiana:economyLedger.materials.obsidiana||0},
+                         reliquias:reliquias.length,bonusCava});
+  window._morderUmbral=()=>window._escalera(); // compatibility: Build O has no intermediate slab to bite
+  window._irABanda=(b)=>{
+    for(let i=0;i<12&&bandaMax<b&&ROWS<worldDepthLimit;i++)expandWorld(worldDepthProfile(COLS).chunk,true);
     return window._escalera();
   };
+  window._irAlNucleo=()=>{while(ROWS<worldDepthLimit)expandWorld(worldDepthProfile(COLS).chunk,true);return window._escalera();};
   window._treasures=()=>hiddenRewards.map(t=>({c:t.c,r:t.r,type:t.type,found:t.found}));
   window._worldEvidence=()=>({seed:worldSeed,sites:ancientSites.map(s=>({id:s.id,c:s.c,r:s.r,kind:s.kind,biome:s.biome})),masonry:ancientMasonry.length,artCells:_ancientArtCells.size});
   // gancho de prueba: pega obreras de mentira repartidas por el nido para ver como se lee una colonia grande
@@ -956,9 +1064,14 @@ function carveOval(cx,cy,rx,ry){for(let y=cy-ry;y<=cy+ry;y++)for(let x=cx-rx;x<=
 // === EXPANSIÓN DE MUNDO TERRARIA/STARBOUND - mapa más profundo si la colonia puede ===
 // Como Terraria Small 4200x1200 → Large 8400x2400, tu granja empieza 64x36 y puede crecer 96x120 si cavan profundo
 function expandWorld(addRows, silencioso){
-  const oldRows=ROWS;
-  const newRows=ROWS+addRows;
-  // Generate this slice from the same seed as the initial world: lazy depth, never rerolled depth.
+  const oldRows=ROWS,profile=worldDepthProfile(COLS);
+  if(!Number.isFinite(worldDepthLimit)||worldDepthLimit<ROWS)worldDepthLimit=Math.max(ROWS,profile.limit);
+  const wanted=Math.max(0,Math.floor(Number(addRows)||0));
+  const newRows=Math.min(worldDepthLimit,ROWS+wanted);
+  if(newRows<=oldRows)return false;
+  const oldBand=bandaDe(Math.max(0,oldRows-2-SURFACE_ROW)),enteredUnderworld=oldRows<=worldUnderworldStart()&&newRows>worldUnderworldStart();
+  // Generate this slice from the same seed as the initial world: lazy allocation is invisible to play,
+  // but keeps startup and saves light. There is no gate at the old array edge and no geology reroll.
   const _newGeo=_buildGeologyRows(oldRows,newRows);
   for(let r=oldRows;r<newRows;r++){
     const i=r-oldRows;
@@ -968,63 +1081,56 @@ function expandWorld(addRows, silencioso){
     geologyHost.push(_newGeo.hosts[i]);
     soilType.push(_newGeo.types[i]);
   }
-  // Geology for unopened rows comes from the same seed as the original map. There is no second,
-  // more generous loot pass: opening a slab reveals the world that was already implied, not a reroll.
-  // y si la banda que se abre es la ultima, su fuego
-  if(bandaDe((newRows-1)-SURFACE_ROW)>=BANDAS.length-1){
-    for(let r=Math.max(oldRows,SURFACE_ROW+BANDAS[BANDAS.length-1].desde); r<newRows-1; r++){
-      for(let c=1;c<COLS-1;c++){
-        if(soilType[r][c]!==BANDAS[BANDAS.length-1].tipo || worldHash(worldSeed,c,r,1501)>0.055) continue;
-        soilType[r][c]=15;
-      }
-    }
-  }
   ROWS=newRows;
-  // LA CUEVA: el hueco vacio ya es premio (Core Keeper, Dwarf Fortress). Its shape is part of the
-  // world seed, so reopening the same depth cannot reroll the room or accidentally wipe a whole seam.
-  // Mineral blocks survive as exposed inclusions instead of disappearing for free inside the void.
+  _applyUnderworldRows(oldRows,newRows);
+  // Seeded caverns make the descent breathe. Magma and the three-row world core are physical and may
+  // never be erased by a procedural room; deposits remain exposed in the cavern wall rather than free.
   const _caves=worldCavesForRange(worldSeed,COLS,oldRows,newRows);
   for(const cave of _caves){
     const {rx,ry,rxr,ryr}=cave;
     for(let y=ry-ryr;y<=ry+ryr;y++){
-      if(y<=SURFACE_ROW+1||y>=newRows-1) continue;
+      if(y<=SURFACE_ROW+1||y>=newRows-1||y>=worldCoreStart())continue;
       for(let x=rx-rxr;x<=rx+rxr;x++){
-        if(x<1||x>=COLS-1||!soil[y]) continue;
+        if(x<1||x>=COLS-1||!soil[y])continue;
         const dx=(x-rx)/rxr,dy=(y-ry)/ryr,t=soilType[y]&&soilType[y][x];
-        if(dx*dx+dy*dy<=1&&soil[y][x]===1&&!_isDepositType(t)){soil[y][x]=0;if(soilType[y])soilType[y][x]=0;markSoilDirty(x,y);}
+        if(dx*dx+dy*dy<=1&&soil[y][x]===1&&!_isDepositType(t)&&t!==15&&t!==19){soil[y][x]=0;soilType[y][x]=0;markSoilDirty(x,y);}
       }
     }
-    for(const p of cave.loot) if(spawnSmartTreasure(p.c,p.r))break;
+    for(const p of cave.loot)if(p.r<worldCoreStart()&&spawnSmartTreasure(p.c,p.r))break;
   }
-  materializeWorldHistory(oldRows,newRows-2);
-  // El alto lógico, el lienzo visible y el cache tienen que crecer juntos. Antes solo crecían las
-  // matrices: H seguía en la fila de la primera losa, la física sujetaba a todas en y=H-12 y la
-  // despensa podía mudarse a una cámara que ni las hormigas ni la cámara alcanzaban. Al recargar sí
-  // se recalculaba H, por eso la misma partida cambiaba de comportamiento después de un F5.
+  materializeWorldHistory(oldRows,Math.min(newRows-2,worldCoreStart()-1));
+  if(worldAtFinalDepth())_applyUnderworldRows(worldCoreStart(),ROWS);
+  // Backing canvas, physics and cache grow together; the logical 960×576 camera remains stable.
   H=ROWS*CELL;
   try{
     const _cv=document.getElementById('farmCanvas');
-    if(_cv){ _cv.height=H; if(ctx) ctx.imageSmoothingEnabled=false; }
-    soilCacheCanvas.height=H; soilCacheCanvas.width=COLS*CELL;
-    // Cambiar el tamano del lienzo REINICIA su contexto: sin volver a apagar el suavizado, las filas
-    // recien liberadas salen borrosas (el dueno lo llamo «texturas raras»). Y el aviso de repintado
-    // tenia que ser UNO solo - marcar dos veces convertia «mapa entero» en «lote vacio», asi que las
-    // filas nuevas no se dibujaban hasta recargar la pagina, que es justo lo que se le veia.
-    const _cc = soilCacheCtx || soilCacheCanvas.getContext('2d');
-    if(_cc) _cc.imageSmoothingEnabled=false;
-    soilCacheCtx=_cc;
-    soilDirtyCells=null; soilCacheDirty=true; _soilRev++;
+    if(_cv){_cv.height=H;if(ctx)ctx.imageSmoothingEnabled=false;}
+    soilCacheCanvas.height=H;soilCacheCanvas.width=COLS*CELL;
+    const _cc=soilCacheCtx||soilCacheCanvas.getContext('2d');if(_cc)_cc.imageSmoothingEnabled=false;soilCacheCtx=_cc;
+    soilDirtyCells=null;soilCacheDirty=true;_soilRev++;
   }catch(e){}
+  bandaMax=Math.max(bandaMax,bandaDe(Math.max(0,ROWS-2-SURFACE_ROW)));
+  umbralesRotos=Math.max(0,umbralesRotos|0)+1; // legacy save/formula field: now counts seamless depth openings
   if(!silencioso){
-    pushEvent('evo',`🌍 Mundo expandido +`+addRows+` filas → `+ROWS+` profundidad`, `progresivo: más profundo = más duro y más recompensas`);
-    notifyCanon('🌍 MAPA MÁS PROFUNDO', `El mundo crece a `+ROWS+` filas - las excavadoras llegaron al fondo`, 5200);
+    const remaining=worldDepthRemaining();
+    if(enteredUnderworld){
+      pushEvent('evo','🔥 UNDERWORLD REACHED','Basalt, obsidian and magma now lead to a visible final world core.');
+      notifyCanon('🔥 UNDERWORLD','The descent continues through fire to one unmistakable final boundary.',5200);
+    }else{
+      pushEvent('evo','🌍 DEEPER EARTH · '+ROWS+' ROWS',remaining?remaining+' rows remain before the world core':'the complete world is now materialised');
+      notifyCanon('🌍 DEEPER EARTH',remaining?'The connected tunnel opened more ground below.':'The final Underworld and world core now exist below.',4200);
+    }
   }
-  // y el nuevo techo: otra losa, otra banda que ganarse. Sin esto la escalera se acaba y vuelven a
-  // estar cavando en el vacio.
-  colocarUmbral(); reindexMagma();
-  try{ for(let i=0;i<4;i++){ const c=4+Math.floor(Math.random()*(COLS-8)), r=oldRows+Math.floor(Math.random()*Math.max(2,newRows-oldRows)); spawnSmartTreasure(c,r); } }catch(e){}
+  reindexMagma();
+  try{
+    for(let i=0;i<4;i++){
+      const c=4+Math.floor(Math.random()*Math.max(1,COLS-8));
+      const span=Math.max(1,Math.min(newRows,worldCoreStart())-oldRows),r=oldRows+Math.floor(Math.random()*span);
+      spawnSmartTreasure(c,r);
+    }
+  }catch(e){}
+  return true;
 }
-
 function isSoilSupported(r,c){
   if(r>=ROWS-1) return true;
   if(soil[r+1][c]===1) return true; // apoyo directo
@@ -1057,7 +1163,7 @@ function updateFallingSand(dt){
     for(let c=0;c<COLS;c++){
       if(soil[r][c]!==1) continue;
       const t=soilType[r][c];
-      if(t===6 || t===7) continue; // pizarra/bedrock nunca
+      if(t===6||t===7||t>=11) continue; // slate and deep stone/magma/core never become falling loose soil
       if(_protectBraces&&(isBracedCell(c,r)||isBracedCell(c,r+1))) continue;
       // Topo: la fila del cesped tampoco se desploma. Medido en Chrome real al dia 5: la colonia
       // habia cavado bajo la capa de raices y la gravedad habia abierto un boquete del columna 23
@@ -1153,8 +1259,10 @@ function updateDepthRuler(){
     const _pisos = Math.max(2, ROWS - SURFACE_ROW);
     ruler.setAttribute('aria-valuemax',String(_pisos-1));
     const _paso = _pisos>96? 25 : _pisos>60? 15 : _pisos>34? 10 : 5;
-    const levels=[]; for(let dv=0; dv<_pisos; dv+=_paso) levels.push(dv);
-    if(levels[levels.length-1] < _pisos-2) levels.push(_pisos-1);
+    const levels=[]; for(let dv=0;dv<_pisos;dv+=_paso)levels.push(dv);
+    for(const special of [worldUnderworldStart()-SURFACE_ROW,worldCoreStart()-SURFACE_ROW])if(special>0&&special<_pisos&&!levels.includes(special))levels.push(special);
+    if(levels[levels.length-1]<_pisos-2)levels.push(_pisos-1);
+    levels.sort((a,b)=>a-b);
     for(const stale of ruler.querySelectorAll('.depth-mark')){
       const m=String(stale.className).match(/depth-mark-(\d+)/);if(m&&+m[1]>=levels.length)stale.remove();
     }
@@ -1174,9 +1282,11 @@ function updateDepthRuler(){
     const _pisoProfundo=d=>d>0&&d>_maxCentrable;
     const _bloqueado=d=>d>_desbloqueado;
     const NOMBRE_SUELO={0:'AIR',1:'EARTH',2:'CLAY',3:'SAND',4:'STONE',5:'STONE',6:'SLATE',7:'BEDROCK',8:'COPPER',9:'IRON',10:'GOLD',
-                       11:'QUARTZITE',12:'MARBLE',13:'OBSIDIAN',14:'BASALT',15:'MAGMA',16:'GEMS',17:'SLAB',18:'SALT'};
+                       11:'QUARTZITE',12:'MARBLE',13:'OBSIDIAN',14:'BASALT',15:'MAGMA',16:'GEMS',17:'SLAB',18:'SALT',19:'WORLD CORE'};
     const _materialEn = (d)=>{
       const r = Math.min(ROWS-1, SURFACE_ROW + d);
+      if(r>=worldCoreStart()&&worldAtFinalDepth())return 'WORLD CORE';
+      if(r>=worldUnderworldStart())return 'UNDERWORLD';
       let cuenta={};
       for(let cc=1;cc<COLS-1;cc++){ const t=soilType[r] ? soilType[r][cc] : 0; if(t) cuenta[t]=(cuenta[t]||0)+1; }
       let mejor=0, mejc=-1;
@@ -1187,7 +1297,7 @@ function updateDepthRuler(){
     const cols=levels.map(d=>_bloqueado(d)?'#3a332c':d===0?'#7ec8e3':(function(){const m=_materialEn(d);
       return m==='SAND'?'#e8cf8a':m==='CLAY'?'#c47a52':m==='STONE'?'#9a9a9a':m==='SLATE'?'#6b7a8a':m==='BEDROCK'?'#3a3a44':
              m==='QUARTZITE'?'#c9c2d8':m==='MARBLE'?'#8a7fa0':m==='OBSIDIAN'?'#5a3a8a':m==='BASALT'?'#7a4030':m==='MAGMA'?'#ff6a1e':
-             m==='GEMS'?'#7ad3ff':m==='SLAB'?'#c8c8d8':m==='SALT'?'#dfe8ee':
+             m==='UNDERWORLD'?'#ff5a1f':m==='WORLD CORE'?'#d32912':m==='GEMS'?'#7ad3ff':m==='SLAB'?'#c8c8d8':m==='SALT'?'#dfe8ee':
              m==='COPPER'?'#c8703a':m==='IRON'?'#b9bcc6':m==='GOLD'?'#e8c14b':'#ffcc00';})());
     // asegurar marcas existen
     levels.forEach((d,i)=>{
@@ -1248,21 +1358,19 @@ function updateDepthRuler(){
 
 let _lastExpand=0;
 function checkWorldExpansion(){
-  if(umbral) return;   // con la Escalera montada el mundo NO crece solo: crece cuando la colonia revienta la losa
-  if(Date.now()-_lastExpand < 5200) return; // debounce 5.2s
-  // Sólo una galería conectada puede empujar el fondo. Una cueva procedural aún cubierta por la niebla
-  // no expande el mundo ni desbloquea scroll por existir en las matrices.
-  let deepest=SURFACE_ROW;try{for(const p of nestReachableData().cells) if(p[1]>deepest)deepest=p[1];}catch(e){}
-  if(deepest>=ROWS-4){
-    const canExpand = (typeof gen!=='undefined'?gen:0)>=2 && (typeof colonyIQ!=='undefined'?colonyIQ:100)>=118 && digs>=22 && workers.length>=6;
-    if(canExpand && ROWS<88){
-      const add = ROWS<48? 14 : ROWS<80? 18 : 22;
-      _lastExpand=Date.now(); expandWorld(add);
-    } else if(deepest>=ROWS-2 && ROWS<96){
-      // emergencia: aunque no tão inteligente, no dejar que se queden sin suelo (empujan)
-      if(ROWS<72){ _lastExpand=Date.now(); expandWorld(10); }
-    }
+  // Only the connected nest front can materialise the next seeded chunk. Population, IQ, inventions
+  // and wall-clock time are deliberately absent: those may change speed, never whether more world exists.
+  let deepest=SURFACE_ROW;try{for(const p of nestReachableData().cells)if(p[1]>deepest)deepest=p[1];}catch(e){}
+  if(ROWS<worldDepthLimit&&deepest>=ROWS-7){
+    _lastExpand=Date.now();
+    return expandWorld(worldDepthProfile(COLS).chunk,false);
   }
+  if(worldAtFinalDepth()&&!worldCoreFound&&deepest>=worldCoreStart()-1){
+    worldCoreFound=true;
+    pushEvent('evo','🔥 WORLD CORE FOUND','The three-row black-red core is the physical end of this world.');
+    try{pushToast(CENTER_COL*CELL+8,worldCoreStart()*CELL-8,'WORLD CORE','#ff5a1f',3.2);}catch(_e){}
+  }
+  return false;
 }
 
 // === ECOSISTEMA EXTERIOR VIVO ===
@@ -1494,7 +1602,13 @@ function _chooseFloodTarget(){
 }
 function updateFloodResponse(dt){
   const worldKey=COLS+'x'+ROWS;
-  if(floodControl.worldKey!==worldKey){ floodControl.target=null; floodControl.workerId=null; floodControl.scan=0; floodControl.worldKey=worldKey; }
+  if(floodControl.worldKey!==worldKey){
+    // Expanding ROWS changes the scan key, not the validity of the ant object. The old code forgot the
+    // assigned worker while leaving her in CONTROLAR_AGUA forever; that could orphan the only deep
+    // pioneer at a stale flood and make every later ant treat the shaft as occupied.
+    const oldWorker=floodControl.workerId?workers.find(a=>a.id===floodControl.workerId):null;
+    _clearFloodAssignment(oldWorker);floodControl.target=null;floodControl.workerId=null;floodControl.scan=0;floodControl.worldKey=worldKey;
+  }
   floodControl.scan-=dt;
   let worker=floodControl.workerId?workers.find(a=>a.id===floodControl.workerId):null;
   const t=floodControl.target;
@@ -1519,6 +1633,8 @@ function updateFloodResponse(dt){
       })[0];
     if(worker){
       worker.floodTarget={c:floodControl.target.c,r:floodControl.target.r}; worker.floodProgress=0;
+      // Flood duty temporarily owns this ant, so it cannot also reserve the persistent deep/lateral slot.
+      delete worker._pozoPrincipal;delete worker._lateralScout;delete worker._lateralRelayPending;
       worker.state='CONTROLAR_AGUA'; worker.targetFood=null; worker.digTarget=null; worker.buildTarget=null; worker._route=null;
       floodControl.workerId=worker.id; floodControl.incident++;
       pushEvent('eco','🌊 Inundación detectada: una obrera prepara un dique',`Brecha ${floodControl.target.c},${floodControl.target.r}`);
@@ -1723,7 +1839,7 @@ function checkInventions(){
   if(!inventions.masonry && gen>=6 && colonyIQ>=145 && inventions.stone && inventions.clay){
     inventions.masonry=true;
     pushImportant('invention','▦ Invention: deep masonry','Stone cutting and fired clay now brace work below quartzite.');
-    notifyCanon('▦ DEEP MASONRY','The colony can open black-marble thresholds and work bedrock at sufficient evolution.',6200);
+    notifyCanon('▦ DEEP MASONRY','Tier IV reinforced mandibles can now work bedrock; evolution remains the slower universal route.',6200);
     pushToast(W/2,H/2-18,'▦ MASONRY','#b9afc6',2.5);
   }
   if(!inventions.fiber && gen>=4 && colonyIQ>=132 && plants.length>=8 && deliveries>=35){
@@ -2416,8 +2532,9 @@ function freshFounder(opts){
 }
 let pantryPos={x:CENTER_COL*CELL+8, y:(SURFACE_ROW+6)*CELL+8}; // stable anchor of the physical store (legacy save field)
 function getPantryPos(){ return pantryPos; }
-// Topo: las reglas de inicio se traducen al tamaño elegido (64x36 = referencia 1.0)
-function worldAreaRatio(){ try{ return Math.max(0.35, Math.min(2.6, (COLS*ROWS)/2304)); }catch(e){ return 1; } }
+// Founding rules come from the selected world size, never from how many lazy depth rows have already
+// materialised. Opening deeper terrain must not silently create queens, food or surface capacity.
+function worldAreaRatio(){ try{ return Math.max(0.35,Math.min(2.6,(COLS*worldStartRows(COLS))/2304)); }catch(e){ return 1; } }
 // Topo: las reglas del mapa se traducen a cada tamano, tambien la fundacion.
 // 48x28 = 0,58 del area de referencia | 64x36 = 1 | 96x48 = 2. Las obreras iniciales crecen
 // con la raiz del area (un mapa el doble de grande no duplica las manos: multiplica las galerias
@@ -3037,6 +3154,7 @@ function topoCreateFreshWorld(cols, rows, options){
   const carriedRelics=Array.isArray(createOpts.relics)?createOpts.relics.map(x=>({...x})):[];
   tlog('[TOPO] topoCreateFreshWorld', cols, rows, createOpts.nuptial?'nuptial':'new');
   COLS=cols; ROWS=rows; if(typeof CENTER_COL!=='undefined') CENTER_COL=Math.floor(COLS/2);
+  const _depth=worldDepthProfile(COLS);worldDepthLimit=Math.max(ROWS,_depth.limit);worldCoreFound=false;
   if(typeof W!=='undefined'){ W=COLS*CELL; H=ROWS*CELL; const cv=document.getElementById('farmCanvas'); if(cv){ cv.width=W; cv.height=H; } }
   if(typeof soilCacheCanvas!=='undefined'){ try{ soilCacheCanvas.width=W; soilCacheCanvas.height=H; }catch(e){} }
   _topoHasWorld=true;
@@ -5283,7 +5401,7 @@ function updateAnt(ant, dt){
         const r=_yoR+dr, c=_yoC+dc;
         if(r<SURFACE_ROW || r>=ROWS || c<0 || c>=COLS) continue;
         if(!soil[r] || soil[r][c]!==1) continue;                       // solo tierra suelta
-        if(soilType[r] && (soilType[r][c]===7 || soilType[r][c]===15 || soilType[r][c]===17)) continue;   // roca madre, fuego y LOSA: no son una salida de atasco
+        if(soilType[r] && (soilType[r][c]===7 || soilType[r][c]===15 || soilType[r][c]===17 || soilType[r][c]===19)) continue;   // roca madre, fuego y LOSA: no son una salida de atasco
         const haciaAire = Math.abs(r-_aire.r) + Math.abs(c-_aire.c);
         if(haciaAire > _da+1) continue;                                // que el golpe abra hacia el hueco
         const coste = haciaAire + (dr>0? 0.5:0) + Math.random()*0.3;
@@ -5562,11 +5680,14 @@ function updateAnt(ant, dt){
   ant._renderY += (ant.y - ant._renderY) * 0.32;
   if(ant._climbing) speed*=0.72;
   // Player-approved body adaptations: no tool is fabricated or assigned automatically.
-  if(antHasAdaptation(ant,'mandibles')) speed*=1.16;
+  if(antMandibleTier(ant)) speed*=1+Math.min(.16,antMandibleTier(ant)*.04);
   if(antHasAdaptation(ant,'foreclaws')) speed*=1.09;
 
   // Ingeniería de emergencia: una sola obrera se acerca por celdas secas y tapona la brecha. No se
   // mete en el agua para construir; si la geometría cambia, updateFloodResponse buscará otra cara.
+  // A migrated/expanded world may invalidate an assignment between scans; never retain an ownerless
+  // CONTROLAR_AGUA state, because it cannot perform flood work and must rejoin ordinary job selection.
+  if(ant.state==='CONTROLAR_AGUA'&&!ant.floodTarget)ant.state='EXPLORAR';
   if(ant.state==='CONTROLAR_AGUA'&&ant.floodTarget){
     const target=ant.floodTarget;
     if(!soil[target.r]||soil[target.r][target.c]!==0||waterAtCell(target.c,target.r)<0.14){
@@ -5737,9 +5858,12 @@ function updateAnt(ant, dt){
     // Cinco raciones son reserva, no combustible de obra. La cuadrilla conserva el frente y espera;
     // en cuanto entra una entrega continúa exactamente donde estaba, sin aceptar una calada lateral.
     const _muerdeLosa=soilType[ant.digTarget.r]&&soilType[ant.digTarget.r][ant.digTarget.c]===17;
-    // The protected five rations stop opening new tunnels, not a crew already standing on the slab:
-    // biting it spends no food. Freezing that last metre at exactly 5 made viable SMALL seeds miss T4.
-    if(ant._pozoPrincipal&&economyLedger.food<=_reservaVital()&&!_muerdeLosa) return;
+    // The protected five rations stop optional tunnels, not the single elected deep shift once a viable
+    // six-worker colony exists: biting rock spends no food. The selector below already reserves exactly
+    // one pioneer for this case; freezing that worker here contradicted the reserve rule and could leave
+    // a living colony forever one basalt cell above the visible core.
+    const _deepReserveShift=!worldCoreFound&&gen>=1&&_knownWorkforce.length>=6&&economyLedger.food>=_reservaVital();
+    if(ant._pozoPrincipal&&economyLedger.food<=_reservaVital()&&!_muerdeLosa&&!_deepReserveShift) return;
     const tx=(ant.digTarget.c+0.5)*CELL, ty=(ant.digTarget.r+0.5)*CELL;
     const d=dist(ant,{x:tx,y:ty});
     let _metaCava={x:tx,y:ty}, _cavaEnRuta=false;
@@ -5781,7 +5905,8 @@ function updateAnt(ant, dt){
         else ant.angle+=(Math.random()-0.5)*0.7;
       }
     }else{
-      const toolDig = antHasAdaptation(ant,'mandibles')?1.38 : antHasAdaptation(ant,'foreclaws')?1.18 : 1;
+      const jawTier=antMandibleTier(ant),jawDef=mandibleTierDefinition(jawTier);
+      const toolDig = jawDef?jawDef.speed:(antHasAdaptation(ant,'foreclaws')?1.18:1);
       const _digGain=(1.6+(ant.role==='EXCAVADORA'?0.28:0.12)*10)*Math.max(1,gameSpeed*0.85)*toolDig;
       const _esLosa=soilType[ant.digTarget.r]&&soilType[ant.digTarget.r][ant.digTarget.c]===17;
       const _esApoyoUmbral=ant._umbralSupport&&_esLosa;
@@ -5825,7 +5950,10 @@ function updateAnt(ant, dt){
         } if(_mt===15){                                   // el magma no se cava: achicharra y ya esta
           ant.digTarget=null; ant.digProgress=0; ant.state='VOLVER_TIERRA'; ant.fatigue=Math.min(100,ant.fatigue+9);
           pushToast(ant.x,ant.y-10,'🔥 QUEMA','#ff6a1e'); return;
-        } if(!_canExcavateMaterial(_mt,ant)){ ant.digTarget=null; ant.digProgress=0; ant.state='EXPLORAR'; pushToast(ant.x,ant.y-10,_mt===15?'🔥 MAGMA':'⛔ BEDROCK',_mt===15?'#ff6a1e':'#555'); return; }
+        } if(!_canExcavateMaterial(_mt,ant)){
+          const req=_materialDigTier(_mt),roman=['0','I','II','III','IV'];ant.digTarget=null;ant.digProgress=0;ant.state='EXPLORAR';
+          pushToast(ant.x,ant.y-10,_mt===15?'🔥 MAGMA':_mt===19?'WORLD CORE':'JAW TIER '+(roman[req]||req),_mt===15?'#ff6a1e':_mt===19?'#d32912':'#d6a34d');return;
+        }
         soil[ant.digTarget.r][ant.digTarget.c]=0; if(soilType[ant.digTarget.r]) soilType[ant.digTarget.r][ant.digTarget.c]=0; markSoilDirty(ant.digTarget.c,ant.digTarget.r); ant.digsDone++; digs++; colonyFitness+=0.35;
         ant.deepestWork=Math.max(ant.deepestWork||SURFACE_ROW,ant.digTarget.r); recordJobExperience(ant,'dig',1+Math.max(0,ant.digTarget.r-SURFACE_ROW)*.025);
         // La evolución mide trabajo de la colonia, no solo viajes de miel. Una calada vale menos de
@@ -6128,11 +6256,15 @@ function updateAnt(ant, dt){
   const _aprieto = economyLedger.food < 1.5;
   const _pocaComida = economyLedger.food <= 5; // T1: al tocar el suelo, se come antes de abrir otro frente
   // Five rations remain untouchable, but once GEN1 has six workers the colony can spare exactly one
-  // fresh worker to keep the founding shaft alive. Digging spends no food; everyone else keeps the
-  // forage assignment. Without this relief all workers could hold the same distant food target while
-  // the shaft stayed abandoned forever at the protected floor.
-  const _obraConReserva=umbralesRotos===0&&gen>=1&&_knownWorkforce.length>=6&&economyLedger.food>=_reservaVital();
-  const _pozoReservado=_knownWorkforce.some(w=>w.health>20&&(w.fatigue||0)<88&&!w._magmaRetreat&&w.state!=='DESCANSAR'&&w.state!=='CONTROLAR_AGUA'&&w._pozoPrincipal);
+  // fresh worker to keep the connected deep front alive until the physical core. Digging spends no
+  // food; everyone else keeps the forage assignment. Without this relief all workers can hold the same
+  // distant food target while the shaft stays abandoned forever at the protected floor.
+  const _obraConReserva=!worldCoreFound&&gen>=1&&_knownWorkforce.length>=6&&economyLedger.food>=_reservaVital();
+  // `_pozoPrincipal` is a shift marker, not ownership for life. Carrying food, flood duty, magma retreat
+  // or exhaustion releases it immediately so a fresh ant can continue the same connected front.
+  for(const w of _knownWorkforce)if(w._pozoPrincipal&&
+    (w.health<=20||(w.fatigue||0)>=88||w.food||w.targetFood||w.wasteTarget||w._magmaRetreat||w.state==='DESCANSAR'||w.state==='CONTROLAR_AGUA')) delete w._pozoPrincipal;
+  const _pozoReservado=_knownWorkforce.some(w=>w.health>20&&(w.fatigue||0)<88&&!w.food&&!w.targetFood&&!w.wasteTarget&&!w._magmaRetreat&&w.state!=='DESCANSAR'&&w.state!=='CONTROLAR_AGUA'&&w._pozoPrincipal);
   let _relevoReserva=null;
   if(_obraConReserva&&_pocaComida&&!_pozoReservado){
     let _mejor=Infinity;
@@ -6181,21 +6313,21 @@ function updateAnt(ant, dt){
       let _constructoraTurno=null;
       const _hayFrenteActivo=_knownWorkforce.some(w=>w.health>0&&w.state==='CAVANDO'&&w.digTarget);
       const _hayFrentePozo=_knownWorkforce.some(w=>w.health>0&&(w.fatigue||0)<88&&!w._magmaRetreat&&w.state==='CAVANDO'&&w.digTarget&&w._pozoPrincipal);
-      const _umbralPendiente=!!umbral;
-      // The first shift waits for learned work or Day 3; once one slab has fallen, every later band may
-      // elect a new deep pioneer immediately. This removes the accidental "one shaft, then wander" cap.
-      const _puedePozo=_umbralPendiente && (umbralesRotos>0 || gen>=1 || day>=3);
+      const _umbralPendiente=!!umbral,_profundidadPendiente=_depthFrontPending();
+      // The first deep shift still emerges from experience or Day 3. After the first seamless opening,
+      // every later chunk elects a pioneer immediately; no slab, population count or invention gates it.
+      const _puedePozo=_profundidadPendiente && (umbralesRotos>0 || gen>=1 || day>=3);
       // An exhausted/flood-fighting pioneer keeps her history marker but no longer monopolises the
       // shaft. A fresh worker may take over, so one tired founder cannot stall the whole colony.
-      const _cuadrillaPozo=_umbralPendiente?_knownWorkforce.find(w=>w.health>0&&(w.fatigue||0)<88&&!w._magmaRetreat&&w.state!=='DESCANSAR'&&w.state!=='CONTROLAR_AGUA'&&w._pozoPrincipal):null;
+      const _cuadrillaPozo=_profundidadPendiente?_knownWorkforce.find(w=>w.health>20&&(w.fatigue||0)<88&&!w.food&&!w.targetFood&&!w.wasteTarget&&!w._magmaRetreat&&w.state!=='DESCANSAR'&&w.state!=='CONTROLAR_AGUA'&&w._pozoPrincipal):null;
       if((!_pocaComida||_obraConReserva) && (!_hayFrenteActivo || (_puedePozo && !_hayFrentePozo))){
         // Si ya hay una integrante de la cuadrilla y está libre, conserva ella el relevo: normalmente
         // sigue junto al último bloque abierto y no tiene que atravesar de nuevo todo el hormiguero.
         if(_cuadrillaPozo && !_cuadrillaPozo.food && !_cuadrillaPozo.targetFood && !_cuadrillaPozo.digTarget &&
            !_cuadrillaPozo.wasteTarget && _cuadrillaPozo.state!=='DESCANSAR') _constructoraTurno=_cuadrillaPozo;
         if(!_constructoraTurno) for(const w of _knownWorkforce){
-          if(w.health<=0||w.food||w.targetFood||w.digTarget||w.wasteTarget||w.state==='DESCANSAR') continue;
-          const _minaScore=x=>(x.traits&&x.traits.construccion||0)+(antProfession(x)==='MINERA_PROFUNDA'?28:antProfession(x)==='CONSTRUCTORA'?8:0)+(_jobBook(x).dig||0)*3;
+          if(w.health<=20||(w.fatigue||0)>=88||w.food||w.targetFood||w.digTarget||w.wasteTarget||w._magmaRetreat||w.state==='DESCANSAR'||w.state==='CONTROLAR_AGUA') continue;
+          const _minaScore=x=>(x.traits&&x.traits.construccion||0)+(antProfession(x)==='MINERA_PROFUNDA'?28:antProfession(x)==='CONSTRUCTORA'?8:0)+(_jobBook(x).dig||0)*3+antMandibleTier(x)*36;
           if(!_constructoraTurno || _minaScore(w)>_minaScore(_constructoraTurno)) _constructoraTurno=w;
         }
       }
@@ -6229,10 +6361,10 @@ function updateAnt(ant, dt){
           let pick=_cands&&_cands.length ? _cands[(Math.random()*_cands.length)|0] : (_far || frontier[(Math.random()*_fn)|0]);
           // DEEP FRONT: one elected pioneer keeps a connected shaft inside the mouth columns in every
           // band. A separately elected lateral scout is never converted into this straight-down shift.
-          if(_instintoObra && !_instintoLateral && _puedePozo && umbral && (!_cuadrillaPozo || _cuadrillaPozo===ant)){
+          if(_instintoObra && !_instintoLateral && _puedePozo && (!_cuadrillaPozo || _cuadrillaPozo===ant)){
             let _frentePozo=null, _fd=Infinity;
             for(let _pc=CENTER_COL-1;_pc<=CENTER_COL+1;_pc++){
-              for(let _pr=umbral.r;_pr>SURFACE_ROW;_pr--){
+              for(let _pr=_depthGoalRow();_pr>SURFACE_ROW;_pr--){
                 if(!soil[_pr] || soil[_pr][_pc]!==1 || !soil[_pr-1] || soil[_pr-1][_pc]!==0) continue;
                 const _pt=soilType[_pr]&&soilType[_pr][_pc];
                 if(_pt!==17&&!_canExcavateMaterial(_pt,ant))continue;
@@ -6250,7 +6382,7 @@ function updateAnt(ant, dt){
               }
             }
             if(_frentePozo){ pick=_frentePozo; ant._pozoPrincipal=true; }
-          } else if(ant!==_cuadrillaPozo || !_umbralPendiente) ant._pozoPrincipal=false;
+          } else if(ant!==_cuadrillaPozo || !_profundidadPendiente) ant._pozoPrincipal=false;
           // Las obras del umbral: si la losa esta a tiro y la colonia ya puede morderla, parte de las
           // excavadoras dejan el frente y van a ella. Sin esto el avance depende de que el azar ponga
           // una hormiga encima de la losa, y eso no es una decision de la colonia, es una ruleta.
@@ -6306,11 +6438,10 @@ function updateAnt(ant, dt){
             else { ant._umbralLead=true; delete ant._umbralSupport; }
             ant._obraUmbralHasta=time+DAY_LENGTH*0.12; ant._pozoPrincipal=true;
           }
-          // Hard stone rewards reinforced mandibles; colony evolution remains the universal slower route.
-          const _np={4:1.2, 6:2.2, 8:1.9, 9:2.6, 10:3.0, 7:3.5, 11:2.8, 12:3.2, 13:3.6, 14:3.9, 16:3.1, 18:2.0};
-          const needPower = _np[_type]||0;
-          const hasPower = (antHasAdaptation(ant,'mandibles') || (colonyIQ>124 && gen>=3) || inventions.stone) ? 1.0 : 0.55;
-          const hardMult = needPower>0 && hasPower<0.9 ? (1.6 + needPower*0.8) : 1;
+          // The exact geology tier matters. Natural evolution can eventually open it, but an approved
+          // matching jaw tier removes the deliberately slower fallback and adds its own speed multiplier.
+          const requiredTier=_materialDigTier(_type),jawTier=antMandibleTier(ant);
+          const hardMult=requiredTier>0&&requiredTier<99&&jawTier<requiredTier?1.65:1;
           // La LOSA (17) no se cava: se muerde. digNeeded corto a proposito, para que la obrera vuelva
           // una y otra vez al mismo sitio y el umbral baje entre todas - que es lo que da la sensacion de
           // haza colectiva, no de un numero que sube solo. Magma (15) y roca madre (7) siguen cerrados.
@@ -6357,7 +6488,7 @@ function updateAnt(ant, dt){
         const r=_yoR+dr, c=_yoC+dc;
         if(r<0||c<0||r>=ROWS||c>=COLS) continue;
         if(soil[r][c]!==1) continue;                              // solo tierra suelta, no roca ni vacio
-        if(soilType[r] && (soilType[r][c]===7 || soilType[r][c]===15 || soilType[r][c]===17)) continue;   // bedrock, magma y la losa no se cavan para abrir paso
+        if(soilType[r] && (soilType[r][c]===7 || soilType[r][c]===15 || soilType[r][c]===17 || soilType[r][c]===19)) continue;   // bedrock, magma y la losa no se cavan para abrir paso
         if(r <= SURFACE_ROW) continue;                         // no abrir el cielo por arriba
         const d = Math.hypot((c-_tC)*CELL, (r-_tR)*CELL) - (dr*0.6+dc*0.2);
         if(d < _bestD){ _bestD=d; _abrir={r, c}; }
@@ -6487,7 +6618,13 @@ function paintCacheCell(c,r,isMini){
         else if(t===2) base=depth<7?'#9c6b3a':'#a67c52';
         else base=depth<7?'#9c6b3a':'#8b5a2b';
       } else {
-        if(t===2) base= depth<3?'#8b5a32':depth<7?'#a06b33':'#7a4a2a'; // arcilla rojiza
+        if(t===19)base='#12080d';
+        else if(t===15)base='#ff6a1e';
+        else if(t===14)base='#4a2a20';
+        else if(t===13)base='#241f2e';
+        else if(t===12)base='#4a4552';
+        else if(t===11)base='#c9c2d8';
+        else if(t===2) base= depth<3?'#8b5a32':depth<7?'#a06b33':'#7a4a2a'; // arcilla rojiza
         else if(t===3) base= depth<3?'#c2b280':depth<7?'#d4c5a0':depth<12?'#c9b896':'#b0a080'; // arena clara
         else if(t===4) base= depth<12?'#6e6e6e':depth<18?'#5a5a5a':'#4a4a4a'; // piedra gris
         else base= depth<3?'#7a4a2a':depth<7?'#6b3a1f':depth<12?'#5a2a0a':depth<18?'#4a1e0a':'#3a1505'; // topsoil
@@ -6679,8 +6816,9 @@ const _VOX = {
   14:{col:'#4a2a20', pinta:'grietaLarga'},               // basalto
   15:{col:'#ff6a1e', pinta:'lumbre'},                     // MAGMA (no se cava)
   16:{col:'#8d8d8d', pinta:'veta', punto:'#7ad3ff'},     // veta de gemas
-  17:{col:'#2b2b33', pinta:'cincel'},                     // LA LOSA DEL UMBRAL
-  18:{col:'#dfe8ee', pinta:'granos'}                       // sal de roca
+  17:{col:'#2b2b33', pinta:'cincel'},                     // legacy threshold slab (migrated away)
+  18:{col:'#dfe8ee', pinta:'granos'},                      // rock salt
+  19:{col:'#12080d', pinta:'nucleo'}                       // final infernal world core: never mineable
 };
 // El pasto cambia con la estacion y con la humedad, como antes, pero son 4 px de color: nada de losas
 // reescaladas que salian con costuras entre celda y celda.
@@ -6784,7 +6922,8 @@ function _hormigaVoxel(g, ant, s, mini, idx){
     g.fillStyle='#1a0a00'; g.fillRect(Q(1), Q(-10)+oy, 1, 2);
     g.fillStyle='#2e1a0a'; g.fillRect(Q(6), Q(-2)+_brazo+oy, 3, 3); g.fillRect(Q(-9), Q(-2)-_brazo+oy, 3, 3);
     g.fillStyle=tinte; g.fillRect(Q(-5), Q(-4)+oy, Q(10), 1);
-    if(antHasAdaptation(ant,'mandibles')){g.fillStyle='#b9c0c7';g.fillRect(Q(4),Q(-9)+oy,Q(4),1);g.fillRect(Q(5),Q(-7)+oy,Q(3),1);}
+    const _jawA=antMandibleTier(ant),_jawADef=mandibleTierDefinition(_jawA);
+    if(_jawADef){g.fillStyle=_jawADef.color;g.fillRect(Q(4),Q(-9)+oy,Q(4),1);g.fillRect(Q(5),Q(-7)+oy,Q(3),1);if(_jawA>=3)g.fillRect(Q(7),Q(-8)+oy,2,1);}
     if(antHasAdaptation(ant,'carry')){g.fillStyle='#9fbd58';g.fillRect(Q(-5),Q(-1)+oy,Q(10),1);g.fillRect(Q(-1),Q(-4)+oy,1,Q(10));}
     if(antHasAdaptation(ant,'foreclaws')){g.fillStyle='#d58a57';g.fillRect(Q(8),Q(-1)+_brazo+oy,3,2);g.fillRect(Q(-10),Q(-1)-_brazo+oy,3,2);}
     if(ant.isQueen){ _bloque(g, Q(-4), Q(-16)+oy, Q(9), Q(4), '#ffcc00'); }
@@ -6819,9 +6958,12 @@ function _hormigaVoxel(g, ant, s, mini, idx){
   const _boca = cavando? (1 - _golpe) : (ant.food||ant.projectCargo? 1 : 0);
   g.fillStyle = '#1a0a00'; g.fillRect(Q(14), hy+Q(2)-_boca, caste==='major'? Q(5):Q(3), 2);
   if(caste==='major'){ g.fillRect(Q(14), hy+Q(4)+_boca, Q(4), 2); }
-  if(antHasAdaptation(ant,'mandibles')){
-    g.fillStyle='#b9c0c7';g.fillRect(Q(15),hy+Q(1)-_boca,Q(4),1);g.fillRect(Q(15),hy+Q(5)+_boca,Q(3),1);
-    g.fillStyle='#f0e9d5';g.fillRect(Q(18),hy+Q(1)-_boca,1,1);
+  const _jawTier=antMandibleTier(ant),_jawDef=mandibleTierDefinition(_jawTier);
+  if(_jawDef){
+    g.fillStyle=_jawDef.color;g.fillRect(Q(15),hy+Q(1)-_boca,Q(4),1);g.fillRect(Q(15),hy+Q(5)+_boca,Q(3),1);
+    g.fillStyle=_jawTier>=4?'#fff0a0':'#f0e9d5';g.fillRect(Q(18),hy+Q(1)-_boca,1,1);
+    if(_jawTier>=2)g.fillRect(Q(18),hy+Q(5)+_boca,1,1);
+    if(_jawTier>=3){g.fillStyle=_jawDef.color;g.fillRect(Q(14),hy-_boca,2,1);}
   }
   // ojo: dos de luz con su pupila; dormida = una raya, sin Z ni letrero
   if(durmiendo){ g.fillStyle='#1a0a00'; g.fillRect(Q(9), hy+Q(2), 3, 1); }
@@ -6919,7 +7061,7 @@ const PARED_FONDO = {
   1:'#43291a', 2:'#4d2e1d', 3:'#5b4c37', 4:'#3d3d44', 5:'#37343d',
   6:'#333b46', 7:'#312f3a', 8:'#3f3a32', 9:'#3a3d44', 10:'#403a2e',
   11:'#4b4657', 12:'#2b2730', 13:'#1b1626', 14:'#31201c', 15:'#5e2a14',
-  16:'#3a3a44', 17:'#2a262e', 18:'#4d4f56'
+  16:'#3a3a44', 17:'#2a262e', 18:'#4d4f56', 19:'#16080d'
 };
 function _paredDe(t){ return PARED_FONDO[t] || '#3a2f26'; }
 
@@ -7131,8 +7273,16 @@ function paintCacheCellTextured(c,r){
     g.fillStyle='#ff8c1a'; g.fillRect(x+2,y+4,CELL-4,CELL-8);
     g.fillStyle='#ffe08a'; g.fillRect(x+4,y+6,CELL-8,3);
     g.fillStyle='#8a2a08'; g.fillRect(x,y+CELL-3,CELL,3);
+  } else if(d.pinta==='nucleo'){
+    // The last three rows are not another hard ore. Black-red welded blocks, a continuous hot upper
+    // seam and sealed vertical joints make the end of the world readable before any text is consulted.
+    g.fillStyle='#070307';g.fillRect(x,y,CELL,CELL);
+    g.fillStyle='#251018';g.fillRect(x+1,y+3,CELL-2,CELL-5);
+    g.fillStyle='#080308';g.fillRect(x+((c+r)&1?4:10),y+3,2,CELL-5);
+    g.fillStyle='#8f210d';g.fillRect(x+2,y+5+((c*3+r)&5),5,1);g.fillRect(x+8,y+10-((c+r)&3),6,1);
+    if(r===worldCoreStart()){g.fillStyle='#ff5a1f';g.fillRect(x,y,CELL,3);g.fillStyle='#ffd36a';g.fillRect(x+2,y,CELL-5,1);}
   } else if(d.pinta==='cincel'){
-    // LA LOSA: siempre igual de maciza, pero con las mordeduras puestas. El progreso del umbral se ve en
+    // Legacy slab painter kept only so old screenshots/saves can be inspected during migration.
     // el propio bloque (astillas quitadas = grietas), no solo en la barra de arriba.
     const _rot = umbral? Math.max(0, Math.min(1, 1-(umbral.hp/umbral.hpMax))) : 0;
     g.fillStyle=sombra;
@@ -7383,6 +7533,21 @@ function drawFogOfWar(g,cStart,cEnd,rStart,rEnd,isMini){
   // Filas con el mismo contorno se funden verticalmente: el frente suele necesitar menos de veinte
   // rectángulos opacos, no un sello por celda ni un Path2D gigante.
   g.fillStyle='#070503';for(const q of _fogVisibleRects)g.fillRect(q.x,q.y,q.w,q.h);
+}
+function drawUnderworldAtmosphere(g,cStart,cEnd,rStart,rEnd,isMini){
+  const first=Math.max(worldUnderworldStart(),rStart|0),last=Math.min(ROWS,rEnd|0);if(first>=last)return;
+  const y0=first*CELL,y1=last*CELL;
+  g.fillStyle='rgba(126,28,8,0.10)';g.fillRect(cStart*CELL,y0,Math.max(0,(cEnd-cStart)*CELL),y1-y0);
+  if(worldUnderworldStart()>=rStart&&worldUnderworldStart()<rEnd){
+    const y=worldUnderworldStart()*CELL;g.fillStyle='rgba(255,90,31,0.78)';g.fillRect(cStart*CELL,y,(cEnd-cStart)*CELL,2);
+    g.fillStyle='rgba(255,210,90,0.28)';g.fillRect(cStart*CELL,y+2,(cEnd-cStart)*CELL,1);
+  }
+  if(isMini)return;
+  const phase=((performance.now()*.012)|0);
+  for(let r=first;r<last;r+=3)for(let c=Math.max(0,cStart);c<cEnd;c+=4){
+    if(!soil[r]||soil[r][c]!==0||worldHash(worldSeed,c,r,1910)<0.72)continue;
+    const yy=r*CELL+3+((phase+c*3+r*5)%11);g.fillStyle=((c+r+phase)&3)?'rgba(255,92,24,.42)':'rgba(255,214,104,.62)';g.fillRect(c*CELL+3+((c*7+r)&7),yy,1,2);
+  }
 }
 function drawFarm(ctx,W,H,isMini=false){
   const useZoom=!isMini;
@@ -7729,7 +7894,13 @@ function drawFarm(ctx,W,H,isMini=false){
         else if(t===2) base=depth<7?'#9c6b3a':'#a67c52';
         else base=depth<7?'#9c6b3a':'#8b5a2b';
       } else {
-        if(t===2) base= depth<3?'#8b5a32':depth<7?'#a06b33':'#7a4a2a'; // arcilla rojiza
+        if(t===19)base='#12080d';
+        else if(t===15)base='#ff6a1e';
+        else if(t===14)base='#4a2a20';
+        else if(t===13)base='#241f2e';
+        else if(t===12)base='#4a4552';
+        else if(t===11)base='#c9c2d8';
+        else if(t===2) base= depth<3?'#8b5a32':depth<7?'#a06b33':'#7a4a2a'; // arcilla rojiza
         else if(t===3) base= depth<3?'#c2b280':depth<7?'#d4c5a0':depth<12?'#c9b896':'#b0a080'; // arena clara
         else if(t===4) base= depth<12?'#6e6e6e':depth<18?'#5a5a5a':'#4a4a4a'; // piedra gris
         else base= depth<3?'#7a4a2a':depth<7?'#6b3a1f':depth<12?'#5a2a0a':depth<18?'#4a1e0a':'#3a1505'; // topsoil
@@ -7788,6 +7959,7 @@ function drawFarm(ctx,W,H,isMini=false){
     }
   }
   } // end soil direct else
+  drawUnderworldAtmosphere(ctx,cStart,cEnd,rStart,rEnd,isMini);
   // GRIETAS PROGRESIVAS - animación experta sin salto: 0→25→55→85→100% con líneas que crecen
   if(!isMini){
     for(let w of workers){ if(w.state==='CAVANDO' && w.digTarget){
@@ -9178,23 +9350,21 @@ function updateColonyUIInner(){
       const top=Object.entries(types).sort((a,b)=>b[1]-a[1]).slice(0,2).map(k=>k[0]).join(', ')||'-';
       typEl.textContent=top;
     }
-    // === LA VITRINA y el estado de la LOSA ===
-    // Dos lineas del panel del mundo que antes no existian: cuantas losas lleva rotas la colonia y que
-    // maravillas sac abajo. Se reconstruye solo si cambia algo (el panel se refresca a 7 fps y una lista
-    // de nodos por cuadro en cada refresco es DOM gratis que nadie pide).
+    // Relic case plus one honest depth sentence. There is no intermediate slab/technology lock: the
+    // connected front opens seeded chunks until the physical Underworld core is actually reached.
     try{
       const _uEl=document.getElementById('ecoUmbral');
       if(_uEl){
-        if(umbral){
-          const _p=Math.max(0, Math.min(100, Math.round((1-umbral.hp/umbral.hpMax)*100)));
-          _uEl.innerHTML=`<b style="color:#c8c8d8">🕳️ LOSA · ${NOMBRE_BANDA(umbral.guarda)}</b> · mordida ${_p}%`+
-                         (puedeGolpearUmbral()? '' : `<span style="color:#8a5a3a"> · needs ${umbral.guarda>=6?'deep masonry (GEN6 + IQ145 + stone + clay)':'at least 3 living workers'}</span>`);
-        } else {
-          _uEl.innerHTML=`<b style="color:#ffcc00">🕳️ ${umbralesRotos} losas rotas</b> · ${NOMBRE_BANDA(bandaMax)} · el fondo ya es minable`;
-        }
+        const _known=exploredDepth(),_full=Math.max(1,worldDepthLimit-SURFACE_ROW-1),_inHell=_exploredDeepest>=worldUnderworldStart();
+        const _jawBest=workers.reduce((m,w)=>Math.max(m,antMandibleTier(w)),0),_digTier=Math.max(_jawBest,_naturalDigTier()),_roman=['0','I','II','III','IV'];
+        _uEl.innerHTML=worldCoreFound
+          ?'<b style="color:#ff5a1f">🔥 WORLD CORE</b> · final physical boundary'
+          :_inHell
+            ?`<b style="color:#ff5a1f">🔥 UNDERWORLD</b> · depth ${_known}/${_full} · jaw power ${_roman[_digTier]}/IV · core below`
+            :`<b style="color:#ffcc00">🕳️ DEEP FRONT</b> · depth ${_known}/${_full} · jaw power ${_roman[_digTier]}/IV · seamless chunks`;
       }
       const _vEl=document.getElementById('ecoRelics'), _vh=document.getElementById('ecoRelicHint');
-      const _sig=reliquias.length+'|'+(umbral?Math.round(umbral.hp):'x');
+      const _sig=reliquias.length+'|'+worldCoreFound+'|'+ROWS;
       if(_vh) _vh.textContent=reliquias.length? reliquias.length+' en la vitrina' : 'vacia';
       if(_vEl && _vEl.dataset.sig!==_sig){
         _vEl.dataset.sig=_sig;
@@ -9583,8 +9753,11 @@ function paintGuideTo(x,y){
 }
 wrap.addEventListener('wheel',e=>{
   e.preventDefault();
-  const p=farmPointer(e),delta=e.deltaY<0?1.12:.88;
-  setZoom(view.zoom*delta,p.sx,p.sy);
+  if(e.ctrlKey||e.metaKey){const p=farmPointer(e),delta=e.deltaY<0?1.12:.88;setZoom(view.zoom*delta,p.sx,p.sy);return;}
+  // A normal wheel now does what a deep map promises: it travels vertically. Dedicated −/+ buttons own
+  // ordinary zoom, while Ctrl/Cmd+wheel remains an optional shortcut. Panning never arms or places tools.
+  const b=getPanBounds();view.x=clamp(view.x+(e.deltaX||0)/(view.zoom||1),b.minX,b.maxX);
+  view.y=clamp(view.y+e.deltaY*1.15/(view.zoom||1),b.minY,b.maxY);_rulerSig='';updateDepthRuler();
 },{passive:false});
 canvas.addEventListener('mousedown',e=>{
   if(e.button!==0)return;
@@ -9706,6 +9879,10 @@ canvas.addEventListener('click',e=>{
   if(best&&bd<7){
     const sel=workers[selectedAntIndex]||workers[0];
     if(sel){
+      const mt=soilType[best.r]&&soilType[best.r][best.c];
+      if(!_canExcavateMaterial(mt,sel)){
+        const req=_materialDigTier(mt),roman=['0','I','II','III','IV'];showNotify('warn','HARDER MANDIBLES REQUIRED',mt===19?'This is the final WORLD CORE.':mt===15?'Magma cannot be excavated.':'This worker needs jaw tier '+(roman[req]||req)+' or the colony must evolve further.');return;
+      }
       sel.digTarget=best;sel.digProgress=0;sel.digNeeded=22;sel.state='CAVANDO';
       pushEvent('evo',`Dig order [${best.c},${best.r}] → ${sel.id}`);
       pushImportant('invention',`>< DIG ORDER [${best.c},${best.r}]`,`${sel.id} is digging · see activity strip`);
@@ -10682,7 +10859,7 @@ let _offlineReturnPending=[];
 const _offlineAppliedStamps=new Set();
 const _offlinePresentedStamps=new Set();
 // grids a string de digitos: 8x menos bytes que JSON de arrays (BIG 96x48 entra en localStorage)
-// One base-20 character per cell keeps saves compact while preserving every physical type (0–18).
+// One base-20 character per cell keeps saves compact while preserving every physical type (0–19).
 // Decimal saves from earlier builds are a strict subset, so this is also their migration path.
 const _GRID_DIGITS='0123456789abcdefghij';
 function _encGrid(g){
@@ -10716,7 +10893,7 @@ function topoHasSave(){
     if(!d || !Array.isArray(d.soil) || d.soil.length===0) return null;
     const pop = Array.isArray(d.workers)? d.workers.length : 0;
     if(pop===0 && !(Array.isArray(d.queens)&&d.queens.length)) return null;
-    return { day:d.day||1, pop, cols:d.COLS||64, rows:d.ROWS||36, savedAt:d.savedAt||0, v:d.v||'1' };
+    return {day:d.day||1,pop,cols:d.COLS||64,rows:d.ROWS||36,maxRows:d.depthLimit||worldDepthProfile(d.COLS||64).limit,savedAt:d.savedAt||0,v:d.v||'1'};
   }catch(e){ return null; }
 }
 window.topoHasSave=topoHasSave;
@@ -10733,7 +10910,7 @@ function serializeSave(force){
       offline:{v:1,unlocks:{lineage:!!_offlineUnlocks.lineage,lateStage:!!_offlineUnlocks.lateStage},receipt:_lastOfflineReceipt?{..._lastOfflineReceipt}:null,presented:[..._offlinePresentedStamps].slice(-64),pending:_offlineReturnPending.slice(0,16)},
       lineage:lineageSnapshot(lineageState),lineageRun:{relicsFound:Math.max(0,lineageRun.relicsFound|0)},
       time, gen, colonyIQ, colonyFood:economyLedger.food, digs, deliveries, accidents, rewardsFound, mutations, commsCount, worldAge,
-      ROWS, COLS, SURFACE_ROW, worldSeed,
+      ROWS,COLS,SURFACE_ROW,worldSeed,depthLimit:worldDepthLimit,worldCoreFound:!!worldCoreFound,
       ancientSites:Array.isArray(ancientSites)?ancientSites.map(s=>({id:s.id,c:s.c,r:s.r,depth:s.depth,w:s.w,h:s.h,style:s.style,kind:s.kind,biome:s.biome,damage:s.damage,flood:s.flood,cycle:s.cycle,scar:s.scar,repairStyle:s.repairStyle,repairRate:s.repairRate,oddity:s.oddity||0,muralSeed:s.muralSeed})):[],
       ancientMasonry:Array.isArray(ancientMasonry)?ancientMasonry.slice(0,1800).map(m=>({c:m.c,r:m.r,style:m.style,site:m.site,scar:m.scar||''})):[],
       soil:_encGrid(soil),soilType:_encGrid(soilType),water:_encWater(water),
@@ -10777,7 +10954,7 @@ function serializeSave(force){
     localStorage.setItem(SAVE_KEY, json);
     localStorage.setItem(LS_ALIVE,'1');
     localStorage.setItem('antfarm_worldSize_cols', String(COLS));
-    localStorage.setItem('antfarm_worldSize_rows', String(ROWS));
+    localStorage.setItem('antfarm_worldSize_rows',String(worldStartRows(COLS)));
     localStorage.setItem('antfarm_lastReal', String(Date.now()));
     localStorage.setItem('antfarm_time', String(time));
     return true;
@@ -10799,7 +10976,10 @@ function deserializeSave(){
     _offlinePresentedStamps.clear();for(const key of data.offline&&Array.isArray(data.offline.presented)?data.offline.presented:[])if(typeof key==='string'&&key.length<96)_offlinePresentedStamps.add(key);
     {const pending=data.offline&&data.offline.pending,list=Array.isArray(pending)?pending:(pending&&typeof pending==='object'?[pending]:[]);_offlineReturnPending=list.filter(x=>x&&typeof x.key==='string'&&x.key.length<96).slice(0,16);}
     // 1) dimensiones primero: W/H/canvas/soilCache deben coincidir con el mapa guardado
-    COLS = data.COLS||64; ROWS = data.ROWS||36;
+    COLS=data.COLS||64;ROWS=data.ROWS||36;
+    const _savedDepth=worldDepthProfile(COLS),_declaredLimit=Number(data.depthLimit);
+    worldDepthLimit=Number.isFinite(_declaredLimit)&&_declaredLimit>=ROWS?Math.floor(_declaredLimit):Math.max(_savedDepth.limit,ROWS>_savedDepth.start?ROWS+_savedDepth.chunk:_savedDepth.limit);
+    worldCoreFound=!!data.worldCoreFound;
     if(data.SURFACE_ROW) SURFACE_ROW = data.SURFACE_ROW;
     SURFACE_Y = SURFACE_ROW*CELL; CENTER_COL = Math.floor(COLS/2);
     W = COLS*CELL; H = ROWS*CELL;
@@ -10851,21 +11031,16 @@ function deserializeSave(){
       overflowNodeId:f.overflowNodeId||null,overflowNodeType:f.overflowNodeType||null};}) : [];
     plants = Array.isArray(data.plants)? data.plants.map(p=>({c:p.c,x:p.x,y:p.y,type:p.type,growth:p.growth,maxGrowth:1,age:p.age||0,fruitCooldown:p.fc||0,variant:p.v||0})) : [];
     hiddenRewards = Array.isArray(data.hiddenRewards)? data.hiddenRewards.map(h=>({c:h.c,r:h.r,type:h.type,found:h.found,x:h.x,y:h.y,depthTier:h.tier||1})) : [];
-    // --- la escalera vuelve como estaba (o se repone la losa: un guardado viejo no la tiene y sin losa
-    //     el mundo se queda sin techo, que es justo lo que el umbral evita) ---
-    bandaMax = Math.max(0, data.bandaMax|0); umbralesRotos = Math.max(0, data.umbralesRotos|0);
-    reliquias = Array.isArray(data.reliquias)? data.reliquias.map(x=>{ const tipo=LEGADO_RELIQUIA[x.tipo]||(x.tipo==='Nest of the Old Colony'?'Worked Chamber Fragment':x.tipo); return {tipo,nombre:tipo,piso:x.piso|0,dia:x.dia|0,gen:x.gen|0,lore:x.lore||'',bonus:x.bonus||0.02}; }) : [];
-    bonusCava = Math.min(0.30, Number(data.bonusCava)||reliquias.reduce((a,x)=>a+(x.bonus||0),0));
-    umbral = null;
+    // Build O migration: old full-width threshold slabs become the seeded rock that was behind them.
+    // Existing depth, relics and progression are preserved; a continued tunnel receives seamless rows
+    // ahead of it, while saves already deeper than the new profile gain one full safety chunk.
+    bandaMax=Math.max(0,data.bandaMax|0);umbralesRotos=Math.max(0,data.umbralesRotos|0);
+    reliquias=Array.isArray(data.reliquias)?data.reliquias.map(x=>{const tipo=LEGADO_RELIQUIA[x.tipo]||(x.tipo==='Nest of the Old Colony'?'Worked Chamber Fragment':x.tipo);return{tipo,nombre:tipo,piso:x.piso|0,dia:x.dia|0,gen:x.gen|0,lore:x.lore||'',bonus:x.bonus||0.02};}):[];
+    bonusCava=Math.min(0.30,Number(data.bonusCava)||reliquias.reduce((a,x)=>a+(x.bonus||0),0));
     try{
-      if(data.umbral && soil[data.umbral.r] && soilType[data.umbral.r] && soilType[data.umbral.r][2]===17){
-        umbral={r:data.umbral.r|0, c0:2, c1:COLS-3, hp:Number(data.umbral.hp)||UMBRAL_HP(data.umbral.banda|0),
-                hpMax:Number(data.umbral.hpMax)||UMBRAL_HP(data.umbral.banda|0), banda:data.umbral.banda|0};
-      } else if(Array.isArray(soilType) && soilType.length && soilType[soilType.length-1] && soilType[soilType.length-1][2]!==17){
-        colocarUmbral();
-      }
-      reindexMagma();
-    }catch(e){ console.warn('escalera al cargar', e); }
+      _retireLegacySlabs();_applyUnderworldRows(0,ROWS);if(worldAtFinalDepth())_sealWorldCore();
+      bandaMax=Math.max(bandaMax,bandaDe(Math.max(0,Math.min(ROWS-2,worldCoreStart()-1)-SURFACE_ROW)));reindexMagma();
+    }catch(e){console.warn('depth migration on load',e);}
     mound = Array.isArray(data.mound)? data.mound.map(m=>({x:m.x,y:m.y,h:m.h})) : [];
     economyLedger.replaceMaterials(data.worldMaterials||{},'load save'); inventions = data.inventions||inventions;
     society = data.society||society; pantryPos = data.pantryPos||{x:CENTER_COL*CELL+8,y:(SURFACE_ROW+8)*CELL+8};
@@ -11392,8 +11567,8 @@ function topoArchiveCurrent(label){
     const d=JSON.parse(raw); if(!d || !Array.isArray(d.soil) || !d.soil.length) return false;
     const list=topoListFarms();
     const at=Date.now();
-    list.unshift({ id:'f'+at.toString(36), label: label||('Granja '+(d.COLS||64)+'x'+(d.ROWS||36)), sizeKey:d.sizeKey||'',
-                   cols:d.COLS||64, rows:d.ROWS||36, savedAt:at, day:d.day||1, pop:(d.workers||[]).length, snap:raw });
+    list.unshift({id:'f'+at.toString(36),label:label||('Farm '+(d.COLS||64)+'×'+(d.depthLimit||worldDepthProfile(d.COLS||64).limit)),sizeKey:d.sizeKey||'',
+                   cols:d.COLS||64,rows:d.ROWS||36,maxRows:d.depthLimit||worldDepthProfile(d.COLS||64).limit,savedAt:at,day:d.day||1,pop:(d.workers||[]).length,snap:raw});
     if(list.length>5) list.length=5;
     return topoWriteFarms(list);
   }catch(e){ console.warn('archive fail',e); return false; }
@@ -11405,7 +11580,7 @@ function topoRestoreFarm(id){
     localStorage.setItem(SAVE_KEY, f.snap);
     localStorage.setItem('antfarm_worldSize', f.sizeKey||'');
     localStorage.setItem('antfarm_worldSize_cols', String(f.cols));
-    localStorage.setItem('antfarm_worldSize_rows', String(f.rows));
+    localStorage.setItem('antfarm_worldSize_rows',String(worldStartRows(f.cols)));
     return true;
   }catch(e){ return false; }
 }
@@ -11554,7 +11729,7 @@ setTimeout(_updateBothAntCounts, 1800);
       const ago = meta.savedAt? Math.max(0, Date.now()-meta.savedAt) : 0;
       const mins=Math.floor(ago/60000);
       const when = mins<1? 'seconds ago' : mins<60? mins+' min ago' : mins<1440? Math.floor(mins/60)+'h ago' : Math.floor(mins/1440)+'d ago';
-      const detail='Day '+meta.day+' · '+meta.cols+'×'+meta.rows+' · '+meta.pop+' ants · saved '+when;
+      const detail='Day '+meta.day+' · '+meta.cols+'×'+meta.maxRows+' world · depth '+Math.max(0,meta.rows-SURFACE_ROW)+' open · '+meta.pop+' ants · saved '+when;
       btn.hidden=false; btn.style.display='flex'; btn.title=detail; btn.setAttribute('aria-label','Continue — '+detail);
       const label=btn.querySelector('.topo-menu-label'); if(label) label.textContent='CONTINUE';
       const sr=document.getElementById('mainContinueMeta'); if(sr) sr.textContent=' · '+detail;
@@ -11626,14 +11801,14 @@ setTimeout(_updateBothAntCounts, 1800);
     const saves=[];
     try{
       const meta=(typeof topoHasSave==='function')?topoHasSave():null;
-      if(meta) saves.push({key:SAVE_KEY,label:'ACTIVE FARM',size:meta.cols+'×'+meta.rows,day:meta.day,pop:meta.pop,savedAt:meta.savedAt,kind:'active'});
+      if(meta)saves.push({key:SAVE_KEY,label:'ACTIVE FARM',size:meta.cols+'×'+meta.maxRows,day:meta.day,pop:meta.pop,savedAt:meta.savedAt,kind:'active'});
       for(const k of ['antfarm_save_v4','antfarm_save_v3','antfarm_save_v2','antfarm_save']){
         const raw=localStorage.getItem(k); if(!raw) continue;
         try{ const d=JSON.parse(raw); if(!d||!Array.isArray(d.workers)||!d.workers.length) continue;
           saves.push({key:k,label:'LEGACY FARM',size:(d.COLS||64)+'×'+(d.ROWS||36),day:d.day||1,pop:d.workers.length,savedAt:d.savedAt||0,kind:'legacy'});
         }catch(e){}
       }
-      topoListFarms().forEach(f=>saves.push({key:'ARCHIVE:'+f.id,label:f.label||'ARCHIVED FARM',size:f.cols+'×'+f.rows,day:f.day,pop:f.pop,savedAt:f.savedAt,kind:'archive'}));
+      topoListFarms().forEach(f=>saves.push({key:'ARCHIVE:'+f.id,label:f.label||'ARCHIVED FARM',size:f.cols+'×'+(f.maxRows||worldDepthProfile(f.cols).limit),day:f.day,pop:f.pop,savedAt:f.savedAt,kind:'archive'}));
     }catch(e){ console.warn('loadList',e); }
     return saves;
   }
@@ -11698,7 +11873,7 @@ setTimeout(_updateBothAntCounts, 1800);
     farms.forEach(f=>{
       const load=tinyDataButton('▶','Load '+f.label,()=>{ if(topoRestoreFarm(f.id)) topoResumeGame({silent:false}); });
       const del=tinyDataButton('×','Delete '+f.label,()=>gameConfirm('Delete archived farm?','“'+f.label+'” will be erased.',()=>{ topoDeleteFarm(f.id); renderSettingsFarms(); }));
-      box.appendChild(farmSummaryRow(f.label,'Day '+f.day+' · '+f.pop+' ants · '+f.cols+'×'+f.rows,'archive',[load,del]));
+      box.appendChild(farmSummaryRow(f.label,'Day '+f.day+' · '+f.pop+' ants · '+f.cols+'×'+(f.maxRows||worldDepthProfile(f.cols).limit),'archive',[load,del]));
     });
   }
   function renderMenuSettings(){
@@ -11804,7 +11979,7 @@ setTimeout(_updateBothAntCounts, 1800);
       try{ topoCreateFreshWorld(s.cols, s.rows); }catch(e){ console.error('[TOPO] create', e); topoGenFail(e && e.message); return; }
       done(); try{ show(onboarding); }catch(e){} return;
     }
-    if(g.size) g.size.textContent = String(sizeKey).toUpperCase() + ' ' + s.cols + '×' + s.rows + ' · ' + (s.cols*s.rows) + ' cells';
+    if(g.size){const dp=worldDepthProfile(s.cols);g.size.textContent=String(sizeKey).toUpperCase()+' '+s.cols+'×'+dp.limit+' · COMPLETE WORLD';}
     if(g.seed) g.seed.textContent = 'SEED ' + Math.floor(Math.random()*999999999).toString(36).toUpperCase() + ' · ' + new Date().toLocaleString('en-US');
     g.sc.style.display='flex';
     if(g.bar) g.bar.style.width='0%';
@@ -11865,9 +12040,9 @@ setTimeout(_updateBothAntCounts, 1800);
     if(meta){
       // Topo: confirmacion dentro del juego (el confirm() nativo no existe en iframes sandboxeados)
       gameConfirm('Create a different farm?',
-        'Day '+meta.day+' · '+meta.pop+' ants · '+meta.cols+'×'+meta.rows+'\n\nYour current farm will move to the archive and remain available from LOAD FARM.',
+        'Day '+meta.day+' · '+meta.pop+' ants · '+meta.cols+'×'+meta.maxRows+'\n\nYour current farm will move to the archive and remain available from LOAD FARM.',
         ()=>{
-          try{ topoArchiveCurrent('Farm · Day '+meta.day+' · '+meta.cols+'×'+meta.rows); }catch(e){ console.warn('archive', e.message); }
+          try{topoArchiveCurrent('Farm · Day '+meta.day+' · '+meta.cols+'×'+meta.maxRows);}catch(e){console.warn('archive',e.message);}
           try{ localStorage.removeItem(SAVE_KEY); localStorage.removeItem('antfarm_worldAlive'); localStorage.removeItem('antfarm_time'); localStorage.removeItem('antfarm_lastReal'); }catch(e){}
           _topoHasWorld=false;
           topoBeginCreate(sizeKey, s);
@@ -11949,12 +12124,25 @@ function _filaInv(def, valor){
     + '<button type="button" data-reserve-kind="'+def.k+'" data-reserve-delta="-1" aria-label="Keep one less '+def.n.toLowerCase()+'">−</button>'
     + '<button type="button" data-reserve-kind="'+def.k+'" data-reserve-delta="1" aria-label="Keep one more '+def.n.toLowerCase()+'">+</button></span></article>';
 }
-function _projectCostHtml(cost){return Object.entries(cost||{}).map(([k,v])=>'<span><b>'+v+'</b> '+k.toUpperCase()+'</span>').join('');}
+function _projectCostHtml(cost){const names={cobre:'COPPER',hierro:'IRON',oro:'GOLD',cuarzo:'QUARTZ',gema:'GEMSTONE',obsidiana:'OBSIDIAN',meteorito:'METEORITE'};return Object.entries(cost||{}).map(([k,v])=>'<span><b>'+v+'</b> '+(names[k]||k.toUpperCase())+'</span>').join('');}
 function _bodyAdaptationsHtml(){
   const living=workers.filter(w=>w&&(w.health||0)>20);
   let html='<section class="inv-section inv-adaptation-section" aria-labelledby="invAdaptTitle"><h3 class="inv-section-head" id="invAdaptTitle">BODY ADAPTATIONS</h3>'
     +'<p class="inv-project-intro">You approve each material use. The colony selects one eligible worker by need, traits and experience — never by manual assignment.</p><div class="inv-adaptation-grid">';
   for(const [type,d] of Object.entries(BODY_ADAPTATION_DEFS)){
+    if(type==='mandibles'){
+      const plan=_adaptationPlan(type),eligible=living.filter(w=>antMandibleTier(w)<MANDIBLE_TIERS.length).length;
+      const best=living.reduce((m,w)=>Math.max(m,antMandibleTier(w)),0),tier=plan&&plan.definition,unlocked=!!(plan&&plan.unlocked),affordable=!!(tier&&economyLedger.canAffordMaterials(tier.need)),enabled=unlocked&&affordable&&eligible>0;
+      const roman=['0','I','II','III','IV'],status=enabled?'APPROVE TIER '+roman[plan.level]+' FOR ONE':eligible<=0?'ALL AT TIER IV':!unlocked?'NEXT TIER NOT YET LEARNED':'NEEDS AVAILABLE STOCK';
+      const track=MANDIBLE_TIERS.map(t=>'<span class="'+(best>=t.level?'is-earned':plan&&plan.level===t.level?'is-next':'')+'" title="'+t.name+' · '+t.opens+'"><b>'+roman[t.level]+'</b>'+t.name.replace(' MANDIBLES','')+'</span>').join('');
+      html+='<article class="inv-adaptation-card inv-jaw-tier-card" data-adaptation="mandibles" data-jaw-tier="'+best+'"><div class="inv-adaptation-top"><span class="inv-adaptation-glyph adapt-mandibles" style="--jaw-tier-color:'+(tier?tier.color:'#b9c0c7')+'" aria-hidden="true"><i></i></span><span><b>'+d.name+'</b><small>BEST TIER '+roman[best]+' / IV · '+(tier?'NEXT '+tier.name:'CHAIN COMPLETE')+'</small></span></div>'
+        +'<div class="inv-jaw-tier-track" aria-label="Four sequential mandible tiers">'+track+'</div>'
+        +'<p class="inv-adaptation-detail"><b>WHAT CHANGES</b> '+d.detail+(tier?' <strong>NEXT: DIG POWER '+tier.power+' · '+tier.opens+'.</strong>':'')+'</p>'
+        +'<div class="inv-adaptation-cost" aria-label="Next mandible tier cost">'+(tier?_projectCostHtml(tier.need):'<span>CHAIN COMPLETE</span>')+'</div>'
+        +'<div class="inv-adaptation-counts"><span><b>'+best+'</b> BEST TIER</span><span><b>'+eligible+'</b> CAN ADVANCE</span></div>'
+        +'<button class="inv-adaptation-approve" type="button" data-adaptation-approve="mandibles" '+(enabled?'':'disabled')+'>'+status+'</button></article>';
+      continue;
+    }
     const adapted=living.filter(w=>antHasAdaptation(w,type)).length,eligible=living.length-adapted;
     const unlocked=_adaptationUnlocked(type),affordable=economyLedger.canAffordMaterials(d.need),enabled=unlocked&&affordable&&eligible>0;
     let status=enabled?'APPROVE FOR ONE':eligible<=0?'ALL ADAPTED':!unlocked?'NOT YET LEARNED':'NEEDS AVAILABLE STOCK';
@@ -11964,7 +12152,7 @@ function _bodyAdaptationsHtml(){
       +'<div class="inv-adaptation-counts"><span><b>'+adapted+'</b> ADAPTED</span><span><b>'+eligible+'</b> ELIGIBLE</span></div>'
       +'<button class="inv-adaptation-approve" type="button" data-adaptation-approve="'+type+'" '+(enabled?'':'disabled')+'>'+status+'</button></article>';
   }
-  return html+'</div><p class="inv-adaptation-rule"><b>SPENDING RULE</b> No worker can take these materials automatically.</p></section>';
+  return html+'</div><p class="inv-adaptation-rule"><b>SPENDING RULE</b> No worker can take these materials automatically. Hard layers also unlock through slower colony evolution, so a lost specialist cannot end a run.</p></section>';
 }
 function _colonyProjectsHtml(){
   const active=colonyProjects.active();let html='<section class="inv-section inv-project-section" aria-labelledby="invProjectsTitle"><h3 class="inv-section-head" id="invProjectsTitle">COLONY PROJECTS</h3>'
@@ -12214,7 +12402,7 @@ let _lineageOpen=false,_lineageLastFocus=null,_lineageBusy=false,_lineageRenderS
 function _nuptialRunMetrics(){
   let depth=0;
   try{for(const cell of nestReachableData().cells)depth=Math.max(depth,(cell[1]|0)-SURFACE_ROW);}catch(e){}
-  const nextSlabProgress=umbral&&umbral.hpMax>0?Math.max(0,Math.min(1,1-umbral.hp/umbral.hpMax)):0;
+  const nextSlabProgress=worldAtFinalDepth()?1:Math.max(0,Math.min(1,(depth-8)/Math.max(1,ROWS-7-SURFACE_ROW-8)));
   let sizeKey='';try{sizeKey=localStorage.getItem('antfarm_worldSize')||'';}catch(e){}
   return {slabs:umbralesRotos,depth,nextSlabProgress,relics:lineageRun.relicsFound||0,workers:workers.filter(w=>(w.health||0)>0).length,
     livingQueens:queens.filter(q=>(q.health||0)>0).length,generation:gen,worldSeed,sizeKey};
@@ -12241,8 +12429,8 @@ function renderLineageSheet(force=false){
   if(!force&&sig===_lineageRenderSig)return;_lineageRenderSig=sig;
   const status=q.eligible?'READY · A NEW FOUNDER CAN LEAVE':q.blockers.join(' · ');
   let html='<section class="lineage-run-card"><div class="lineage-run-top"><span>NEXT FLIGHT YIELD</span><b>+'+_amberText(q.award)+' ◆</b></div>'
-    +'<div class="lineage-formula"><span class="lineage-formula-label">FULL-PRECISION FORMULA</span><strong>√ (16 × broken slabs + depth beyond 8 + 8 × next-slab progress + 2 × new relics)</strong></div>'
-    +'<div class="lineage-metrics"><span><b>'+r.slabs+'</b>SLABS</span><span><b>'+r.depth+'</b>DEPTH</span><span><b>'+Math.round(r.nextSlabProgress*100)+'%</b>NEXT SLAB</span><span><b>'+r.relics+'</b>NEW RELICS</span></div>'
+    +'<div class="lineage-formula"><span class="lineage-formula-label">FULL-PRECISION FORMULA</span><strong>√ (16 × depth openings + depth beyond 8 + 8 × next-front progress + 2 × new relics)</strong></div>'
+    +'<div class="lineage-metrics"><span><b>'+r.slabs+'</b>OPENINGS</span><span><b>'+r.depth+'</b>DEPTH</span><span><b>'+Math.round(r.nextSlabProgress*100)+'%</b>NEXT FRONT</span><span><b>'+r.relics+'</b>NEW RELICS</span></div>'
     +'<div class="lineage-status'+(q.eligible?'':' locked')+'">'+_lineageEsc(status)+'</div></section>';
   html+='<section class="lineage-reset-card"><h3>WHAT THE FLIGHT MEANS</h3><p>The old physical nest closes and a new seeded world begins at Day 1. This is a deliberate reset, never an automatic event.</p>'
     +'<div class="lineage-reset-grid"><div><b>RESETS</b><span>workers · queens · brood · depth · food · materials · projects · temporary trails</span></div>'
@@ -12258,8 +12446,8 @@ function renderLineageSheet(force=false){
   html+='</section>';
   const last=lineageState.history[lineageState.history.length-1];
   html+='<section class="lineage-history-card"><h3>FLIGHT RECORD</h3><p>'+(lineageState.flights
-    ?lineageState.flights+' completed · latest carried '+_amberText(last.award)+' amber from '+last.slabs+' '+(last.slabs===1?'slab':'slabs')+' at depth '+last.depth+'.'
-    :'No flight completed. Break the first collective slab to open this layer.')+'</p></section>';
+    ?lineageState.flights+' completed · latest carried '+_amberText(last.award)+' amber from '+last.slabs+' depth '+(last.slabs===1?'opening':'openings')+' at depth '+last.depth+'.'
+    :'No flight completed. Reach the first seamless depth opening to unlock this layer.')+'</p></section>';
   body.innerHTML=html;
   if(action){action.disabled=!q.eligible||_lineageBusy;action.textContent=q.eligible?'BEGIN NUPTIAL FLIGHT':'FLIGHT LOCKED';}
 }
@@ -12279,7 +12467,7 @@ function _executeNuptialFlight(at=Date.now()){
   if(!result.ok)return result;
   _lineageBusy=true;
   try{
-    const cols=COLS,rows=ROWS,keptRelics=reliquias.map(x=>({...x})),award=result.quote.award,flightNo=result.state.flights;
+    const cols=COLS,rows=worldStartRows(COLS),keptRelics=reliquias.map(x=>({...x})),award=result.quote.award,flightNo=result.state.flights;
     try{cerrarLineage(true);cerrarInventario(true);cerrarRoster(true);closeAntProfile(true);closeQueenProfile(true);}catch(e){}
     _setLineageState(result.state);
     topoCreateFreshWorld(cols,rows,{lineage:lineageState,relics:keptRelics,nuptial:true});

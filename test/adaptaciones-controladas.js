@@ -1,9 +1,9 @@
 /**
- * adaptaciones-controladas.js — Build M contract for player-owned material spending.
+ * adaptaciones-controladas.js — Build O contract for player-owned material spending.
  *
- * Verifies in a real browser that legacy tools migrate into body adaptations, the inventory exposes
- * one explicit approval action, AVAILABLE stock protects KEEP/COMMITTED units, and simulation time
- * cannot spend raw materials on its own.
+ * Verifies in a real browser that legacy tools migrate into anatomical tiers, one compact card advances
+ * I–IV through four explicit approvals, AVAILABLE protects KEEP/COMMITTED stock, tier IV survives a real
+ * reload, and simulation time cannot spend raw materials on its own.
  */
 const http=require('http');
 const fs=require('fs');
@@ -67,22 +67,38 @@ async function boot(page){
     await page.click('#btnInventory');await sleep(280);
     const before=await page.evaluate(()=>{
       const c=document.querySelector('[data-adaptation="mandibles"]'),b=c&&c.querySelector('[data-adaptation-approve]'),stone=document.querySelector('[data-material="stone"]');
-      return {cards:document.querySelectorAll('.inv-adaptation-card').length,button:b&&b.textContent.trim(),disabled:!!(b&&b.disabled),counts:c&&c.querySelector('.inv-adaptation-counts').textContent.replace(/\s+/g,' ').trim(),
-        ledger:stone&&stone.querySelector('.inv-resource-ledger').textContent.replace(/\s+/g,' ').trim(),rule:document.querySelector('.inv-adaptation-rule').textContent.replace(/\s+/g,' ').trim()};
+      return {cards:document.querySelectorAll('.inv-adaptation-card').length,tiers:c&&c.querySelectorAll('.inv-jaw-tier-track span').length,button:b&&b.textContent.trim(),disabled:!!(b&&b.disabled),counts:c&&c.querySelector('.inv-adaptation-counts').textContent.replace(/\s+/g,' ').trim(),
+        ladder:c&&c.querySelector('.inv-jaw-tier-track').textContent.replace(/\s+/g,' ').trim(),ledger:stone&&stone.querySelector('.inv-resource-ledger').textContent.replace(/\s+/g,' ').trim(),rule:document.querySelector('.inv-adaptation-rule').textContent.replace(/\s+/g,' ').trim()};
     });
-    ok(before.cards===3&&before.button==='APPROVE FOR ONE'&&!before.disabled,'three anatomical cards exist and an eligible action is enabled',before.counts);
+    ok(before.cards===3&&before.tiers===4&&before.button==='APPROVE TIER I FOR ONE'&&!before.disabled,'one compact jaw card exposes four sequential tiers without multiplying menus',before.ladder);
+    ok(/STONE-EDGED/.test(before.ladder)&&/COPPER-SERRATED/.test(before.ladder)&&/IRON-BRACED/.test(before.ladder)&&/GOLD-INLAID/.test(before.ladder),'the visible ladder names every material tier before spending');
     ok(/COMMITTED 3/.test(before.ledger)&&/AVAILABLE 5/.test(before.ledger),'inventory separates TOTAL, COMMITTED and AVAILABLE',before.ledger);
     ok(/No worker can take these materials automatically/.test(before.rule),'the spending rule is explicit in the same inventory');
     await page.click('[data-adaptation-approve="mandibles"]');await sleep(320);
     const after=await page.evaluate(()=>{
       const w=workers[0],b=document.querySelector('[data-adaptation-approve="mandibles"]');serializeSave(true);const saved=JSON.parse(localStorage.getItem(SAVE_KEY));
-      return {stone:economyLedger.materials.stone,held:economyLedger.materialHeld('stone'),available:economyLedger.materialAvailable('stone'),adapted:antHasAdaptation(w,'mandibles'),legacy:'tool' in w,
-        disabled:!!(b&&b.disabled),button:b&&b.textContent.trim(),negative:economyLedger.history().filter(x=>x.account==='material'&&x.delta<0),savedAdapted:!!(saved.workers[0].adaptations&&saved.workers[0].adaptations.mandibles),savedLegacy:'tool' in saved.workers[0]};
+      return {stone:economyLedger.materials.stone,held:economyLedger.materialHeld('stone'),available:economyLedger.materialAvailable('stone'),adapted:antHasAdaptation(w,'mandibles'),tier:antMandibleTier(w),legacy:'tool' in w,
+        disabled:!!(b&&b.disabled),button:b&&b.textContent.trim(),negative:economyLedger.history().filter(x=>x.account==='material'&&x.delta<0),savedTier:saved.workers[0].adaptations&&saved.workers[0].adaptations.mandibles,savedLegacy:'tool' in saved.workers[0]};
     });
-    ok(after.adapted&&after.stone===8&&after.held===3&&after.available===3,'one click spends exactly the displayed 2 stone and adapts one emergent recipient',`stone ${after.stone} · available ${after.available}`);
-    ok(after.negative.length===1&&/player-approved mandibles adaptation/.test(after.negative[0].reason),'the ledger records one auditable player-approved debit',after.negative[0]&&after.negative[0].reason);
-    ok(after.disabled&&after.button==='ALL ADAPTED','the action disables when no living worker remains eligible');
-    ok(after.savedAdapted&&!after.legacy&&!after.savedLegacy,'the migrated adaptation persists without restoring a human tool field');
+    ok(after.adapted&&after.tier===1&&after.stone===8&&after.held===3&&after.available===3,'one click spends exactly the displayed 2 stone and advances one emergent recipient to tier I',`stone ${after.stone} · available ${after.available}`);
+    ok(after.negative.length===1&&/player-approved mandibles tier 1 adaptation/.test(after.negative[0].reason),'the ledger records one auditable player-approved tier debit',after.negative[0]&&after.negative[0].reason);
+    ok(after.disabled&&after.button==='NEEDS AVAILABLE STOCK','the same compact card now asks for copper instead of pretending the chain is complete');
+    ok(after.savedTier===1&&!after.legacy&&!after.savedLegacy,'tier I persists numerically without restoring a human tool field');
+
+    console.log('\n· the same card advances through copper, iron and gold');
+    await page.evaluate(()=>{economyLedger.setMaterial('cobre',10,'tier fixture');economyLedger.setMaterial('hierro',10,'tier fixture');economyLedger.setMaterial('oro',10,'tier fixture');economyLedger.clearJournal();pintarInventario();});
+    for(let i=0;i<3;i++){await page.click('[data-adaptation-approve="mandibles"]');await sleep(220);}
+    const maxed=await page.evaluate(()=>{
+      const w=workers[0],card=document.querySelector('[data-adaptation="mandibles"]'),button=card.querySelector('[data-adaptation-approve]');serializeSave(true);const saved=JSON.parse(localStorage.getItem(SAVE_KEY));
+      const c=document.createElement('canvas');c.width=90;c.height=70;const g=c.getContext('2d');g.translate(42,35);_hormigaVoxel(g,{...w,state:'EXPLORAR',food:null,projectCargo:null},1,false,0);const px=g.getImageData(0,0,90,70).data;let gold=0;for(let i=0;i<px.length;i+=4)if(px[i]===242&&px[i+1]===200&&px[i+2]===75&&px[i+3])gold++;
+      return{tier:antMandibleTier(w),button:button.textContent.trim(),disabled:button.disabled,earned:card.querySelectorAll('.inv-jaw-tier-track .is-earned').length,copper:economyLedger.materials.cobre,iron:economyLedger.materials.hierro,goldStock:economyLedger.materials.oro,goldPixels:gold,savedTier:saved.workers[0].adaptations.mandibles,debits:economyLedger.history().filter(x=>x.account==='material'&&x.delta<0)};
+    });
+    ok(maxed.tier===4&&maxed.earned===4&&maxed.button==='ALL AT TIER IV'&&maxed.disabled,'three more approvals finish the visible I → II → III → IV chain',JSON.stringify({tier:maxed.tier,earned:maxed.earned,button:maxed.button}));
+    ok(maxed.copper===7&&maxed.iron===7&&maxed.goldStock===8&&maxed.debits.length===6,'copper, iron and gold costs are paid exactly once from AVAILABLE stock',JSON.stringify({copper:maxed.copper,iron:maxed.iron,gold:maxed.goldStock}));
+    ok(maxed.goldPixels>0&&maxed.savedTier===4,'tier IV has distinct gold jaw pixels and survives serialization',`pixels ${maxed.goldPixels} · saved tier ${maxed.savedTier}`);
+    await page.reload({waitUntil:'load'});await page.waitForFunction(()=>typeof topoResumeGame==='function');
+    const reloaded=await page.evaluate(()=>{const resumed=topoResumeGame({silent:true});paused=true;return{resumed,tier:workers[0]&&antMandibleTier(workers[0]),legacy:workers[0]&&('tool' in workers[0])};});
+    ok(reloaded.resumed&&reloaded.tier===4&&!reloaded.legacy,'a real page reload restores tier IV on the same anatomical specialist',JSON.stringify(reloaded));
 
     console.log('\n· elapsed simulation cannot spend discretionary stock');
     const autonomous=await page.evaluate(async()=>{
